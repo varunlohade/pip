@@ -71,6 +71,20 @@ final class SmartChipsModelTests: XCTestCase {
         XCTAssertNil(item("smart.reminder"), "the tapped chip goes")
     }
 
+    func testATappedRelativeReminderDoesNotComeBackOnTheNextKey() async throws {
+        await typeAndPause("remind me in 20 min to call Ana ")
+        await until("reminder chip") { item("smart.reminder") != nil }
+        model.perform(try XCTUnwrap(item("smart.reminder")?.action))
+        XCTAssertEqual(writer.reminders.count, 1)
+        clock.advance(3)
+        await typeAndPause("remind me in 20 min to call Ana now ")
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertFalse(model.smart.contains { $0.id == "smart.reminder" }, "the added chip stays gone though its time moved")
+        model.perform(.undoSmart)
+        XCTAssertTrue(writer.reminders.isEmpty)
+        XCTAssertNotNil(item("smart.reminder"), "Undo offers it again")
+    }
+
     func testEventAddsOnceAndTheAddedLineGoesAfterTheUndoWindow() async {
         await typeAndPause("dinner with Ana at 8")
         await until("event chip") { item("smart.event") != nil }

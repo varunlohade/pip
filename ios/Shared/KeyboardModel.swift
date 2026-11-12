@@ -231,6 +231,7 @@ final class KeyboardModel: ObservableObject {
     private var smartTask: Task<Void, Never>?
     private var addedTask: Task<Void, Never>?
     /// Smart chips added from the current text, so they do not come back after the tap.
+    /// Chips added for this text. A chip read again matches by kind and trigger, so "in 20 min" does not come back as a new time.
     private var smartDone: Set<SmartChip> = []
     /// Device chips the server gave for a sentence, kept while the owner types on in that sentence.
     private var serverSmart: (sentence: String, chips: [SmartChip])?
@@ -1065,8 +1066,10 @@ final class KeyboardModel: ObservableObject {
     private func smartChips(_ text: String, found: [SmartChip]) -> [SmartChip] {
         let sentence = SmartDetect.lastSentence(text)
         let kept = serverSmart.flatMap { s in SuggestPolicy.continues(sentence, asked: s.sentence) ? s.chips : nil } ?? []
-        return Array((found + kept.filter { k in !found.contains { $0.id == k.id } }).filter { !smartDone.contains($0) }.prefix(SmartDetect.maxChips))
+        return Array((found + kept.filter { k in !found.contains { $0.id == k.id } }).filter { !isDone($0) }.prefix(SmartDetect.maxChips))
     }
+
+    private func isDone(_ chip: SmartChip) -> Bool { smartDone.contains { $0.sameReading(as: chip) } }
 
     /// The sentence had no clear match on the phone; the server's device chips may answer it.
     /// `typed` is the whole text it came from: the chips show only while the field still holds it. A failure stays quiet.
@@ -1080,7 +1083,7 @@ final class KeyboardModel: ObservableObject {
             guard let res = try? await self.deps.api().suggest(sentence, context: nil), !Task.isCancelled else { return }
             let device = res.chips.filter { Self.deviceKinds.contains($0.kind) }
             guard !device.isEmpty, self.typed == askedFor else { return }
-            let more = device.compactMap { Self.smartChip($0, sentence: sentence, now: self.deps.now()) }.filter { !self.smartDone.contains($0) }
+            let more = device.compactMap { Self.smartChip($0, sentence: sentence, now: self.deps.now()) }.filter { !self.isDone($0) }
             self.serverSmart = (sentence, more)
             self.smart = Array((self.smart + more.filter { m in !self.smart.contains { $0.id == m.id } }).prefix(SmartDetect.maxChips))
             let ms = Int((ContinuousClock.now - typedAt) / .milliseconds(1))
@@ -1514,7 +1517,7 @@ final class KeyboardModel: ObservableObject {
             notes = deps.store.notes.filter { $0.id != id }
             deps.store.notes = notes
         }
-        smartDone.remove(a.chip)
+        smartDone = smartDone.filter { !$0.sameReading(as: a.chip) }
         if !smart.contains(a.chip) { smart.insert(a.chip, at: 0) }
     }
 
