@@ -46,6 +46,58 @@ final class ExplainDetectTests: XCTestCase {
         topic("what is quantum computing", "quantum computing")
     }
 
+    func testRealTopicPhrasingsAcrossSubjects() {
+        for (text, subject) in [
+            ("explain the water cycle", "water cycle"),
+            ("Explain the water cycle.", "water cycle"),
+            ("EXPLAIN THE WATER CYCLE!", "water cycle"),
+            ("explain the theory of relativity", "theory of relativity"),
+            ("explain supply and demand", "supply and demand"),
+            ("can you explain the french revolution?", "french revolution"),
+            ("could you please explain the causes of world war 1", "causes of world war 1"),
+            ("explain to me the krebs cycle", "krebs cycle"),
+            ("explain the water cycle to me", "water cycle"),
+            ("hey pip, explain the pythagorean theorem", "pythagorean theorem"),
+            ("explain: the stock market", "stock market"),
+            ("explain a black hole", "black hole"),
+            ("Explain an electric circuit?", "electric circuit"),
+            ("explain the rule of law", "rule of law"),
+            ("explain cell division in plants", "cell division in plants"),
+            ("explain the separation of powers", "separation of powers"),
+            ("explain natural selection", "natural selection"),
+            ("explain the big bang", "big bang"),
+            ("explain the laws of motion...", "laws of motion"),
+            ("explain the electoral college", "electoral college"),
+            ("how does the internet work", "internet"),
+            ("How does the stock market work?", "stock market"),
+            ("how do vaccines work", "vaccines"),
+            ("how does wifi work?!", "wifi"),
+            ("how do solar panels work", "solar panels"),
+            ("How does the human heart work", "human heart"),
+            ("how does an electric motor work", "electric motor"),
+            ("why is the sky blue", "why is the sky blue"),
+            ("Why is the sky blue?", "why is the sky blue"),
+            ("why do cats purr", "why do cats purr"),
+            ("why are leaves green?", "why are leaves green"),
+            ("why does ice float", "why does ice float"),
+            ("eli5 the water cycle", "water cycle"),
+            ("ELI5 how vaccines work", "vaccines"),
+            ("eli5: supply and demand", "supply and demand"),
+            ("eli5 the theory of evolution?", "theory of evolution"),
+            ("explain like i'm five the electoral college", "electoral college"),
+            ("what is a black hole", "black hole"),
+            ("What is a neural network?", "neural network"),
+            ("what is an exoplanet", "exoplanet"),
+            ("whats a tectonic plate", "tectonic plate"),
+            ("what is a prime number.", "prime number"),
+            ("What is a Supernova?", "supernova"),
+        ] {
+            let a = Explain.detect(text)
+            XCTAssertEqual(a?.kind, .topic, text)
+            XCTAssertEqual(a?.subject, subject, text)
+        }
+    }
+
     func testWhatIsATermTheDictionaryKnowsIsAnsweredOnThePhone() {
         term("what is compound interest", "compound interest")
         term("what is an index fund", "index fund")
@@ -59,6 +111,9 @@ final class ExplainDetectTests: XCTestCase {
             "what's the plan", "what is it", "what is wrong with you", "what's new", "what time is it", "lol ok see you",
             "i can do tuesday at 3", "dinner with Ana friday 7pm", "that means a lot", "no meaning", "it has no meaning",
             "how does that work", "how do you know", "explain", "what does", "meaning", "",
+            "can you explain to mom", "explain the", "explain it to me later", "explain what you mean", "explain the thing you said",
+            "why is he so mad", "why are you like this", "why do i bother", "why is it always me", "how does it work",
+            "eli5 this", "explain to him", "what's the deal", "what is the score",
         ] {
             XCTAssertNil(Explain.detect(text), text)
         }

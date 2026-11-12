@@ -15,7 +15,7 @@ final class PersonaTests: XCTestCase {
     }
 
     static let people: [Persona] = [
-        Persona(name: "student", note: "Essay due friday, cite 3 sources", word: "what does tbh mean", topic: "explain photosynthesis", chart: "bar chart: maths 80, physics 72"),
+        Persona(name: "student", note: "Essay due friday, cite 3 sources", word: "what does tbh mean", topic: "explain the water cycle", chart: "bar chart: maths 80, physics 72"),
         Persona(name: "teacher", note: "Grade 7B quizzes before Monday", word: "what does iirc mean", topic: "explain fractions", chart: "pie chart: passed 24, failed 3"),
         Persona(name: "shop owner", note: "Supplier: 40 crates, pay on delivery", word: "what does eta mean", topic: "explain gross margin", chart: "bar chart: rent 1200, stock 3400"),
         Persona(name: "freelancer", note: "Invoice #112: 6h at $80", word: "what does asap mean", topic: "explain net 30 terms", chart: "bar chart: design 20, dev 35"),

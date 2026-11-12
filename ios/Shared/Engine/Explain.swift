@@ -32,6 +32,9 @@ enum Explain {
         "at", "to", "of", "and", "but", "or", "is", "are", "was", "no", "not", "doing", "else", "time",
     ]
 
+    /// Stop words a topic may hold between its first and last word: "theory of relativity", "supply and demand".
+    static let joinWords: Set<String> = ["the", "of", "and", "in", "on", "at", "to", "for", "with", "or", "is", "are", "was"]
+
     /// What the last sentence asks to explain, or nil for plain chat.
     static func detect(_ text: String) -> Ask? {
         let sentence = SmartDetect.lastSentence(text)
@@ -54,14 +57,17 @@ enum Explain {
         if let x = capture(#"^(.+?) meaning$"#, s), let t = subject(x, maxWords: 2) {
             return Ask(kind: .term, subject: t, question: question, askServerOnMiss: !t.contains(" "))
         }
-        // Topics.
+        // Topics: "explain the water cycle", "eli5 how vaccines work", "why is the sky blue".
         for pattern in [
             #"^(?:eli5|explain like i'?m (?:5|five))[:,]? (.+)$"#,
-            #"^explain(?: to me)?[:,]? (.+)$"#,
-            #"^how (?:does|do) (.+) work$"#,
+            #"^explain(?: to me)?[:,]? (.+?)(?: to me)?$"#,
         ] {
-            if let x = capture(pattern, s) { return subject(x, maxWords: 6).map { Ask(kind: .topic, subject: $0, question: question) } }
+            if let x = capture(pattern, s) {
+                return howOrWhy(x, question: question, needsDoes: false)
+                    ?? subject(x, maxWords: 6, topic: true).map { Ask(kind: .topic, subject: $0, question: question) }
+            }
         }
+        if let a = howOrWhy(s, question: question, needsDoes: true) { return a }
         // "what's btw" is a term when the dictionary knows it; "what is a log function" is a topic.
         if let x = capture(#"^what(?:'s| is|s) (?:(an?) )?(.+)$"#, s, group: 2), let t = subject(x, maxWords: 5) {
             if ExplainDictionary.shared.lookup(t) != nil { return Ask(kind: .term, subject: t, question: question) }
@@ -80,16 +86,31 @@ enum Explain {
         return s.trimmingCharacters(in: .whitespaces)
     }
 
+    /// "how does X work" asks about X; "why is the sky blue" asks the whole question. Bare "how X works" only after "explain".
+    private static func howOrWhy(_ s: String, question: String, needsDoes: Bool) -> Ask? {
+        if let x = capture(needsDoes ? #"^how (?:does|do) (.+) work$"# : #"^how (?:(?:does|do) )?(.+?) works?$"#, s) {
+            return subject(x, maxWords: 6, topic: true).map { Ask(kind: .topic, subject: $0, question: question) }
+        }
+        if let x = capture(#"^why (?:is|are|do|does) (.+)$"#, s), subject(x, maxWords: 6, topic: true) != nil {
+            return Ask(kind: .topic, subject: s, question: question)
+        }
+        return nil
+    }
+
     /// The words to explain, cleaned, or nil when they are chat ("it", "later", "your mom").
-    static func subject(_ raw: String, maxWords: Int) -> String? {
+    /// A topic drops a leading "the" and may hold a join word inside ("the theory of relativity").
+    static func subject(_ raw: String, maxWords: Int, topic: Bool = false) -> String? {
         var t = raw.trimmingCharacters(in: CharacterSet(charactersIn: " \"'\u{201C}\u{201D}`*"))
-        t = t.replacingOccurrences(of: #"^(?:the (?:word|term|phrase|slang|acronym) |an? )"#, with: "", options: .regularExpression)
+        let lead = topic ? #"^(?:the (?:word|term|phrase|slang|acronym) |an? |the )"# : #"^(?:the (?:word|term|phrase|slang|acronym) |an? )"#
+        t = t.replacingOccurrences(of: lead, with: "", options: .regularExpression)
         t = t.trimmingCharacters(in: CharacterSet(charactersIn: " \"'\u{201C}\u{201D}`*"))
         let words = t.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty, words.count <= maxWords, t.count <= 60 else { return nil }
         // A known phrase may hold a stop word ("no cap"); a lone stop word never counts ("what does it mean").
         if words.count > 1, ExplainDictionary.shared.lookup(t) != nil { return t }
-        guard !words.contains(where: { stopWords.contains($0) }) else { return nil }
+        for (i, w) in words.enumerated() where stopWords.contains(w) {
+            guard topic, i > 0, i < words.count - 1, joinWords.contains(w) else { return nil }
+        }
         return t
     }
 
