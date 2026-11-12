@@ -139,6 +139,9 @@ final class KeyboardModel: ObservableObject {
     /// The question the server is answering now, so one pause sends it once.
     var explainPending: String?
     var explainCache: [String: ExplainResponse] = [:]
+    var ratesTask: Task<Void, Never>?
+    /// When the keyboard last asked for currency rates, so a currency ask reads them at most every few minutes.
+    var ratesAskedAt: Date?
     /// The drawing page in the visual panel, while it is on screen.
     weak var visualPage: VisualPage?
     /// Keeps the voice and the drawing in step while "Play with voice" is on.

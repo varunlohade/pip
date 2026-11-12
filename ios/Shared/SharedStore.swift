@@ -26,6 +26,8 @@ enum StoreFile: String, CaseIterable {
     case drawings = "drawings.json"
     case learned = "learned.json"
     case caught = "caught.json"
+    /// The last currency rates from /v1/rates, so conversions work offline.
+    case rates = "rates.json"
     /// The cross-process lock for token refresh (see TokenRefresher). Empty.
     case refreshLock = "refresh.lock"
 }
@@ -202,6 +204,11 @@ enum SharedStore {
     static var caught: [Caught] {
         get { load([Caught].self, .caught) ?? [] }
         set { save(Array(newValue.filter { $0.seen > Date().addingTimeInterval(-7 * 86_400) }.prefix(20)), .caught) }
+    }
+
+    static var currencyRates: Calc.Rates? {
+        get { load(Calc.Rates.self, .rates) }
+        set { if let newValue { save(newValue, .rates) } }
     }
 
     // MARK: secrets

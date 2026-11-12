@@ -11,6 +11,7 @@ protocol KeyboardAPI {
     func explain(_ text: String) async throws -> ExplainResponse
     func explainVisual(_ topic: String) async throws -> Data
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String
+    func rates() async throws -> Calc.Rates
 }
 
 extension APIClient: KeyboardAPI {}
@@ -34,6 +35,8 @@ protocol KeyboardStore: AnyObject {
     /// Home's "From your chats": plans shown as chips. `added` removes one the owner already added.
     func recordCaught(_ c: Caught)
     func removeCaught(id: String)
+    /// The last currency rates the server sent. Nil until the first currency ask.
+    var currencyRates: Calc.Rates? { get set }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -64,6 +67,10 @@ final class SharedKeyboardStore: KeyboardStore {
         if !all.contains(where: { $0.id == c.id }) { SharedStore.caught = [c] + all }
     }
     func removeCaught(id: String) { SharedStore.caught = SharedStore.caught.filter { $0.id != id } }
+    var currencyRates: Calc.Rates? {
+        get { SharedStore.currencyRates }
+        set { SharedStore.currencyRates = newValue }
+    }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.

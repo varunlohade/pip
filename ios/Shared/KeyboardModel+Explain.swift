@@ -6,19 +6,22 @@ enum ExplainOffer: Equatable {
     case answer(subject: String, ExplainResponse)
     /// A graph or chart. `scene` is built on the phone; nil means the server draws it from `question`.
     case chart(subject: String, scene: Data?, question: String)
+    /// A sum or a conversion, worked out on the phone. A tap types the answer in place of the ask.
+    case calc(Calc.Answer)
 
     var subject: String {
         switch self {
         case .meaning(let m): m.term
         case .answer(let s, _): s
         case .chart(let s, _, _): s
+        case .calc(let a): a.trigger
         }
     }
 
     var learnedKind: Learned.Kind {
         switch self {
         case .meaning: .word
-        case .answer: .answer
+        case .answer, .calc: .answer
         case .chart: .chart
         }
     }
@@ -29,6 +32,7 @@ enum ExplainOffer: Equatable {
         case .meaning(let m): m.meaning
         case .answer(_, let r): r.short
         case .chart(let s, _, _): s
+        case .calc(let a): a.title
         }
     }
 }
@@ -95,6 +99,14 @@ extension KeyboardModel {
             if explainOffer != offer { explainOffer = offer }
             return true
         }
+        if let (ask, trigger) = Calc.read(text) {
+            explainTask?.cancel()
+            explainPending = nil
+            if ask.needsRates { refreshRates() }
+            let offer = Calc.answer(ask, trigger: trigger, now: deps.now(), zone: .current, rates: deps.store.currencyRates).map(ExplainOffer.calc)
+            if explainOffer != offer { explainOffer = offer }
+            return true
+        }
         guard let ask = Explain.detect(text) else { clearExplainOffer(); return false }
         if ask.kind == .term, let m = ExplainDictionary.shared.lookup(ask.subject) {
             explainTask?.cancel()
@@ -143,8 +155,41 @@ extension KeyboardModel {
         }
     }
 
+    /// Currency rates at most once an hour from /v1/rates; the last ones stay on the phone for offline use.
+    /// A failed read waits a few minutes before the next try.
+    private func refreshRates() {
+        let now = deps.now()
+        if let r = deps.store.currencyRates, now.timeIntervalSince(r.fetched_at) < 3600 { return }
+        guard paired, hasFullAccess, ratesTask == nil, ratesAskedAt.map({ now.timeIntervalSince($0) > 300 }) ?? true else { return }
+        ratesAskedAt = now
+        let api = deps.api()
+        ratesTask = Task { [weak self] in
+            let r = try? await api.rates()
+            guard let self else { return }
+            self.ratesTask = nil
+            guard let r, !Task.isCancelled else { return }
+            self.deps.store.currencyRates = r
+            // The chip waited for the rates; it shows while the field still asks.
+            if Calc.read(self.typed)?.ask.needsRates == true { self.updateExplain(self.typed) }
+        }
+    }
+
+    /// The answer replaces the ask ("split 120 4 ways" becomes "$30.00 each"); a sum keeps its working ("12*7 = 84").
+    private func insertCalc(_ a: Calc.Answer) {
+        host?.playClick()
+        let before = host?.contextBeforeInput ?? ""
+        let sentence = SmartDetect.lastSentence(before)
+        if !sentence.isEmpty, let r = before.range(of: sentence, options: .backwards) {
+            for _ in 0..<before.distance(from: r.lowerBound, to: before.endIndex) { host?.deleteBackward() }
+        }
+        host?.insert(a.insert)
+        explainOffer = nil
+        updateAutoShift()
+    }
+
     var explainItem: BarItems.Item? {
         guard let o = explainOffer else { return nil }
+        if case .calc(let a) = o { return BarItems.Item(id: "explain", title: a.title, detail: a.note, action: .explain, trigger: a.trigger) }
         if case .chart = o { return BarItems.Item(id: "explain", title: "Draw it", action: .explain, trigger: o.subject) }
         return BarItems.Item(id: "explain", title: o.line, action: .explain, trigger: o.subject)
     }
@@ -156,6 +201,7 @@ extension KeyboardModel {
 
     func openExplainCard() {
         guard let o = explainOffer else { return }
+        if case .calc(let a) = o { insertCalc(a); return }
         host?.playClick()
         notesOpen = false
         writeOpen = false
@@ -170,13 +216,14 @@ extension KeyboardModel {
 
     /// A meaning or answer has a card with more; a chart opens its drawing straight away.
     var explainOfferHasMore: Bool {
-        if case .chart = explainOffer { return false }
+        switch explainOffer { case .chart, .calc: return false; default: break }
         return explainOffer != nil
     }
 
     /// The sky chip: a meaning or an answer goes straight into the message, like a suggestion; a chart opens its drawing.
     func tapExplainChip() {
         guard let o = explainOffer else { return }
+        if case .calc(let a) = o { insertCalc(a); return }
         if case .chart = o { openExplainCard(); return }
         deps.store.recordLearned(Learned(subject: o.subject, line: o.line, kind: o.learnedKind, date: deps.now()))
         explainPanel = .card(o)
