@@ -13,6 +13,8 @@ enum BarItems {
         case undoSmart
         case today
         case notes
+        /// Opens the card for the meaning or answer on the bar.
+        case explain
     }
 
     struct Item: Equatable, Identifiable {
@@ -47,12 +49,15 @@ enum BarItems {
         /// Nothing is typed: the bar shows ready chips.
         var fieldEmpty = false
         var ready = ReadyChips.Input()
+        /// "btw" → "by the way": the answer to what the last sentence asks. It comes before every other chip.
+        var explain: Item?
         var now = Date()
     }
 
     static func build(_ s: State) -> [Item] {
-        if !s.hasFullAccess { return [Item(id: "info", title: "Allow Full Access in Settings for \(AppConfig.keyboardName)", tone: .secondary)] }
-        if !s.paired { return [Item(id: "info", title: "Open \(AppConfig.displayName) to pair", tone: .secondary)] }
+        // A dictionary meaning works offline, so it shows even before Full Access or pairing.
+        if !s.hasFullAccess { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Allow Full Access in Settings for \(AppConfig.keyboardName)", tone: .secondary)] }
+        if !s.paired { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Open \(AppConfig.displayName) to pair", tone: .secondary)] }
         if let u = s.undo {
             return [Item(id: "written", title: u.label, tone: .paid), Item(id: "undo", title: "Undo", action: .undo)]
         }
@@ -70,9 +75,11 @@ enum BarItems {
         switch s.bar {
         case .idle:
             // A chip about the typed words gets the room; the day's chips wait for an empty field.
+            if let e = s.explain { out.append(e) }
             out += smart
-            if smart.isEmpty, s.copiedAvailable { out.append(Item(id: "copied", title: "Use copied message", action: .useCopied)) }
-            if smart.isEmpty, let a = s.nextUp { out.append(Item(id: "next", title: "Next: \(a.time)", detail: a.title, tone: .secondary)) }
+            let aboutTyping = !smart.isEmpty || s.explain != nil
+            if !aboutTyping, s.copiedAvailable { out.append(Item(id: "copied", title: "Use copied message", action: .useCopied)) }
+            if !aboutTyping, let a = s.nextUp { out.append(Item(id: "next", title: "Next: \(a.time)", detail: a.title, tone: .secondary)) }
             out = Array(out.prefix(3))
         case .working(let text):
             out.append(Item(id: "working", title: text, tone: .secondary))

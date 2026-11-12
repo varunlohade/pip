@@ -111,6 +111,8 @@ enum Theme {
         static var rowGap: CGFloat { current.rowGap }
         static var bottomInset: CGFloat { current.bottomInset }
         static var height: CGFloat { barHeight + 4 * keyHeight + 3 * rowGap + bottomInset }
+        /// The keyboard while the visual explanation panel is open.
+        static let visualHeight: CGFloat = 470
 
         static let letter = SwiftUI.Font.system(size: 22.5, weight: .regular)
         static let symbol = SwiftUI.Font.system(size: 22.5, weight: .regular)

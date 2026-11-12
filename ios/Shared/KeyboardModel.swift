@@ -128,11 +128,23 @@ final class KeyboardModel: ObservableObject {
     @Published var added: SmartAdded?
     /// Nothing is typed, so the bar shows ready chips.
     @Published var fieldEmpty = true
+    /// A meaning or an answer for what the last sentence asks ("what does btw mean"). See KeyboardModel+Explain.
+    @Published var explainOffer: ExplainOffer?
+    /// The explain card or the visual panel, in place of the keys. Nil when the keys show.
+    @Published var explainPanel: ExplainPanel?
+    // Explain state, kept here because extensions cannot hold stored properties.
+    var explainTask: Task<Void, Never>?
+    var visualTask: Task<Void, Never>?
+    /// The question the server is answering now, so one pause sends it once.
+    var explainPending: String?
+    var explainCache: [String: ExplainResponse] = [:]
+    /// The tldraw page in the visual panel, while it is on screen.
+    weak var visualPage: VisualPage?
 
     weak var host: TextHost?
     /// False in the intro scenes, which script the bar themselves. Then typing sends nothing.
     var suggestsWhileTyping = true
-    private let deps: KeyboardDeps
+    let deps: KeyboardDeps
     private var suggestTask: Task<Void, Never>?
     private var lastSent = ""
     private var suggest = SuggestPolicy()
@@ -331,13 +343,14 @@ final class KeyboardModel: ObservableObject {
 
     func keyboardDisappeared() {
         notesOpen = false
+        closeExplain()
         resetWriting()
         if case .working = bar { bar = .idle }
     }
 
     // MARK: notes
 
-    private var typed: String { (host?.contextBeforeInput ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+    var typed: String { (host?.contextBeforeInput ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     func toggleNotes() {
         host?.playClick()
@@ -374,9 +387,13 @@ final class KeyboardModel: ObservableObject {
         updateAutoShift()
         updateFixable()
         if let u = undo, !(host?.contextBeforeInput ?? "").hasSuffix(u.replacement) { undo = nil }
+        // The dictionary needs no pairing and no network, so a meaning shows even before pairing.
+        if !paired, suggestsWhileTyping { _ = updateExplain(typed) }
         guard paired, suggestsWhileTyping else { return }
         if case .working = bar { return }
         let text = typed
+        // An explain question is answered by the dictionary or /v1/explain, so it never also goes to /v1/suggest.
+        let explaining = updateExplain(text)
         let wasEmpty = fieldEmpty
         fieldEmpty = text.isEmpty
         // Empty again, as after a send: the ready chips read the app's latest snapshot.
@@ -386,7 +403,7 @@ final class KeyboardModel: ObservableObject {
         suggestTask?.cancel()
         lastSent = text
         bar = .idle
-        if let sentence = suggest.maybe(text, clear: clear) { requestSuggest(sentence, typed: text) }
+        if !explaining, let sentence = suggest.maybe(text, clear: clear) { requestSuggest(sentence, typed: text) }
     }
 
     /// Tap on "Use copied message". Reading may show the system paste prompt once, so the read runs
@@ -714,7 +731,7 @@ final class KeyboardModel: ObservableObject {
                                     bar: bar, copiedAvailable: copiedAvailable, nextUp: nextUp,
                                     smart: smart.map { BarItems.Smart(chip: $0, access: writer.access($0.place, hasFullAccess: hasFullAccess)) },
                                     added: added?.label, fieldEmpty: fieldEmpty,
-                                    ready: .init(copiedAvailable: copiedAvailable, nextUp: nextUp, today: appointments),
+                                    ready: .init(copiedAvailable: copiedAvailable, nextUp: nextUp, today: appointments), explain: explainItem,
                                     now: deps.now()))
     }
 
@@ -727,6 +744,7 @@ final class KeyboardModel: ObservableObject {
         case .undoSmart: undoSmart()
         case .today: showToday()
         case .notes: toggleNotes()
+        case .explain: openExplainCard()
         }
     }
 

@@ -54,6 +54,8 @@ struct SuggestResponse: Decodable {
 struct WriteResponse: Decodable { let text: String; let changed: Bool? }
 /// tone is "upset" (the other person), "blunt" (the owner's draft) or "ok". calm is set unless tone is "ok".
 struct ToneResponse: Decodable { let tone: String; let calm: String? }
+/// POST /v1/explain: `short` is one line, `body` up to four lines split by newlines.
+struct ExplainResponse: Decodable, Equatable { let short: String; let body: String; let visual_ok: Bool }
 struct DeviceAuthResponse: Decodable { let device_token: String }
 /// `recovered`: this Apple account already had a Pip account from an earlier install. `device_token` is then the token of that account.
 struct AppleLinkResponse: Decodable, Equatable { let linked: Bool; let recovered: Bool; let device_token: String? }
@@ -159,6 +161,19 @@ struct APIClient {
         if !draft.isEmpty { body["text"] = draft }
         if let client { body["context"] = client }
         return try await send(request("POST", "/v1/write/tone", body: body, tap: true), as: ToneResponse.self)
+    }
+
+    /// Only for text the phone read as an explain request (Explain.detect). Plain chat never calls it.
+    func explain(_ text: String) async throws -> ExplainResponse {
+        try await send(request("POST", "/v1/explain", body: ["text": text]), as: ExplainResponse.self)
+    }
+
+    /// The drawn scene, as JSON the visual page reads. The phone does not decode it; the server already clamped it.
+    func explainVisual(_ topic: String) async throws -> Data {
+        let (data, resp) = try await session.data(for: request("POST", "/v1/explain/visual", body: ["topic": topic], tap: true))
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else { throw APIError.http(code, String(decoding: data, as: UTF8.self)) }
+        return data
     }
 
     /// Checks the token: the Debug pairing sheet calls it before it saves a pasted token.

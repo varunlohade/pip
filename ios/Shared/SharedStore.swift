@@ -69,6 +69,30 @@ enum SharedStore {
         set { save(newValue, file: "shortcuts.json") }
     }
 
+    // MARK: drawings: visual explanations the keyboard exported. PNGs in drawings/, the list in drawings.json.
+
+    static var drawings: [Drawing] {
+        get { load([Drawing].self, file: "drawings.json") ?? [] }
+        set { save(newValue, file: "drawings.json") }
+    }
+
+    static func drawingURL(_ d: Drawing) -> URL? {
+        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)?
+            .appendingPathComponent("drawings", isDirectory: true).appendingPathComponent(d.file)
+    }
+
+    /// Newest first, at most 30: the oldest file goes when a new one comes.
+    static func saveDrawing(_ png: Data, title: String) throws {
+        let d = Drawing(id: UUID(), title: title, created: Date(), file: UUID().uuidString + ".png")
+        guard let url = drawingURL(d) else { throw CocoaError(.fileNoSuchFile) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try png.write(to: url, options: [.atomic, .completeFileProtection])
+        var all = [d] + drawings
+        for old in all.dropFirst(30) { if let u = drawingURL(old) { try? FileManager.default.removeItem(at: u) } }
+        all = Array(all.prefix(30))
+        drawings = all
+    }
+
     private static func baseQuery(_ account: String = account) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,

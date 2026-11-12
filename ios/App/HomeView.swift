@@ -4,6 +4,8 @@ struct HomeView: View {
     @EnvironmentObject var session: Session
     @ObservedObject private var calendar = CalendarModel.shared
     @ObservedObject private var keyboard = KeyboardSetup.shared
+    /// Exported from the keyboard into the App Group; read again each time the app comes back.
+    @State private var drawings: [Drawing] = []
 
     var body: some View {
         ScrollView {
@@ -12,6 +14,7 @@ struct HomeView: View {
                 keyboardCard
                 if calendar.neverAsked { calendarCard }
                 if !calendar.today.isEmpty { todaySection }
+                if !drawings.isEmpty { DrawingsSection(drawings: drawings) }
                 if !session.appleLinked {
                     SaveDetailsCard().padding(.horizontal, Theme.Metric.cardInset)
                 } else if let notice = session.notice {
@@ -37,8 +40,8 @@ struct HomeView: View {
         .overlay(alignment: .top) { Theme.Color.bg.frame(height: 0).ignoresSafeArea(edges: .top) }
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { calendar.refresh() }
-        .task(id: session.account) { calendar.refresh() }
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in calendar.refresh() }
+        .task(id: session.account) { calendar.refresh(); drawings = SharedStore.drawings }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in calendar.refresh(); drawings = SharedStore.drawings }
     }
 
     private var header: some View {

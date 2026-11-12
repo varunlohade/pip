@@ -15,7 +15,15 @@ struct KeyboardView: View {
     private func keyboard(_ p: M.Palette) -> some View {
         ZStack(alignment: .top) {
             p.bed
-            if model.notesOpen {
+            if let panel = model.explainPanel {
+                Group {
+                    switch panel {
+                    case .card(let offer): ExplainCardView(model: model, offer: offer, palette: p)
+                    case .visual(let state): VisualPanelView(model: model, state: state, palette: p)
+                    }
+                }
+                .padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
+            } else if model.notesOpen {
                 NotesPanel(model: model, palette: p).padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if model.writeOpen {
                 WritePanelView(model: model, palette: p).padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
@@ -25,7 +33,7 @@ struct KeyboardView: View {
             SuggestionBar(model: model, palette: p)
                 .frame(height: M.barHeight)
         }
-        .frame(height: M.height)
+        .frame(height: model.keyboardHeight)
     }
 }
 
@@ -38,7 +46,15 @@ struct SuggestionBar: View {
     var body: some View {
         let items = model.barItems
         HStack(spacing: 0) {
-            if model.notesOpen {
+            if let panel = model.explainPanel {
+                // The canvas shows "Step n of m"; the title keeps it for VoiceOver only.
+                Text(panelSubject(panel)).font(M.prediction.weight(.medium)).foregroundStyle(palette.label)
+                    .lineLimit(1).padding(.leading, Theme.Space.s)
+                    .accessibilityLabel(panelTitle(panel))
+                    .accessibilityIdentifier("explain.title")
+                Spacer()
+                barButton("keyboard", id: "explain.close", label: "Keyboard", action: model.closeExplain)
+            } else if model.notesOpen {
                 Text("Notes").font(M.prediction.weight(.medium)).foregroundStyle(palette.label).padding(.leading, Theme.Space.s)
                 Spacer()
                 barButton("plus", id: "notes.add", label: "Save typed text as a note", action: model.saveNote)
@@ -72,12 +88,12 @@ struct SuggestionBar: View {
                 .accessibilityIdentifier("chip.fix")
                 .transition(.opacity)
             }
-            if model.paired && !model.notesOpen {
+            if model.paired && !model.notesOpen && model.explainPanel == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.writeOpen ? "keyboard" : "wand.and.stars", id: "write.toggle", label: model.writeOpen ? "Keyboard" : "Rewrite", action: model.toggleWrite)
             }
             // Notes live in the App Group, which the keyboard reaches only with Full Access.
-            if model.hasFullAccess && !model.writeOpen {
+            if model.hasFullAccess && !model.writeOpen && model.explainPanel == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.notesOpen ? "keyboard" : "note.text", id: "notes.toggle", label: model.notesOpen ? "Keyboard" : "Notes", action: model.toggleNotes)
             }
@@ -88,9 +104,22 @@ struct SuggestionBar: View {
         .animation(Theme.Motion.chipAppear, value: showsFix)
     }
 
+    private func panelSubject(_ p: ExplainPanel) -> String {
+        if case .visual(let v) = p { return "\u{201C}\(v.subject)\u{201D}" }
+        return "Explain"
+    }
+
+    private func panelTitle(_ p: ExplainPanel) -> String {
+        switch p {
+        case .card: "Explain"
+        case .visual(let v):
+            if case .drawing(let n, let m) = v.status { "\u{201C}\(v.subject)\u{201D} \u{00B7} step \(n) of \(m)" } else { "\u{201C}\(v.subject)\u{201D}" }
+        }
+    }
+
     /// Fix sits beside the chips, so it never takes a chip's place.
     private var showsFix: Bool {
-        guard model.fixable, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
+        guard model.fixable, model.explainPanel == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
         if case .idle = model.bar { return true }
         return false
     }

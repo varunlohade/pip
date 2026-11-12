@@ -56,3 +56,11 @@ enum Shortcuts {
         return nil
     }
 }
+
+/// A visual explanation the owner exported from the keyboard. The PNG sits next to the list in the App Group.
+struct Drawing: Codable, Identifiable, Equatable {
+    let id: UUID
+    let title: String
+    let created: Date
+    let file: String
+}

@@ -24,6 +24,9 @@ final class FakeAPI: KeyboardAPI {
     var suggestReply = SuggestResponse(chips: [], intent: "none", timings: nil)
     var writeReply = WriteResponse(text: "", changed: nil)
     var toneReply = ToneResponse(tone: "ok", calm: nil)
+    var explainReply = ExplainResponse(short: "A log is the power you need.", body: "log10(100) = 2", visual_ok: true)
+    var visualReply = Data(#"{"title":"Logs","canvas":{"w":800,"h":500},"steps":[]}"#.utf8)
+    private(set) var explained: [String] = []
 
     private(set) var calls: [String] = []
     private(set) var suggested: [(text: String, context: String?)] = []
@@ -41,6 +44,8 @@ final class FakeAPI: KeyboardAPI {
     func fix(_ text: String) async throws -> WriteResponse { calls.append("fix"); return writeReply }
     func refine(_ text: String, tone: String) async throws -> WriteResponse { calls.append("refine"); return writeReply }
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { calls.append("tone"); return toneReply }
+    func explain(_ text: String) async throws -> ExplainResponse { calls.append("explain"); explained.append(text); return explainReply }
+    func explainVisual(_ topic: String) async throws -> Data { calls.append("visual"); explained.append(topic); return visualReply }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.
@@ -51,6 +56,8 @@ final class FakeStore: KeyboardStore {
     var appointments: [Appointment] = []
     var notes: [Note] = []
     var actionShortcuts: [ActionShortcut] = ActionShortcut.defaults
+    private(set) var drawings: [(png: Data, title: String)] = []
+    func saveDrawing(_ png: Data, title: String) throws { drawings.append((png, title)) }
 }
 
 /// The phone's calendar and reminders, in memory. `granted` is what the app was allowed.
@@ -83,6 +90,8 @@ final class FakePasteboard: Pasteboard {
     var hasStrings: Bool { string != nil }
 
     func copy(_ s: String) { string = s; changeCount += 1 }
+    private(set) var png: Data?
+    func setPNG(_ png: Data) { self.png = png; changeCount += 1 }
 }
 
 /// A clock the test moves by hand. sleep waits until advance() moves `now` past its deadline,

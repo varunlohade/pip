@@ -12,6 +12,8 @@ struct DemoAPI: KeyboardAPI {
     func fix(_ text: String) async throws -> WriteResponse { WriteResponse(text: fixed, changed: true) }
     func refine(_ text: String, tone: String) async throws -> WriteResponse { WriteResponse(text: text, changed: false) }
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { ToneResponse(tone: "ok", calm: nil) }
+    func explain(_ text: String) async throws -> ExplainResponse { throw APIError.message("no explain in the intro") }
+    func explainVisual(_ topic: String) async throws -> Data { throw APIError.message("no explain in the intro") }
 }
 
 /// The intro's device storage: kept in memory, gone when the intro ends.
@@ -22,6 +24,7 @@ final class DemoStore: KeyboardStore {
     var appointments: [Appointment] = []
     var notes: [Note] = Note.demo
     let actionShortcuts = ActionShortcut.defaults
+    func saveDrawing(_ png: Data, title: String) throws {}
 }
 
 /// The intro's calendar: it says yes and keeps nothing, so a scene never touches the real calendar.
@@ -38,6 +41,7 @@ final class DemoPasteboard: Pasteboard {
     let hasStrings = false
     let changeCount = 0
     let string: String? = nil
+    func setPNG(_ png: Data) {}
 }
 
 /// One intro scene. To add a feature, add one value to `all`.

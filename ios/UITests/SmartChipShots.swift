@@ -38,6 +38,11 @@ final class SmartChipShots: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-calendarDemo"]
         app.launch()
+        // Pairs through the Debug-only pip-dev link, which works from any onboarding step. The system asks to open it first.
+        let fake = env["FAKE_URL"] ?? "http://127.0.0.1:8799"
+        XCUIDevice.shared.system.open(URL(string: "pip-dev://pair?token=pkd_fake&server=\(fake)")!)
+        let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if open.waitForExistence(timeout: 4) { open.tap() }
         let mark = element(app, "identifier == %@", "onboarding.mark")
         if mark.waitForExistence(timeout: 6) {
             mark.press(forDuration: 1.3)
@@ -54,7 +59,7 @@ final class SmartChipShots: XCTestCase {
                 if b.waitForExistence(timeout: 8) { b.tap() }
             }
         }
-        XCTAssertTrue(app.staticTexts["Earned today"].waitForExistence(timeout: 15), String(app.debugDescription.suffix(4000)))
+        XCTAssertTrue(element(app, "identifier == %@", "home.keyboard").waitForExistence(timeout: 15), String(app.debugDescription.suffix(4000)))
         Thread.sleep(forTimeInterval: 3)
 
         settings.launch()

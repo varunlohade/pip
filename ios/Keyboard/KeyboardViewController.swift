@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -8,6 +9,8 @@ final class ClickInputView: UIInputView, UIInputViewAudioFeedback {
 
 final class KeyboardViewController: UIInputViewController, TextHost {
     private let model = KeyboardModel()
+    private var heightConstraint: NSLayoutConstraint?
+    private var bag: AnyCancellable?
 
     override func loadView() {
         let v = ClickInputView(frame: .zero, inputViewStyle: .keyboard)
@@ -32,6 +35,13 @@ final class KeyboardViewController: UIInputViewController, TextHost {
             height,
         ])
         hosting.didMove(toParent: self)
+        heightConstraint = height
+        // The visual panel needs more room than the keys; the input view follows the model's height.
+        // @Published sends before the property changes, so the height comes from the new value.
+        bag = model.$explainPanel.sink { [weak self] panel in
+            if case .visual? = panel { self?.heightConstraint?.constant = Theme.SystemKeyboard.visualHeight }
+            else { self?.heightConstraint?.constant = Theme.SystemKeyboard.height }
+        }
         registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (vc: KeyboardViewController, _) in vc.updateAppearance() }
     }
 

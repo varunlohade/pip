@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import UniformTypeIdentifiers
 
 /// The server calls the keyboard makes. APIClient is the real one; tests pass a fake.
 protocol KeyboardAPI {
@@ -7,6 +8,8 @@ protocol KeyboardAPI {
     func fix(_ text: String) async throws -> WriteResponse
     func refine(_ text: String, tone: String) async throws -> WriteResponse
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse
+    func explain(_ text: String) async throws -> ExplainResponse
+    func explainVisual(_ topic: String) async throws -> Data
 }
 
 extension APIClient: KeyboardAPI {}
@@ -19,6 +22,8 @@ protocol KeyboardStore: AnyObject {
     var appointments: [Appointment] { get }
     var notes: [Note] { get set }
     var actionShortcuts: [ActionShortcut] { get }
+    /// An exported visual explanation, kept in the App Group so the app's Home shows it.
+    func saveDrawing(_ png: Data, title: String) throws
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -37,6 +42,7 @@ final class SharedKeyboardStore: KeyboardStore {
         set { SharedStore.notes = newValue }
     }
     var actionShortcuts: [ActionShortcut] { SharedStore.actionShortcuts }
+    func saveDrawing(_ png: Data, title: String) throws { try SharedStore.saveDrawing(png, title: title) }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.
@@ -44,9 +50,13 @@ protocol Pasteboard: AnyObject {
     var hasStrings: Bool { get }
     var changeCount: Int { get }
     var string: String? { get }
+    /// Puts an image on the pasteboard, so it pastes into a chat. Needs Full Access in the keyboard.
+    func setPNG(_ png: Data)
 }
 
-extension UIPasteboard: Pasteboard {}
+extension UIPasteboard: Pasteboard {
+    func setPNG(_ png: Data) { setData(png, forPasteboardType: UTType.png.identifier) }
+}
 
 /// Everything KeyboardModel reaches outside itself, except the text host.
 struct KeyboardDeps {
