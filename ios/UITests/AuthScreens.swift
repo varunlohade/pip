@@ -97,7 +97,7 @@ final class AuthScreens: XCTestCase {
     func test1SignInScreenValidationAndErrors() {
         toSignIn()
         XCTAssertTrue(el("signin.apple").isHittable, "Sign in with Apple is on screen")
-        XCTAssertTrue(el("signin.email").exists)
+        XCTAssertTrue(el("signin.email").waitForExistence(timeout: 5), "the fake server reports email_enabled")
         XCTAssertTrue(el("onboarding.start").exists, "Skip for now")
         shot("auth-1-sign-in")
 
@@ -126,6 +126,7 @@ final class AuthScreens: XCTestCase {
 
     func test2SignUpThenAccountConfirmsThenLogOut() throws {
         toSignIn()
+        XCTAssertTrue(el("signin.email").waitForExistence(timeout: 5))
         el("signin.email").tap()
         el("email.toSignUp").tap()
         let email = "ui.\(Int(Date().timeIntervalSince1970))@example.com"

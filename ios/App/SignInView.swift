@@ -53,6 +53,7 @@ enum EmailRules {
 }
 
 /// The sign-in choices at the end of onboarding: Apple, email, or skip for now. Each one alone is enough.
+/// Email shows only when the server says it can send the codes.
 struct SignInChoices: View {
     @EnvironmentObject var session: Session
     @Environment(\.colorScheme) private var colorScheme
@@ -63,6 +64,7 @@ struct SignInChoices: View {
     /// The next nonce, fetched ahead: the Apple button's request runs synchronously.
     @State private var next: String?
     @State private var email = false
+    @State private var emailEnabled = false
     @State private var working = false
 
     var body: some View {
@@ -88,9 +90,11 @@ struct SignInChoices: View {
             .frame(height: Theme.Metric.secondaryButton + 6)
             .clipShape(Capsule())
             .accessibilityIdentifier("signin.apple")
-            Button("Continue with email") { session.error = nil; email = true }
-                .buttonStyle(FrostPill())
-                .accessibilityIdentifier("signin.email")
+            if emailEnabled {
+                Button("Continue with email") { session.error = nil; email = true }
+                    .buttonStyle(FrostPill())
+                    .accessibilityIdentifier("signin.email")
+            }
             Button(busy ? "One moment\u{2026}" : "Skip for now", action: skip)
                 .font(Theme.Font.body).foregroundStyle(Theme.Color.text2)
                 .frame(maxWidth: .infinity, minHeight: Theme.Metric.iconButton)
@@ -98,6 +102,7 @@ struct SignInChoices: View {
         }
         .disabled(busy || working)
         .task(id: next == nil) { if next == nil { next = await AppleNonce.fetch(baseURL: session.server) } }
+        .task(id: session.server) { emailEnabled = await APIClient.emailEnabled(baseURL: session.server) }
         .sheet(isPresented: $email) {
             NavigationStack { EmailAuthView(start: .signIn) { email = false; signedIn() } }
         }

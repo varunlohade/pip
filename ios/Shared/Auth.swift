@@ -122,6 +122,15 @@ extension APIClient {
         return try? JSONDecoder().decode(Out.self, from: data).nonce
     }
 
+    /// GET /v1/auth/config: whether the server can send email codes. False on any failure, such as a 404 from an older server.
+    static func emailEnabled(baseURL: String, session: URLSession = .shared) async -> Bool {
+        struct Out: Decodable { let email_enabled: Bool }
+        guard let url = URL(string: baseURL + "/v1/auth/config"),
+              let (data, resp) = try? await session.data(for: URLRequest(url: url, timeoutInterval: 20)),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { return false }
+        return (try? JSONDecoder().decode(Out.self, from: data).email_enabled) ?? false
+    }
+
     static func appleSignIn(baseURL: String, identityToken: String, nonce: String) async throws -> TokenPair {
         try await post(baseURL: baseURL, "/v1/auth/apple", ["identity_token": identityToken, "nonce": nonce])
     }

@@ -16,7 +16,7 @@ enum AppConfig {
         let prefix = Bundle.main.object(forInfoDictionaryKey: "AppIdentifierPrefix") as? String ?? ""
         return prefix + "com.orseliyas.pip.shared"
     }
-    /// From the DEFAULT_SERVER_URL build setting: the local server until Pip has a hosted one.
+    /// From the DEFAULT_SERVER_URL build setting: the local server in Debug, the hosted one in Release.
     static var defaultServerURL: String {
         Bundle.main.object(forInfoDictionaryKey: "DefaultServerURL") as? String ?? "http://localhost:8787"
     }

@@ -15,14 +15,14 @@ settings:
     PRODUCT_DISPLAY_NAME: Pip
     KEYBOARD_DISPLAY_NAME: $(PRODUCT_DISPLAY_NAME) Keyboard
     APP_GROUP_ID: group.com.orseliyas.pip
-    # Server URLs. Pip has no hosted server yet, so both builds default to the local one.
+    # Server URLs. Debug talks to the server on this Mac; Release to the hosted one.
     DEMO_SERVER_URL: ""
     GENERATE_INFOPLIST_FILE: NO
   configs:
     Debug:
       DEFAULT_SERVER_URL: http:/$()/localhost:8787
     Release:
-      DEFAULT_SERVER_URL: http:/$()/localhost:8787
+      DEFAULT_SERVER_URL: https:/$()/pip-api-production-d28b28b9.up.railway.app
 targets:
   Pip:
     type: application
