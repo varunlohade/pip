@@ -294,6 +294,7 @@ struct AccountView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var addEmail = false
+    @State private var emailEnabled = false
 
     var body: some View {
         ScrollView {
@@ -306,7 +307,7 @@ struct AccountView: View {
                     }
                 }
                 if let info, !info.apple { SaveDetailsCard(title: "Save with Apple") }
-                if let info, !info.password {
+                if Self.offersEmail(info, emailEnabled: emailEnabled) {
                     Button("Add email and password") { addEmail = true }.buttonStyle(FrostPill()).accessibilityIdentifier("account.addEmail")
                 }
                 if let error {
@@ -325,6 +326,7 @@ struct AccountView: View {
         }
         .background(Theme.Color.bg.ignoresSafeArea())
         .task(id: session.account) { await load() }
+        .task(id: session.server) { emailEnabled = await APIClient.emailEnabled(baseURL: session.server) }
         .sheet(isPresented: $addEmail, onDismiss: { Task { await load() } }) {
             NavigationStack { EmailAuthView(start: .link) { addEmail = false } }
         }
@@ -338,6 +340,12 @@ struct AccountView: View {
         } message: {
             Text(alertMessage)
         }
+    }
+
+    /// "Add email and password": only for an account with no password, and only when the server can send the code.
+    static func offersEmail(_ info: AccountInfo?, emailEnabled: Bool) -> Bool {
+        guard let info, emailEnabled else { return false }
+        return !info.password
     }
 
     private var headline: String {

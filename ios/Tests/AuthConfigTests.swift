@@ -49,4 +49,13 @@ final class AuthConfigTests: XCTestCase {
         let garbled = await enabled(200, "not json")
         XCTAssertFalse(garbled)
     }
+
+    func testAccountOffersAddEmailOnlyWhenTheServerCanSendTheCode() {
+        let device = AccountInfo(email: nil, email_verified: false, apple: false, password: false, anonymous: true)
+        let withPassword = AccountInfo(email: "a@example.com", email_verified: true, apple: false, password: true, anonymous: false)
+        XCTAssertTrue(AccountView.offersEmail(device, emailEnabled: true))
+        XCTAssertFalse(AccountView.offersEmail(device, emailEnabled: false), "no Resend key: no add-email button")
+        XCTAssertFalse(AccountView.offersEmail(withPassword, emailEnabled: true))
+        XCTAssertFalse(AccountView.offersEmail(nil, emailEnabled: true))
+    }
 }
