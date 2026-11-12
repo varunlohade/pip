@@ -12,6 +12,8 @@ import type { AppleVerifier } from './apple.ts';
 
 export type AuthDeps = {
   db: Db; cipher: Cipher; mailer: Mailer; apple: AppleVerifier; now: () => number;
+  /** Tells the app whether to offer email sign-in. */
+  emailEnabled: boolean;
   onNewUser?: (userId: string) => void;
 };
 export type Tokens = { access_token: string; refresh_token: string; expires_in: number };
@@ -161,6 +163,9 @@ export function createAuth(d: AuthDeps) {
   /** Routes that need no token. They sit before the token check. */
   function publicRoutes(app: Hono<Env>) {
     const ip = rateLimiter('emailAuth', clientIp);
+
+    // What the sign-in screen may offer. Email stays hidden until the server can send the codes.
+    app.get('/v1/auth/config', rateLimiter('other', clientIp), (c) => c.json({ email_enabled: d.emailEnabled }));
 
     // A single-use nonce. The app sends SHA-256(nonce) to Apple and the raw nonce back to us within 10 minutes.
     // Only a keyed hash of it is stored.

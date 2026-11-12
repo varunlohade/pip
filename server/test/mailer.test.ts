@@ -1,7 +1,7 @@
 process.env.LOG_SILENT = '1';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMailer, createResendMailer } from '../src/mailer.ts';
+import { createMailer, createResendMailer, emailEnabled } from '../src/mailer.ts';
 
 const ADDRESS = 'ana.secret@example.com';
 const CODE = '483920';
@@ -87,4 +87,12 @@ test('mailer: no address or code reaches the log, on success or failure', async 
   const all = lines.join('\n');
   assert.ok(!all.includes(ADDRESS) && !all.includes('ana.secret'));
   assert.ok(!all.includes(CODE));
+});
+
+test('mailer: email is enabled only with both RESEND_API_KEY and MAIL_FROM', () => {
+  assert.equal(emailEnabled(ENV), true);
+  assert.equal(emailEnabled({}), false);
+  assert.equal(emailEnabled({ RESEND_API_KEY: ENV.RESEND_API_KEY }), false);
+  assert.equal(emailEnabled({ MAIL_FROM: ENV.MAIL_FROM }), false);
+  assert.equal(emailEnabled({ RESEND_API_KEY: ' ', MAIL_FROM: ENV.MAIL_FROM }), false);
 });

@@ -9,6 +9,11 @@ export type Mailer = { send(mail: Mail): Promise<void> };
 const RESEND_URL = 'https://api.resend.com/emails';
 const RESEND_TIMEOUT_MS = 10_000;
 
+/** Email sign-up can finish only when real mail goes out: RESEND_API_KEY and MAIL_FROM are both set. */
+export function emailEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.RESEND_API_KEY?.trim() && env.MAIL_FROM?.trim());
+}
+
 /**
  * The mailer for this environment: Resend when RESEND_API_KEY is set, else the dev stub.
  * A key without MAIL_FROM is a setup mistake, so it stops the server instead of failing every send.

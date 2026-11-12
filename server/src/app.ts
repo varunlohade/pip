@@ -23,6 +23,8 @@ export type Deps = {
   apple?: AppleVerifier;
   /** Sends emailed codes. The default only logs (see mailer.ts); no real email goes out yet. */
   mailer?: Mailer;
+  /** GET /v1/auth/config reports it. Default false: the app hides email sign-in. */
+  emailEnabled?: boolean;
   /** Runs once for each new user (device, Apple or email). */
   onNewUser?: (userId: string) => void;
 };
@@ -152,7 +154,7 @@ export function createApp(deps: Deps) {
 
   // ---- sign-in, sessions and the account. Routes with no token sit before the token check on purpose.
   // Every other /v1 route resolves the user from the access token, never from the body.
-  const auth = createAuth({ db, cipher, now, mailer: deps.mailer ?? createDevMailer(), apple: deps.apple ?? createAppleVerifier({ now }), onNewUser: deps.onNewUser });
+  const auth = createAuth({ db, cipher, now, mailer: deps.mailer ?? createDevMailer(), emailEnabled: deps.emailEnabled ?? false, apple: deps.apple ?? createAppleVerifier({ now }), onNewUser: deps.onNewUser });
   auth.publicRoutes(app);
   auth.requireUser(app);
   const byUser = (c: Context<Env>) => c.get('userId');

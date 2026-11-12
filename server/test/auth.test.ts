@@ -452,3 +452,10 @@ test('F9: deleting a password account needs the password; a stolen token alone c
   const { token } = s.device();
   assert.equal((await s.call(token, 'DELETE', '/v1/account', { confirm: true })).status, 200, 'an account with no password confirms only');
 });
+
+test('config: GET /v1/auth/config needs no token and reports email_enabled', async () => {
+  for (const emailEnabled of [false, true]) {
+    const r = await json(await setup({ emailEnabled }).call(null, 'GET', '/v1/auth/config'));
+    assert.deepEqual(r, { status: 200, body: { email_enabled: emailEnabled } });
+  }
+});

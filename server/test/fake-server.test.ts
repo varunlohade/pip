@@ -43,6 +43,7 @@ test('fake server: suggest, /_next, writing help and /_log work with the fixed t
   await call('/_reset', {});
   assert.equal((await call('/_log')).json.requests.length, 0);
   assert.equal((await call('/v1/suggest', { text: 'hi' })).status, 200);
+  assert.deepEqual((await call('/v1/auth/config')).json, { email_enabled: true }, 'UI tests cover the email form');
 });
 
 test('fake server: refuses to start in production', () => {
