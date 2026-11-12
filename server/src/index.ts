@@ -5,6 +5,7 @@ import { config } from './config.ts';
 import { createCipher, parseMasterKey } from './crypto.ts';
 import { openDb } from './db.ts';
 import { log } from './log.ts';
+import { createMailer } from './mailer.ts';
 
 function need(name: string): string {
   const v = process.env[name];
@@ -16,6 +17,7 @@ const app = createApp({
   db: openDb(config.dbPath),
   cipher: createCipher(parseMasterKey(process.env.DATA_ENCRYPTION_KEY)),
   ai: createAi({ typesafeKey: need('TYPESAFE_API_KEY'), openrouterKey: need('OPENROUTER_API_KEY') }),
+  mailer: createMailer(),
 });
 
 serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? '127.0.0.1' }, (info) => {
