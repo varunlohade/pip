@@ -34,6 +34,22 @@ export const config = {
     timeoutMs: 5000,
   },
 
+  auth: {
+    // A short access token and a rotating refresh token. Each refresh spends the old refresh token; a spent one coming back
+    // means a copy leaked, so the whole session (its family) is deleted.
+    accessTtlMs: 15 * 60_000,
+    refreshTtlMs: 30 * 86_400_000,
+    // Emailed 6-digit codes: 15 minutes, 5 wrong tries, then a new code is needed.
+    codeTtlMs: 15 * 60_000,
+    codeMaxAttempts: 5,
+    // Password sign-in per email: after 5 misses, a lock of 30 s that doubles with each miss, up to an hour.
+    // The count resets a day after the last miss.
+    lockAfter: 5,
+    lockBaseMs: 30_000,
+    lockMaxMs: 3_600_000,
+    failureWindowMs: 86_400_000,
+  },
+
   jev: {
     url: 'https://api.typesafe.ai/v1/systemone',
     model: env.TYPESAFE_MODEL ?? 'jev-latest',
@@ -64,6 +80,11 @@ export const config = {
     shareView: { limit: 120, windowMs: 60_000 },
     other: { limit: 120, windowMs: 60_000 },
     auth: { limit: 10, windowMs: 60_000 },
+    // Email sign-up, sign-in, codes and reset, per client IP. The per-email lockout sits on top.
+    emailAuth: { limit: 20, windowMs: 60_000 },
+    // Emails out per address, so nobody floods an inbox with codes.
+    mailPerEmail: { limit: 5, windowMs: 3_600_000 },
+    refresh: { limit: 30, windowMs: 60_000 },
     // A device account needs no proof of who asks, so one address gets few of them.
     deviceAuth: { limit: 5, windowMs: 3_600_000 },
   },

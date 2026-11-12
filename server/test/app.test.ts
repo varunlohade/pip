@@ -19,8 +19,10 @@ test('crypto: round trip, random IV, tamper detection, cross-user swap fails', (
 test('auth: missing or unknown token is rejected', async () => {
   const { call, device } = setup();
   assert.equal((await call(null, 'GET', '/v1/me')).status, 401);
-  assert.equal((await call(randomToken('pkd'), 'GET', '/v1/me')).status, 401);
-  assert.deepEqual(await (await call(device().token, 'GET', '/v1/me')).json(), { ok: true });
+  assert.equal((await call(randomToken('pkd'), 'GET', '/v1/me')).status, 401, 'an old device token is no longer a bearer token');
+  assert.equal((await call(randomToken('pat'), 'GET', '/v1/me')).status, 401);
+  assert.deepEqual(await (await call(device().token, 'GET', '/v1/me')).json(),
+    { ok: true, email: null, email_verified: false, apple: false, password: false, anonymous: true });
   assert.equal((await call('garbage', 'POST', '/v1/suggest', { text: 'hi' })).status, 401);
   assert.equal((await call(null, 'GET', '/health')).status, 200);
 });

@@ -1,10 +1,10 @@
-import { Hono, type Context, type MiddlewareHandler } from 'hono';
+import { Hono, type Context } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { z } from 'zod';
 import { config, TONES } from './config.ts';
-import { randomToken, sha256, type Cipher } from './crypto.ts';
+import type { Cipher } from './crypto.ts';
 import { randomBytes } from 'node:crypto';
 import type { Db, Preview, SharedImage } from './db.ts';
 import { isPng, jpegSize, pngSize } from './image.ts';
@@ -12,72 +12,21 @@ import type { Ai, DeviceAction } from './ai.ts';
 import { log } from './log.ts';
 import { clean } from './text.ts';
 import { deviceSignal, deviceTitle, deviceTrigger, lastSentence, nameIn } from './quick.ts';
-import { getConnInfo } from '@hono/node-server/conninfo';
 import { createAppleVerifier, type AppleVerifier } from './apple.ts';
+import { createAuth } from './auth.ts';
+import { clientIp, HttpError, rateLimiter, type Env } from './http.ts';
+import { createDevMailer, type Mailer } from './mailer.ts';
 
 export type Deps = {
   db: Db; cipher: Cipher; ai: Ai; now?: () => number;
   apple?: AppleVerifier;
-  /** Runs once for each new user (device or Sign in with Apple). */
+  /** Sends emailed codes. The default only logs (see mailer.ts); no real email goes out yet. */
+  mailer?: Mailer;
+  /** Runs once for each new user (device, Apple or email). */
   onNewUser?: (userId: string) => void;
 };
-export type Env = { Variables: { userId: string } };
+export type { Env };
 export type Chip = { kind: string; label: string; payload: Record<string, unknown>; needs_confirm: boolean; trigger?: string };
-
-class HttpError extends Error {
-  status: 400 | 401 | 404 | 409 | 428 | 429;
-  constructor(status: HttpError['status'], message: string) {
-    super(message);
-    this.status = status;
-  }
-}
-
-function createLimiter({ limit, windowMs }: { limit: number; windowMs: number }) {
-  const hits = new Map<string, { n: number; reset: number }>();
-  const entry = (key: string) => {
-    const now = Date.now();
-    let h = hits.get(key);
-    if (!h || h.reset <= now) {
-      if (hits.size > 10_000) hits.clear();
-      h = { n: 0, reset: now + windowMs };
-      hits.set(key, h);
-    }
-    return h;
-  };
-  return {
-    over: (key: string) => entry(key).n >= limit,
-    hit: (key: string) => ++entry(key).n > limit,
-    retryAfter: (key: string) => String(Math.max(1, Math.ceil((entry(key).reset - Date.now()) / 1000))),
-  };
-}
-
-function rateLimiter(bucket: keyof typeof config.rateLimit, keyOf: (c: Context<Env>) => string): MiddlewareHandler<Env> {
-  const limiter = createLimiter(config.rateLimit[bucket]);
-  return async (c, next) => {
-    const key = keyOf(c);
-    if (limiter.hit(key)) {
-      c.header('Retry-After', limiter.retryAfter(key));
-      return c.json({ error: 'rate limited' }, 429);
-    }
-    await next();
-  };
-}
-
-function clientIp(c: Context<Env>): string {
-  if (config.trustProxy && config.clientIpHeader) {
-    const ip = c.req.header(config.clientIpHeader)?.trim();
-    if (ip) return ip;
-  }
-  if (config.trustProxy) {
-    const hops = (c.req.header('x-forwarded-for') ?? '').split(',').map((h) => h.trim()).filter(Boolean);
-    if (hops.length) return hops[hops.length - 1];
-  }
-  try {
-    return getConnInfo(c).remote.address ?? 'direct';
-  } catch {
-    return 'direct';
-  }
-}
 
 const CleanText = (max: number) => z.string().transform(clean).pipe(z.string().min(1).max(max));
 // context: text the user copied from the other person. Cleaned and capped.
@@ -96,8 +45,6 @@ const ToneBody = z.object({ text: OptionalWriteText, context: OptionalWriteText 
 const ExplainText = CleanText(config.maxExplainChars);
 const ExplainBody = z.object({ text: ExplainText }).strict();
 const VisualBody = z.object({ topic: ExplainText }).strict();
-const AppleAuthBody = z.object({ identity_token: z.string().min(20).max(4096), nonce: z.string().min(16).max(128) }).strict();
-const DeviceAuthBody = z.object({ device_id: z.string().uuid() }).strict();
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
@@ -197,79 +144,18 @@ export function createApp(deps: Deps) {
     });
   });
 
-  // ---- Sign in with Apple: the one /v1 route with no device token. It sits before the token check on purpose.
-  // Every failure is a plain 401, so a caller learns nothing about which check failed.
-  const verifyApple = deps.apple ?? createAppleVerifier({ now });
-  app.post('/v1/auth/apple', rateLimiter('auth', clientIp), async (c) => {
-    let sub: string;
-    try {
-      const b = AppleAuthBody.parse(await c.req.json());
-      sub = (await verifyApple(b.identity_token, b.nonce)).sub;
-    } catch (e) {
-      log('apple_auth_rejected', { reason: e instanceof z.ZodError ? 'bad body' : (e as Error).message });
-      return c.json({ error: 'unauthorized' }, 401);
-    }
-    const { userId, created } = db.userForAppleSub(cipher.lookupHash('apple-sub', sub));
-    const token = randomToken('pkd');
-    db.addDevice(userId, sha256(token), 'apple');
-    if (created) deps.onNewUser?.(userId);
-    log('apple_auth', { user_id: userId, created });
-    return c.json({ device_token: token });
-  });
-
-  // ---- device account: the app's "Get started". No sign-in; it sits before the token check on purpose.
-  // Every call makes a new user. device_id is never looked up, so nobody gets another user's token by sending their id.
-  app.post('/v1/auth/device', rateLimiter('deviceAuth', clientIp), async (c) => {
-    if (!DeviceAuthBody.safeParse(await c.req.json().catch(() => null)).success) return c.json({ error: 'device_id must be a UUID' }, 400);
-    const userId = db.createUser();
-    const token = randomToken('pkd');
-    db.addDevice(userId, sha256(token), 'device');
-    deps.onNewUser?.(userId);
-    log('device_auth', { user_id: userId });
-    return c.json({ device_token: token });
-  });
-
-  // ---- auth: every other /v1 route resolves the user from the device token, never from the body
-  app.use('/v1/*', async (c, next) => {
-    const m = /^Bearer (pkd_[A-Za-z0-9_-]{20,100})$/.exec(c.req.header('authorization') ?? '');
-    const userId = m ? db.userForTokenHash(sha256(m[1])) : undefined;
-    if (!userId) return c.json({ error: 'unauthorized' }, 401);
-    c.set('userId', userId);
-    await next();
-  });
+  // ---- sign-in, sessions and the account. Routes with no token sit before the token check on purpose.
+  // Every other /v1 route resolves the user from the access token, never from the body.
+  const auth = createAuth({ db, cipher, now, mailer: deps.mailer ?? createDevMailer(), apple: deps.apple ?? createAppleVerifier({ now }), onNewUser: deps.onNewUser });
+  auth.publicRoutes(app);
+  auth.requireUser(app);
   const byUser = (c: Context<Env>) => c.get('userId');
   app.use('/v1/suggest', rateLimiter('suggest', byUser));
   app.use('/v1/write/*', rateLimiter('write', byUser));
   // One pattern covers /v1/explain and /v1/explain/visual, so both share the same buckets.
   app.use('/v1/explain/*', rateLimiter('explain', byUser), rateLimiter('explainDaily', byUser));
   app.use('/v1/*', rateLimiter('other', byUser));
-
-  // ---- "Save your details": attaches an Apple account to the signed-in device account. The Apple token is checked exactly as in /v1/auth/apple.
-  // If that Apple account already has a user (an earlier install), the caller gets a token for that user, so a re-install gets its data back.
-  app.post('/v1/auth/apple/link', rateLimiter('auth', byUser), async (c) => {
-    const userId = c.get('userId');
-    let sub: string;
-    try {
-      const b = AppleAuthBody.parse(await c.req.json());
-      sub = (await verifyApple(b.identity_token, b.nonce)).sub;
-    } catch (e) {
-      log('apple_link_rejected', { user_id: userId, reason: e instanceof z.ZodError ? 'bad body' : (e as Error).message });
-      return c.json({ error: 'unauthorized' }, 401);
-    }
-    const linked = db.linkAppleSub(userId, cipher.lookupHash('apple-sub', sub));
-    if (!linked) return c.json({ error: 'this account is already saved with another Apple account' }, 409);
-    if (linked.owner === userId) {
-      log('apple_link', { user_id: userId, recovered: false });
-      return c.json({ linked: true, recovered: false });
-    }
-    const token = randomToken('pkd');
-    db.addDevice(linked.owner, sha256(token), 'apple');
-    log('apple_link', { user_id: linked.owner, recovered: true, from_user_id: userId });
-    return c.json({ linked: true, recovered: true, device_token: token });
-  });
-
-  // A signed-in check with no side effects: the Debug pairing path uses it to test a token.
-  app.get('/v1/me', (c) => c.json({ ok: true }));
+  auth.privateRoutes(app);
 
   // ---- suggest
   // Regex first: plain chat ends with no paid call. An action-ish sentence gets one jev question, and the

@@ -1,4 +1,4 @@
-const SENSITIVE = /(token|secret|key|authorization|password|email|name|text|reply|payload|note)/i;
+const SENSITIVE = /(token|secret|key|authorization|password|email|name|text|reply|payload|note|code|nonce)/i;
 
 export function redact(v: unknown, depth = 0): unknown {
   if (depth > 4 || v === null || typeof v !== 'object') return v;

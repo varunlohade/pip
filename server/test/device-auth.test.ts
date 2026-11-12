@@ -9,23 +9,23 @@ test('POST /v1/auth/device: a new user gets a working token, stored only as a ha
   const s = setup();
   const r = await s.call(null, 'POST', '/v1/auth/device', { device_id: ID });
   assert.equal(r.status, 200);
-  const { device_token } = await r.json();
-  assert.match(device_token, /^pkd_[A-Za-z0-9_-]{20,100}$/);
+  const { access_token: device_token } = await r.json();
+  assert.match(device_token, /^pat_[A-Za-z0-9_-]{20,100}$/);
   assert.equal((await s.call(device_token, 'GET', '/v1/me')).status, 200);
   const users = s.db.raw.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number };
   assert.equal(users.n, 1);
-  assert.ok(s.db.userForTokenHash(sha256(device_token)));
-  const dump = JSON.stringify(s.db.raw.prepare('SELECT * FROM devices').all());
+  assert.ok(s.whoIs(device_token));
+  const dump = JSON.stringify(s.db.raw.prepare('SELECT * FROM access_tokens').all());
   assert.ok(!dump.includes(device_token), 'the token itself is never stored');
   assert.ok(!dump.includes(ID), 'the device id is never stored');
 });
 
 test('POST /v1/auth/device: the same device_id never gives back an existing user', async () => {
   const s = setup();
-  const a = (await (await s.call(null, 'POST', '/v1/auth/device', { device_id: ID })).json()).device_token;
-  const b = (await (await s.call(null, 'POST', '/v1/auth/device', { device_id: ID })).json()).device_token;
+  const a = (await (await s.call(null, 'POST', '/v1/auth/device', { device_id: ID })).json()).access_token;
+  const b = (await (await s.call(null, 'POST', '/v1/auth/device', { device_id: ID })).json()).access_token;
   assert.notEqual(a, b);
-  assert.notEqual(s.db.userForTokenHash(sha256(a)), s.db.userForTokenHash(sha256(b)));
+  assert.notEqual(s.whoIs(a), s.whoIs(b));
 });
 
 test('POST /v1/auth/device: a body without a UUID makes no user', async () => {

@@ -5,6 +5,7 @@ import type { AppleVerifier } from '../src/apple.ts';
 import type { Ai, DeviceAction, ToneCheck } from '../src/ai.ts';
 import { ExplanationSchema, SceneSchema } from '../src/explain.ts';
 import { createCipher, randomToken, sha256 } from '../src/crypto.ts';
+import type { Mail } from '../src/mailer.ts';
 import { openDb } from '../src/db.ts';
 import logExplain from './fixtures/log-explain.json' with { type: 'json' };
 import logScene from './fixtures/log-scene.json' with { type: 'json' };
@@ -12,7 +13,7 @@ import logScene from './fixtures/log-scene.json' with { type: 'json' };
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
 export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void } = {}) {
-  const db = openDb(':memory:');
+  const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
   // Each option is read once per call, so the fake server's one-shot getters answer one call each.
@@ -39,13 +40,21 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     async explain(...args) { aiCalls.push({ fn: 'explain', args }); return ExplanationSchema.parse(model(opts.explain, logExplain)); },
     async visual(...args) { aiCalls.push({ fn: 'visual', args }); return SceneSchema.parse(model(opts.visual, logScene)); },
   };
-  const app = createApp({ db, cipher, ai, now: opts.now, apple: opts.apple, onNewUser: opts.onNewUser });
+  // Mail the server would send. Tests read codes from here; nothing leaves the process.
+  const mails: Mail[] = [];
+  const mailer = { async send(m: Mail) { mails.push(m); } };
+  const app = createApp({ db, cipher, ai, now: opts.now, apple: opts.apple, onNewUser: opts.onNewUser, mailer });
+  /** A signed-in user with a live access token, made straight in the DB. */
   const device = () => {
     const userId = db.createUser();
-    const token = randomToken('pkd');
-    db.addDevice(userId, sha256(token), 'test');
+    const token = randomToken('pat');
+    db.addAccessToken(db.createSession(userId, 'test'), sha256(token), (opts.now ?? Date.now)() + 400 * 86_400_000);
     return { userId, token };
   };
+  /** The user behind an access token, or undefined when it no longer works. */
+  const whoIs = (token: string) => db.accessFor(sha256(token))?.userId;
+  /** The last code mailed to `to` for `kind`. */
+  const codeFor = (to: string, kind: Mail['kind']) => mails.filter((m) => m.to === to && m.kind === kind).at(-1)?.code;
   const call = (token: string | null, method: string, path: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.request(path, {
       method,
@@ -57,5 +66,5 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
       },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-  return { db, cipher, app, aiCalls, device, call };
+  return { db, cipher, app, aiCalls, device, call, mails, whoIs, codeFor };
 }

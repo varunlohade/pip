@@ -1,13 +1,13 @@
 // A local stand-in Pip server for the iOS app and UI tests: fake AI, in-memory DB, no network.
 // usage: npm run fake   (PORT=0 picks a free port; the first line printed names it)
-// Debug routes: GET /_log, POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}, "explain": {...}, "visual": {...}}
+// Debug routes: GET /_log, GET /_mail (the stub mail, with codes, for sign-up tests), POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}, "explain": {...}, "visual": {...}}
 // explain and visual take raw model JSON; with none, they answer with the log-function fixtures in test/fixtures.
 // Each /_next value answers the next matching model call once.
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type { DeviceAction, ToneCheck } from '../src/ai.ts';
 import { config } from '../src/config.ts';
-import { sha256 } from '../src/crypto.ts';
+import { randomToken, sha256 } from '../src/crypto.ts';
 import { setup } from '../test/helpers.ts';
 
 if (process.env.NODE_ENV === 'production') {
@@ -19,8 +19,10 @@ globalThis.fetch = async () => {
 };
 
 const FAKE_TOKEN = 'pkd_fake';
-// The app only accepts long pkd_ tokens, so the short public token is swapped for this one on the way in.
-const INNER_TOKEN = 'pkd_fake_local_only_device_token';
+// The server only accepts long access tokens, so the short public token is swapped for this one on the way in.
+const INNER_TOKEN = 'pat_fake_local_only_access_token';
+// UI tests sign up and start over many times from one address.
+for (const k of ['deviceAuth', 'auth', 'emailAuth', 'mailPerEmail'] as const) config.rateLimit[k].limit = 1000;
 
 type Next = { device?: { kind?: DeviceAction; confidence?: number }; write?: string; tone?: ToneCheck; explain?: unknown; visual?: unknown };
 type LogEntry = { method: string; path: string; status: number; body: unknown };
@@ -41,7 +43,11 @@ function build() {
     apple: async () => { throw new Error('no Sign in with Apple on the fake server'); },
   });
   const userId = env.db.createUser();
-  env.db.addDevice(userId, sha256(INNER_TOKEN), 'fake');
+  // A session that lasts a year, with a refresh token so the purge keeps it.
+  const year = Date.now() + 365 * 86_400_000;
+  const session = env.db.createSession(userId, 'fake');
+  env.db.addAccessToken(session, sha256(INNER_TOKEN), year);
+  env.db.addRefreshToken(session, sha256(randomToken('prt')), year);
   return { ...env, next, log: [] as LogEntry[], userId };
 }
 
@@ -49,6 +55,7 @@ let state = build();
 const fake = new Hono();
 
 fake.get('/_log', (c) => c.json({ requests: state.log, ai: state.aiCalls }));
+fake.get('/_mail', (c) => c.json({ mails: state.mails }));
 fake.post('/_reset', (c) => {
   state = build();
   return c.json({ ok: true });
@@ -62,9 +69,6 @@ fake.post('/_next', async (c) => {
   if (b.visual) state.next.visual = b.visual;
   return c.json({ ok: true, next: state.next });
 });
-
-// "Get started" in the app: the fake signs every device in as the one seeded user.
-fake.post('/v1/auth/device', (c) => c.json({ device_token: INNER_TOKEN }));
 
 fake.all('*', async (c) => {
   const req = c.req.raw;
