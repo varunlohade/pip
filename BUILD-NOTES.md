@@ -1,5 +1,19 @@
 # Pip build notes
 
+## 0.1 (2)
+
+What to Test:
+
+1. Typing: Pip suggests words above the keys and fixes small typos as you type.
+2. Haptics: keys tap softly. Turn this on or off on the Home screen.
+3. Cursor: hold the space bar and slide to move the cursor.
+4. Accents: long-press a letter (like e or a) to pick an accent.
+5. New line: hold Return to add a new line.
+6. Quick answers: type a sum, a tip, a split, a unit, a time zone or a currency. Try "split 120 4 ways" or "100 usd to inr".
+7. Chips: each suggestion chip has a ✕. Tap it to hide the chip.
+8. Rewrite: tap rewrite. All tones show, and each one appears as soon as it is ready.
+9. Quiet: type "why is the bus late". Pip stays quiet and shows nothing.
+
 ## 0.1 (1): first TestFlight
 
 What to Test:
