@@ -31,6 +31,7 @@ final class DemoStore: KeyboardStore {
     func recordLearned(_ l: Learned) {}
     func recordCaught(_ c: Caught) {}
     func removeCaught(id: String) {}
+    let keyHaptics = false
 }
 
 /// The intro's calendar: it says yes and keeps nothing, so a scene never touches the real calendar.

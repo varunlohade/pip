@@ -32,6 +32,11 @@ struct KeyboardView: View {
             }
             SuggestionBar(model: model, palette: p)
                 .frame(height: M.barHeight)
+            // Over the bar too: a top-row letter's accents reach into it.
+            if let a = model.accents {
+                AccentPopupView(popup: a, model: model, palette: p)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
         .frame(height: model.keyboardHeight)
     }
@@ -70,6 +75,8 @@ struct SuggestionBar: View {
             } else if model.writeOpen {
                 Text("Rewrite").font(M.prediction.weight(.medium)).foregroundStyle(palette.label).padding(.leading, Theme.Space.s)
                 Spacer()
+            } else if showsWords {
+                wordRow
             } else {
                 HStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
@@ -95,12 +102,12 @@ struct SuggestionBar: View {
                 .accessibilityIdentifier("chip.fix")
                 .transition(.opacity)
             }
-            if model.paired && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil {
+            if model.paired && !showsWords && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.writeOpen ? "keyboard" : "wand.and.stars", id: "write.toggle", label: model.writeOpen ? "Keyboard" : "Rewrite", action: model.toggleWrite)
             }
             // Notes live in the App Group, which the keyboard reaches only with Full Access.
-            if model.hasFullAccess && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil {
+            if model.hasFullAccess && !showsWords && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.notesOpen ? "keyboard" : "note.text", id: "notes.toggle", label: model.notesOpen ? "Keyboard" : "Notes", action: model.toggleNotes)
             }
@@ -159,9 +166,35 @@ struct SuggestionBar: View {
         }
     }
 
+    /// The three word slots own the bar while a word is half typed, and after a space when no chip shows.
+    /// The tool icons step aside for them.
+    private var showsWords: Bool {
+        guard !model.words.slots.isEmpty, !model.notesOpen, !model.writeOpen, model.explainPanel == nil, model.undo == nil else { return false }
+        if case .idle = model.bar {} else { return false }
+        return model.words.midWord || model.barItems.isEmpty
+    }
+
+    private var wordRow: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(model.words.slots.enumerated()), id: \.offset) { i, slot in
+                if i > 0 { Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight) }
+                Button { model.useWord(slot.word) } label: {
+                    Text(slot.title).font(M.prediction).foregroundStyle(palette.label)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                        .padding(.horizontal, Theme.Space.xs)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(slot.word)
+                .accessibilityIdentifier("word.\(i)")
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     /// Fix sits beside the chips, so it never takes a chip's place.
     private var showsFix: Bool {
-        guard model.fixable, model.explainPanel == nil, model.explainOffer == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
+        guard !showsWords, model.fixable, model.explainPanel == nil, model.explainOffer == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
         if case .idle = model.bar { return true }
         return false
     }

@@ -4,6 +4,8 @@ import Security
 /// Every App Group UserDefaults key, in one place. Nothing secret goes here: secrets live in the Keychain (`Secret`).
 enum StoreKey: String, CaseIterable {
     case serverURL = "server_url"
+    /// A light tap on each key press; missing means on.
+    case keyHaptics = "key_haptics"
     /// The last pasteboard changeCount the keyboard used, so one copy is sent at most once.
     case lastPasteboardChange = "pasteboard_change_count"
     /// The account is saved with Apple, so the "save your details" card stays away.
@@ -104,6 +106,12 @@ enum SharedStore {
     static var serverURL: String {
         get { defaults?.string(forKey: StoreKey.serverURL.rawValue) ?? AppConfig.defaultServerURL }
         set { defaults?.set(newValue, forKey: StoreKey.serverURL.rawValue) }
+    }
+
+    /// A light tap on each key press. On until the owner turns it off in the app.
+    static var keyHaptics: Bool {
+        get { defaults?.object(forKey: StoreKey.keyHaptics.rawValue) as? Bool ?? true }
+        set { defaults?.set(newValue, forKey: StoreKey.keyHaptics.rawValue) }
     }
 
     static var lastPasteboardChange: Int {

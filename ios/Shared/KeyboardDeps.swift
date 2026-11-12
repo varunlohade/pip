@@ -34,6 +34,8 @@ protocol KeyboardStore: AnyObject {
     /// Home's "From your chats": plans shown as chips. `added` removes one the owner already added.
     func recordCaught(_ c: Caught)
     func removeCaught(id: String)
+    /// A light tap on each key press, set in the app. On by default; the keyboard plays it only with Full Access.
+    var keyHaptics: Bool { get }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -64,6 +66,7 @@ final class SharedKeyboardStore: KeyboardStore {
         if !all.contains(where: { $0.id == c.id }) { SharedStore.caught = [c] + all }
     }
     func removeCaught(id: String) { SharedStore.caught = SharedStore.caught.filter { $0.id != id } }
+    var keyHaptics: Bool { SharedStore.keyHaptics }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.
@@ -92,6 +95,10 @@ struct KeyboardDeps {
     var speaker: @MainActor () -> Speaker = { SystemSpeaker() }
     /// Clears this process's caches after a logout. Tests pass a recorder.
     var wipeProcess: @MainActor () async -> Void = { await LocalWipe.wipeProcess() }
+    /// Key haptics. Tests pass a spy.
+    var haptics: @MainActor () -> KeyHaptics = { SystemHaptics() }
+    /// The short wait before the word slots refresh. Real time even in tests, so it never shows in a fake clock's sleeps.
+    var slotSleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

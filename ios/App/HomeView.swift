@@ -12,6 +12,7 @@ struct HomeView: View {
     @State private var caught: [Caught] = []
     @State private var added: Set<String> = []
     @State private var replay: Drawing?
+    @AppStorage(StoreKey.keyHaptics.rawValue, store: SharedStore.defaults) private var keyHaptics = true
 
     /// Shown until the owner has looked words up: four common ones, as examples.
     static let starterWords = ["btw", "ngl", "iirc", "tbh"]
@@ -183,6 +184,13 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: Theme.Metric.cardGap) {
             if !keyboard.state.isOn || keyboard.state == .needsFullAccess || keyboard.state == .notFirst { keyboardCard }
             if calendar.neverAsked { calendarCard }
+            if keyboard.state.isOn {
+                // The keyboard reads this from the App Group when it next appears. iOS lets it tap only with Full Access.
+                Toggle("Key haptics", isOn: $keyHaptics)
+                    .font(Theme.Font.label).foregroundStyle(Theme.Color.text2)
+                    .tint(Theme.Color.sky)
+                    .accessibilityIdentifier("home.keyHaptics")
+            }
             if !session.appleLinked {
                 SaveDetailsCard()
             } else if let notice = session.notice {

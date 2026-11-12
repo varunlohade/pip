@@ -113,9 +113,15 @@ final class FixModelTests: XCTestCase {
         model = nil
     }
 
-    func testLocalFixNeedsNoServerAndUndoPutsItBack() {
+    /// The Fix check runs off the main thread, 30 ms after the keys pause.
+    private func settle() async {
+        for _ in 0..<500 where model.fixPlan == nil { try? await Task.sleep(for: .milliseconds(2)) }
+    }
+
+    func testLocalFixNeedsNoServerAndUndoPutsItBack() async {
         host.text = "can u send teh bill "
         model.textChanged()
+        await settle()
         XCTAssertEqual(model.fixPlan?.title, "Fix 2 typos")
         model.fix()
         XCTAssertEqual(host.text, "Can you send the bill?")
@@ -128,9 +134,10 @@ final class FixModelTests: XCTestCase {
     }
 
     /// The word still being typed is left out of the chip, so the tap leaves it alone too.
-    func testTapAppliesExactlyWhatTheChipSaid() {
+    func testTapAppliesExactlyWhatTheChipSaid() async {
         host.text = "can u send teh bill tomorow"
         model.textChanged()
+        await settle()
         let chip = try? XCTUnwrap(model.fixPlan)
         XCTAssertEqual(chip?.title, "Fix 2 typos")
         model.fix()

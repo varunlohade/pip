@@ -68,6 +68,12 @@ final class KeyboardViewController: UIInputViewController, TextHost {
         model.keyboardDisappeared()
     }
 
+    /// A keyboard is killed near its memory limit, so on a warning it drops the caches that reload by themselves.
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        model.releaseCaches()
+    }
+
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
         updateAppearance()
@@ -90,8 +96,13 @@ final class KeyboardViewController: UIInputViewController, TextHost {
     var returnKeyType: UIReturnKeyType { textDocumentProxy.returnKeyType ?? .default }
     var autocapitalization: UITextAutocapitalizationType { textDocumentProxy.autocapitalizationType ?? .sentences }
     var enablesReturnKeyAutomatically: Bool { textDocumentProxy.enablesReturnKeyAutomatically ?? false }
+    var contextAfterInput: String? { textDocumentProxy.documentContextAfterInput }
+    var keyboardType: UIKeyboardType { textDocumentProxy.keyboardType ?? .default }
+    var textContentType: UITextContentType? { textDocumentProxy.textContentType ?? nil }
+    var autocorrection: UITextAutocorrectionType { textDocumentProxy.autocorrectionType ?? .default }
     func insert(_ text: String) { textDocumentProxy.insertText(text) }
     func deleteBackward() { textDocumentProxy.deleteBackward() }
+    func adjustCursor(by offset: Int) { textDocumentProxy.adjustTextPosition(byCharacterOffset: offset) }
     func nextKeyboard() { advanceToNextInputMode() }
     func playClick() { UIDevice.current.playInputClick() }
 }
