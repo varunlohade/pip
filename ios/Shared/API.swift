@@ -176,6 +176,15 @@ struct APIClient {
         return data
     }
 
+    /// "Send as link": uploads the drawing PNG and returns the short link the keyboard types into the chat.
+    func shareDrawing(_ png: Data) async throws -> String {
+        var r = try request("POST", "/v1/drawings", tap: true)
+        r.setValue("image/png", forHTTPHeaderField: "Content-Type")
+        r.httpBody = png
+        struct Out: Decodable { let url: String }
+        return try await send(r, as: Out.self).url
+    }
+
     /// Checks the token: the Debug pairing sheet calls it before it saves a pasted token.
     func me() async throws {
         struct Me: Decodable { let ok: Bool }

@@ -10,6 +10,7 @@ protocol KeyboardAPI {
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse
     func explain(_ text: String) async throws -> ExplainResponse
     func explainVisual(_ topic: String) async throws -> Data
+    func shareDrawing(_ png: Data) async throws -> String
 }
 
 extension APIClient: KeyboardAPI {}

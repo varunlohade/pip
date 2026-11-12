@@ -4,11 +4,14 @@ import Foundation
 enum ExplainOffer: Equatable {
     case meaning(Meaning)
     case answer(subject: String, ExplainResponse)
+    /// A graph or chart. `scene` is built on the phone; nil means the server draws it from `question`.
+    case chart(subject: String, scene: Data?, question: String)
 
     var subject: String {
         switch self {
         case .meaning(let m): m.term
         case .answer(let s, _): s
+        case .chart(let s, _, _): s
         }
     }
 
@@ -17,6 +20,7 @@ enum ExplainOffer: Equatable {
         switch self {
         case .meaning(let m): m.meaning
         case .answer(_, let r): r.short
+        case .chart(let s, _, _): s
         }
     }
 }
@@ -30,8 +34,12 @@ struct VisualState: Equatable {
     var status: Status = .loading
     var scene: Data?
     var drawing = false
-    /// A short line after Copy image, such as "Copied. Paste it in the chat."
+    /// A short line after a send, such as "Copied. Tap the message box and Paste, then send."
     var note: String?
+    /// Which send asked the page for its PNG.
+    var sending: Send?
+
+    enum Send: Equatable { case image, link }
 }
 
 enum ExplainPanel: Equatable {
@@ -56,6 +64,13 @@ extension KeyboardModel {
     /// True when the sentence is an explain question.
     @discardableResult
     func updateExplain(_ text: String) -> Bool {
+        if let chart = Chart.detect(text) {
+            explainTask?.cancel()
+            explainPending = nil
+            let offer = Self.chartOffer(chart)
+            if explainOffer != offer { explainOffer = offer }
+            return true
+        }
         guard let ask = Explain.detect(text) else { clearExplainOffer(); return false }
         if ask.kind == .term, let m = ExplainDictionary.shared.lookup(ask.subject) {
             explainTask?.cancel()
@@ -93,8 +108,20 @@ extension KeyboardModel {
         if explainOffer != nil { explainOffer = nil }
     }
 
+    /// A chart offer: the subject the bar quotes and, when the phone could read the data, the scene.
+    static func chartOffer(_ c: Chart.Request) -> ExplainOffer {
+        switch c {
+        case .function(_, let text): .chart(subject: "y = \(text)", scene: ChartScene.build(c)?.json(), question: "graph y = \(text)")
+        case .data(let kind, let title, let items):
+            .chart(subject: title ?? "\(kind.rawValue) chart", scene: ChartScene.build(c)?.json(),
+                   question: items.map { "\($0.label) \(ChartScene.format($0.value))" }.joined(separator: ", "))
+        case .unclear(let q): .chart(subject: "chart", scene: nil, question: q)
+        }
+    }
+
     var explainItem: BarItems.Item? {
         guard let o = explainOffer else { return nil }
+        if case .chart = o { return BarItems.Item(id: "explain", title: "Draw it", action: .explain, trigger: o.subject) }
         return BarItems.Item(id: "explain", title: o.line, action: .explain, trigger: o.subject)
     }
 
@@ -108,7 +135,12 @@ extension KeyboardModel {
         host?.playClick()
         notesOpen = false
         writeOpen = false
-        explainPanel = .card(o)
+        if case .chart(let subject, let scene, let question) = o {
+            // Insert types "y = x^2" for a graph, or the data for a chart.
+            openVisual(subject: subject, summary: question.hasPrefix("graph ") ? subject : question, scene: scene, ask: question)
+        } else {
+            explainPanel = .card(o)
+        }
     }
 
     func closeExplain() {
@@ -136,9 +168,14 @@ extension KeyboardModel {
     func showVisual() {
         guard case .card(let o) = explainPanel else { return }
         host?.playClick()
-        explainPanel = .visual(VisualState(subject: o.subject, summary: o.line))
+        openVisual(subject: o.subject, summary: o.line, scene: nil, ask: o.subject)
+    }
+
+    /// The visual panel with a scene in hand (a chart read on the phone), or one the server draws for `ask`.
+    private func openVisual(subject: String, summary: String, scene: Data?, ask topic: String) {
+        explainPanel = .visual(VisualState(subject: subject, summary: summary, scene: scene))
         visualTask?.cancel()
-        let topic = o.subject
+        if let scene { visualPage?.play(scene); return }
         visualTask = Task { [weak self] in
             do {
                 guard let api = self?.deps.api() else { return }
@@ -179,19 +216,42 @@ extension KeyboardModel {
         if case .visual(let v) = explainPanel { visualPage?.setTool(draw: v.drawing) }
     }
 
-    /// Copy image: the page renders a PNG, which lands on the pasteboard and in "your drawings". Both need Full Access.
-    func exportVisual() {
+    static let needsFullAccessToSend = "Turn on Full Access to send drawings"
+    static let pasteHint = "Copied. Tap the message box and Paste, then send."
+
+    /// Send as image or as link. A keyboard cannot attach a file, so the image goes to the pasteboard
+    /// and the link goes into the message. Both need Full Access (pasteboard, App Group, network).
+    func sendVisual(_ kind: VisualState.Send) {
         host?.playClick()
-        guard hasFullAccess else { updateVisual { $0.note = "Allow Full Access to copy the image" }; return }
-        updateVisual { $0.note = "Making the image\u{2026}" }
+        guard hasFullAccess else { updateVisual { $0.note = Self.needsFullAccessToSend }; return }
+        updateVisual { $0.sending = kind; $0.note = kind == .image ? "Making the image\u{2026}" : "Making the link\u{2026}" }
         visualPage?.exportPNG()
     }
 
+    /// The page's PNG for the send that asked for it. Every send also keeps the drawing in "your drawings".
     func visualExported(_ png: Data) {
-        guard case .visual(let v) = explainPanel else { return }
-        deps.pasteboard.setPNG(png)
-        let saved = (try? deps.store.saveDrawing(png, title: v.subject)) != nil
-        updateVisual { $0.note = saved ? "Copied. Paste it in the chat." : "Copied. Could not save it to Pip." }
+        guard case .visual(let v) = explainPanel, let kind = v.sending else { return }
+        try? deps.store.saveDrawing(png, title: v.subject)
+        switch kind {
+        case .image:
+            deps.pasteboard.setPNG(png)
+            updateVisual { $0.sending = nil; $0.note = Self.pasteHint }
+        case .link:
+            visualTask?.cancel()
+            visualTask = Task { [weak self] in
+                do {
+                    guard let api = self?.deps.api() else { return }
+                    let url = try await api.shareDrawing(png)
+                    guard let self, !Task.isCancelled else { return }
+                    let before = self.host?.contextBeforeInput ?? ""
+                    self.host?.insert((before.isEmpty || before.last?.isWhitespace == true ? "" : " ") + url)
+                    self.updateVisual { $0.sending = nil; $0.note = "Link added. Tap send." }
+                } catch {
+                    guard let self, !Task.isCancelled else { return }
+                    self.updateVisual { $0.sending = nil; $0.note = "Could not make a link. Try Send as image." }
+                }
+            }
+        }
     }
 
     private func updateVisual(_ change: (inout VisualState) -> Void) {

@@ -70,11 +70,13 @@ fake.all('*', async (c) => {
   const req = c.req.raw;
   const headers = new Headers(req.headers);
   if (headers.get('authorization') === `Bearer ${FAKE_TOKEN}`) headers.set('authorization', `Bearer ${INNER_TOKEN}`);
-  const text = ['GET', 'HEAD'].includes(req.method) ? '' : await req.text();
-  const res = await state.app.fetch(new Request(req.url, { method: req.method, headers, body: text || undefined }));
-  let body: unknown = text || null;
+  // Bytes, not text: a drawing PNG must reach the app unchanged.
+  const raw = ['GET', 'HEAD'].includes(req.method) ? new Uint8Array() : new Uint8Array(await req.arrayBuffer());
+  const res = await state.app.fetch(new Request(req.url, { method: req.method, headers, body: raw.length ? raw : undefined }));
+  const json = (headers.get('content-type') ?? '').includes('json');
+  let body: unknown = raw.length ? (json ? new TextDecoder().decode(raw) : `<${raw.length} bytes>`) : null;
   try {
-    body = text ? JSON.parse(text) : null;
+    if (json && raw.length) body = JSON.parse(body as string);
   } catch {}
   state.log.push({ method: req.method, path: new URL(req.url).pathname, status: res.status, body });
   return res;

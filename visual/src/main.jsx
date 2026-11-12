@@ -119,7 +119,7 @@ async function drawShape(s, token) {
       await trace(path, s.color, token, { keep: false })
       editor.createShape({ type: 'geo', x: s.x, y: s.y, props: {
         geo: s.type === 'rect' ? 'rectangle' : 'ellipse', w: s.w, h: s.h, color: s.color, labelColor: s.color,
-        fill: s.w < 30 ? 'solid' : 'none', dash: 'draw', size: s.w < 30 ? 's' : 'm', font: 'draw', richText: toRichText(s.label ?? ''),
+        fill: s.fill ?? (s.w < 30 ? 'solid' : 'none'), dash: s.fill === 'solid' ? 'solid' : 'draw', size: s.w < 30 ? 's' : 'm', font: 'draw', richText: toRichText(s.label ?? ''),
       } })
       return
     }

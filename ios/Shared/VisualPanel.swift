@@ -36,7 +36,8 @@ struct VisualPanelView: View {
             HStack(spacing: M.keyGap) {
                 button("Replay", "arrow.counterclockwise", id: "visual.replay", enabled: drawn, action: model.replayVisual)
                 button(state.drawing ? "Move" : "Draw", state.drawing ? "hand.draw" : "pencil.tip", id: "visual.draw", enabled: state.scene != nil, action: model.toggleVisualDraw)
-                button("Copy image", "doc.on.doc", id: "visual.copy", enabled: drawn, action: model.exportVisual)
+                button("Image", "photo", id: "visual.send.image", enabled: drawn && state.sending == nil) { model.sendVisual(.image) }
+                button("Link", "link", id: "visual.send.link", enabled: drawn && state.sending == nil) { model.sendVisual(.link) }
                 button("Insert", "text.insert", id: "visual.insert", accent: true, enabled: true, action: model.insertExplain)
             }
         }
@@ -72,7 +73,7 @@ struct VisualPanelView: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.4)
-        .accessibilityLabel(title)
+        .accessibilityLabel(id.hasPrefix("visual.send") ? "Send as \(title.lowercased())" : title)
         .accessibilityIdentifier(id)
     }
 }

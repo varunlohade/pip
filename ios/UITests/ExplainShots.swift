@@ -85,7 +85,7 @@ final class ExplainShots: XCTestCase {
         Thread.sleep(forTimeInterval: 0.5)
         shot("05-visual-mid-drawing")
 
-        let copy = element(messages, "visual.copy")
+        let copy = element(messages, "visual.send.image")
         let done = Date().addingTimeInterval(20)
         while title.label.contains("step"), Date() < done { Thread.sleep(forTimeInterval: 0.2) }
         XCTAssertFalse(title.label.contains("step"), "drawing did not finish: \(title.label)")
@@ -101,6 +101,38 @@ final class ExplainShots: XCTestCase {
         shot("07-export-copied")
         // hasImages does not show the paste prompt; reading the image would, so the test does not read it.
         XCTAssertTrue(UIPasteboard.general.hasImages, "no image on the pasteboard")
+
+        element(messages, "visual.send.link").tap()
+        let linked = NSPredicate(format: "label BEGINSWITH %@", "Link added")
+        let linkBy = Date().addingTimeInterval(8)
+        while !(note.exists && linked.evaluate(with: note)), Date() < linkBy { Thread.sleep(forTimeInterval: 0.2) }
+        XCTAssertTrue(note.exists && linked.evaluate(with: note), "no Link added note: \(note.exists ? note.label : "none")")
+        XCTAssertTrue((field.value as? String ?? "").contains("/d/"), "no link in the field: \(field.value ?? "")")
+        shot("08-send-link")
+    }
+
+    /// Charts read on the phone: no server call, drawn step by step, then finished.
+    func test4Charts() {
+        let field = openField()
+        let chip = element(messages, "chip.explain")
+        let title = element(messages, "explain.title")
+        for (name, text) in [("10-bar-chart", "bar chart: rent 1200, food 400, fun 200"), ("11-graph-x-squared", "graph y = x^2"),
+                             ("12-pie-chart", "pie chart of my week: work 40 sleep 56 other 72"), ("13-line-chart", "line chart 3, 5, 9, 4"),
+                             ("14-graph-sin", "plot sin x")] {
+            enter(text, in: field)
+            XCTAssertTrue(chip.waitForExistence(timeout: 4), "no chart chip for \(text)")
+            if name == "10-bar-chart" { Thread.sleep(forTimeInterval: 0.5); shot("10-bar-chart-chip") }
+            chip.tap()
+            XCTAssertTrue(title.waitForExistence(timeout: 4))
+            let started = Date().addingTimeInterval(8)
+            while !title.label.contains("step"), Date() < started { Thread.sleep(forTimeInterval: 0.1) }
+            let done = Date().addingTimeInterval(20)
+            while title.label.contains("step"), Date() < done { Thread.sleep(forTimeInterval: 0.2) }
+            XCTAssertFalse(title.label.contains("step"), "\(text) did not finish: \(title.label)")
+            Thread.sleep(forTimeInterval: 0.5)
+            shot(name)
+            element(messages, "explain.close").tap()
+        }
     }
 
     func test3Drawings() {

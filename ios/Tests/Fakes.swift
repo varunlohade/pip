@@ -46,6 +46,9 @@ final class FakeAPI: KeyboardAPI {
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { calls.append("tone"); return toneReply }
     func explain(_ text: String) async throws -> ExplainResponse { calls.append("explain"); explained.append(text); return explainReply }
     func explainVisual(_ topic: String) async throws -> Data { calls.append("visual"); explained.append(topic); return visualReply }
+    var shareReply = "http://localhost/d/AAAAAAAAAAAAAAAAAAAAAA.png"
+    private(set) var shared: [Data] = []
+    func shareDrawing(_ png: Data) async throws -> String { calls.append("share"); shared.append(png); return shareReply }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.

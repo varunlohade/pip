@@ -149,6 +149,48 @@ final class ExplainModelTests: XCTestCase {
         XCTAssertEqual(api.calls, [], "no explain and no suggest call")
     }
 
+    func testSendingWithoutFullAccessExplainsWhy() async {
+        set("explain log function")
+        await pass(KeyboardModel.explainDebounce)
+        await until("explain answer") { model.explainOffer != nil }
+        model.perform(.explain)
+        model.showVisual()
+        host.hasFullAccess = false
+        model.refreshAccess()
+        model.sendVisual(.image)
+        guard case .visual(let v)? = model.explainPanel else { return XCTFail("panel closed") }
+        XCTAssertEqual(v.note, KeyboardModel.needsFullAccessToSend)
+        model.sendVisual(.link)
+        XCTAssertNil(pasteboard.png)
+        XCTAssertFalse(api.calls.contains("share"))
+    }
+
+    func testAChartIsDrawnOnThePhoneWithNoServerCall() async {
+        set("bar chart: rent 1200, food 400, fun 200")
+        XCTAssertEqual(model.barItems.first?.trigger, "bar chart")
+        XCTAssertEqual(model.barItems.first?.title, "Draw it")
+        model.perform(.explain)
+        guard case .visual(let v)? = model.explainPanel else { return XCTFail("no panel") }
+        XCTAssertNotNil(v.scene)
+        XCTAssertEqual(v.summary, "rent 1200, food 400, fun 200")
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(api.calls, [])
+    }
+
+    func testAGraphInsertsItsEquation() {
+        set("graph y = x^2")
+        model.perform(.explain)
+        model.insertExplain()
+        XCTAssertEqual(host.text, "graph y = x^2 y = x^2")
+    }
+
+    func testAnUnclearChartAsksTheServerToDrawIt() async {
+        set("bar chart of my spending")
+        model.perform(.explain)
+        await until("visual call") { api.calls == ["visual"] }
+        XCTAssertEqual(api.explained, ["bar chart of my spending"])
+    }
+
     func testTheMeaningTakesTheBarFromTheDayChips() {
         let chip = BarItems.Item(id: "explain", title: "by the way", action: .explain, trigger: "btw")
         let next = Appointment(start: Date(), end: Date().addingTimeInterval(1800), title: "Team standup")
@@ -239,14 +281,25 @@ final class ExplainModelTests: XCTestCase {
         XCTAssertEqual(api.explained.last, "log function")
         model.visualStep(2, of: 4)
         model.visualDone()
-        model.exportVisual()
+        model.sendVisual(.image)
         XCTAssertEqual(page.exports, 1)
         let png = Data([0x89, 0x50, 0x4E, 0x47])
         model.visualExported(png)
         XCTAssertEqual(pasteboard.png, png)
         XCTAssertEqual(store.drawings.map(\.title), ["log function"])
         guard case .visual(let v)? = model.explainPanel else { return XCTFail("panel closed") }
-        XCTAssertEqual(v.note, "Copied. Paste it in the chat.")
+        XCTAssertEqual(v.note, KeyboardModel.pasteHint)
+
+        model.sendVisual(.link)
+        XCTAssertEqual(page.exports, 2)
+        model.visualExported(png)
+        await until("link") { host.text.hasSuffix(".png") }
+        XCTAssertEqual(api.shared, [png])
+        XCTAssertEqual(host.text, "explain log function " + api.shareReply)
+        guard case .visual(let v2)? = model.explainPanel else { return XCTFail("panel closed") }
+        XCTAssertEqual(v2.note, "Link added. Tap send.")
+        XCTAssertEqual(store.drawings.count, 2)
+        host.text = "explain log function"
         model.insertExplain()
         XCTAssertEqual(host.text, "explain log function A log is the power you need.")
         XCTAssertEqual(model.keyboardHeight, Theme.SystemKeyboard.height)
