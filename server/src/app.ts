@@ -90,6 +90,10 @@ const RefineBody = z.object({ text: WriteText, tone: z.enum(TONES) }).strict();
 const OptionalWriteText = z.string().transform(clean).pipe(z.string().max(config.maxWriteChars)).optional();
 const ToneBody = z.object({ text: OptionalWriteText, context: OptionalWriteText }).strict()
   .refine((b) => b.text || b.context, { message: 'text or context is required' });
+// Explain: a short question or topic the phone's regex already called an explain request. Never stored or logged.
+const ExplainText = CleanText(config.maxExplainChars);
+const ExplainBody = z.object({ text: ExplainText }).strict();
+const VisualBody = z.object({ topic: ExplainText }).strict();
 const AppleAuthBody = z.object({ identity_token: z.string().min(20).max(4096), nonce: z.string().min(16).max(128) }).strict();
 const DeviceAuthBody = z.object({ device_id: z.string().uuid() }).strict();
 
@@ -164,6 +168,8 @@ export function createApp(deps: Deps) {
   const byUser = (c: Context<Env>) => c.get('userId');
   app.use('/v1/suggest', rateLimiter('suggest', byUser));
   app.use('/v1/write/*', rateLimiter('write', byUser));
+  // One pattern covers /v1/explain and /v1/explain/visual, so both share the same buckets.
+  app.use('/v1/explain/*', rateLimiter('explain', byUser), rateLimiter('explainDaily', byUser));
   app.use('/v1/*', rateLimiter('other', byUser));
 
   // ---- "Save your details": attaches an Apple account to the signed-in device account. The Apple token is checked exactly as in /v1/auth/apple.
@@ -273,6 +279,28 @@ export function createApp(deps: Deps) {
     const draft = b.text ?? '', client = b.context ?? '';
     // jev judges the tone; the LLM writes a calm reply only when the tone is not ok.
     return writing(c, 'tone', draft.length + client.length, () => ai.toneCheck(draft, client), (out) => (out.tone === 'ok' ? 1 : 2));
+  });
+
+  // ---- explain: the phone sends only text its own regex read as an explain request, so plain chat never reaches here.
+  // Only sizes and timings are logged, never the question or the answer.
+  const explaining = async <T extends object>(c: Context<Env>, kind: string, chars: number, run: () => Promise<T>) => {
+    const t = performance.now();
+    try {
+      const out = await run();
+      log('explain', { user_id: c.get('userId'), kind, chars, ms: Math.round(performance.now() - t), ok: true, paid_calls: 1 });
+      return c.json(out);
+    } catch (e) {
+      log('explain', { user_id: c.get('userId'), kind, chars, ms: Math.round(performance.now() - t), ok: false, err: (e as Error).name });
+      return c.json({ error: 'explain is not available right now' }, 502);
+    }
+  };
+  app.post('/v1/explain', async (c) => {
+    const { text } = await body(c, ExplainBody);
+    return explaining(c, 'explain', text.length, () => ai.explain(text));
+  });
+  app.post('/v1/explain/visual', async (c) => {
+    const { topic } = await body(c, VisualBody);
+    return explaining(c, 'visual', topic.length, () => ai.visual(topic));
   });
 
   return app;

@@ -1,0 +1,10 @@
+{
+  "short": "A log asks: what power do I raise the base to, to get this number?",
+  "body": [
+    "log10(100) = 2, because 10 × 10 = 100.",
+    "It is the opposite of a power: 10² = 100, so log10(100) = 2.",
+    "The curve rises fast at first, then slower and slower.",
+    "Example: log2(8) = 3, because 2 × 2 × 2 = 8."
+  ],
+  "visual_ok": true
+}

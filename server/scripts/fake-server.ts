@@ -1,6 +1,7 @@
 // A local stand-in Pip server for the iOS app and UI tests: fake AI, in-memory DB, no network.
 // usage: npm run fake   (PORT=0 picks a free port; the first line printed names it)
-// Debug routes: GET /_log, POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}}
+// Debug routes: GET /_log, POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}, "explain": {...}, "visual": {...}}
+// explain and visual take raw model JSON; with none, they answer with the log-function fixtures in test/fixtures.
 // Each /_next value answers the next matching model call once.
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
@@ -21,7 +22,7 @@ const FAKE_TOKEN = 'pkd_fake';
 // The app only accepts long pkd_ tokens, so the short public token is swapped for this one on the way in.
 const INNER_TOKEN = 'pkd_fake_local_only_device_token';
 
-type Next = { device?: { kind?: DeviceAction; confidence?: number }; write?: string; tone?: ToneCheck };
+type Next = { device?: { kind?: DeviceAction; confidence?: number }; write?: string; tone?: ToneCheck; explain?: unknown; visual?: unknown };
 type LogEntry = { method: string; path: string; status: number; body: unknown };
 
 function build() {
@@ -35,6 +36,8 @@ function build() {
     get device() { return take('device'); },
     get write() { return take('write'); },
     get tone() { return take('tone'); },
+    get explain() { return take('explain'); },
+    get visual() { return take('visual'); },
     apple: async () => { throw new Error('no Sign in with Apple on the fake server'); },
   });
   const userId = env.db.createUser();
@@ -55,6 +58,8 @@ fake.post('/_next', async (c) => {
   if (b.device) state.next.device = b.device;
   if (b.write !== undefined) state.next.write = b.write;
   if (b.tone) state.next.tone = b.tone;
+  if (b.explain) state.next.explain = b.explain;
+  if (b.visual) state.next.visual = b.visual;
   return c.json({ ok: true, next: state.next });
 });
 

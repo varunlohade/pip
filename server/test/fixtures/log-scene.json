@@ -1,0 +1,94 @@
+{
+  "title": "The log function",
+  "steps": [
+    {
+      "say": "Start with a graph: x goes right, y goes up.",
+      "shapes": [
+        {
+          "type": "axes",
+          "x": 60,
+          "y": 60,
+          "w": 480,
+          "h": 380,
+          "x_min": -1,
+          "x_max": 10,
+          "y_min": -2,
+          "y_max": 1.2,
+          "x_label": "x",
+          "y_label": "y"
+        },
+        {
+          "type": "text",
+          "x": 60,
+          "y": 20,
+          "text": "y = log10(x)",
+          "size": "l",
+          "color": "black"
+        }
+      ]
+    },
+    {
+      "say": "Draw y = log(x). It climbs fast near 0, then slows down.",
+      "shapes": [
+        {
+          "type": "plot",
+          "fn": "log10",
+          "label": "log10(x)",
+          "color": "blue"
+        }
+      ]
+    },
+    {
+      "say": "At x = 1 the log is 0, because 10 to the power 0 is 1.",
+      "shapes": [
+        {
+          "type": "ellipse",
+          "x": 139,
+          "y": 195,
+          "w": 16,
+          "h": 16,
+          "color": "red"
+        },
+        {
+          "type": "arrow",
+          "x1": 280,
+          "y1": 300,
+          "x2": 158,
+          "y2": 212,
+          "label": "log(1) = 0",
+          "color": "red"
+        }
+      ]
+    },
+    {
+      "say": "At x = 10 the log is 1: one 10 makes 10.",
+      "shapes": [
+        {
+          "type": "ellipse",
+          "x": 532,
+          "y": 76,
+          "w": 16,
+          "h": 16,
+          "color": "green"
+        },
+        {
+          "type": "rect",
+          "x": 585,
+          "y": 50,
+          "w": 195,
+          "h": 70,
+          "label": "10¹ = 10, so log(10) = 1",
+          "color": "green"
+        },
+        {
+          "type": "arrow",
+          "x1": 583,
+          "y1": 85,
+          "x2": 552,
+          "y2": 84,
+          "color": "green"
+        }
+      ]
+    }
+  ]
+}
