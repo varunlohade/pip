@@ -1,0 +1,149 @@
+name: Pip
+options:
+  bundleIdPrefix: com.orseliyas
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: GV3ZK5CT6G
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1"
+    CURRENT_PROJECT_VERSION: "4"
+    # The one place for the app name. Both Info.plists read it.
+    PRODUCT_DISPLAY_NAME: Pip
+    KEYBOARD_DISPLAY_NAME: $(PRODUCT_DISPLAY_NAME) Keyboard
+    APP_GROUP_ID: group.com.orseliyas.pip
+    # Server URLs. Pip has no hosted server yet, so both builds default to the local one.
+    DEMO_SERVER_URL: ""
+    GENERATE_INFOPLIST_FILE: NO
+  configs:
+    Debug:
+      DEFAULT_SERVER_URL: http:/$()/localhost:8787
+    Release:
+      DEFAULT_SERVER_URL: http:/$()/localhost:8787
+targets:
+  Pip:
+    type: application
+    platform: iOS
+    sources: [App, Shared]
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: $(PRODUCT_DISPLAY_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppName: $(PRODUCT_DISPLAY_NAME)
+        DefaultServerURL: $(DEFAULT_SERVER_URL)
+        DemoServerURL: $(DEMO_SERVER_URL)
+        KeyboardName: $(KEYBOARD_DISPLAY_NAME)
+        UIAppFonts: [Urbanist-400.ttf, Urbanist-500.ttf, Urbanist-600.ttf, GeistMono-Medium.ttf]
+        AppGroupID: $(APP_GROUP_ID)
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        UILaunchScreen: {}
+        NSCalendarsFullAccessUsageDescription: $(PRODUCT_DISPLAY_NAME) reads today's events to show what's next, and adds the events you type. They stay on this phone.
+        NSCalendarsWriteOnlyAccessUsageDescription: $(PRODUCT_DISPLAY_NAME) adds the events you type, such as "meeting with Ana tomorrow 3pm".
+        NSRemindersFullAccessUsageDescription: $(PRODUCT_DISPLAY_NAME) adds the reminders you type, such as "call supplier at 5". They stay on this phone.
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    entitlements:
+      path: App/Pip.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.security.application-groups: [$(APP_GROUP_ID)]
+        keychain-access-groups: [$(AppIdentifierPrefix)com.orseliyas.pip.shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.orseliyas.pip
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # iPhone only: the app is portrait and has no iPad layout.
+        TARGETED_DEVICE_FAMILY: "1"
+    dependencies:
+      - target: PipKeyboard
+    # The pip-dev pairing link is for Debug builds only, so the Release Info.plist never declares it.
+    postBuildScripts:
+      - name: Dev URL scheme (Debug only)
+        basedOnDependencyAnalysis: false
+        # The built Info.plist is an input, so this always runs after Xcode writes it.
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        script: |
+          if [ "$CONFIGURATION" = "Debug" ]; then
+            plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+            /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" -c "Add :CFBundleURLTypes:0 dict" \
+              -c "Add :CFBundleURLTypes:0:CFBundleURLName string com.orseliyas.pip.dev" \
+              -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string pip-dev" "$plist"
+          fi
+  PipKeyboard:
+    type: app-extension
+    platform: iOS
+    sources: [Keyboard, Shared]
+    info:
+      path: Keyboard/Info.plist
+      properties:
+        CFBundleDisplayName: $(KEYBOARD_DISPLAY_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        AppName: $(PRODUCT_DISPLAY_NAME)
+        DefaultServerURL: $(DEFAULT_SERVER_URL)
+        DemoServerURL: $(DEMO_SERVER_URL)
+        KeyboardName: $(KEYBOARD_DISPLAY_NAME)
+        AppGroupID: $(APP_GROUP_ID)
+        AppIdentifierPrefix: $(AppIdentifierPrefix)
+        NSCalendarsFullAccessUsageDescription: $(PRODUCT_DISPLAY_NAME) reads today's events to show what's next, and adds the events you type. They stay on this phone.
+        NSCalendarsWriteOnlyAccessUsageDescription: $(PRODUCT_DISPLAY_NAME) adds the events you type, such as "meeting with Ana tomorrow 3pm".
+        NSRemindersFullAccessUsageDescription: $(PRODUCT_DISPLAY_NAME) adds the reminders you type, such as "call supplier at 5". They stay on this phone.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).KeyboardViewController
+          NSExtensionAttributes:
+            IsASCIICapable: false
+            PrefersRightToLeft: false
+            PrimaryLanguage: en-US
+            RequestsOpenAccess: true
+    entitlements:
+      path: Keyboard/PipKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups: [$(APP_GROUP_ID)]
+        keychain-access-groups: [$(AppIdentifierPrefix)com.orseliyas.pip.shared]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.orseliyas.pip.keyboard
+        APPLICATION_EXTENSION_API_ONLY: YES
+        TARGETED_DEVICE_FAMILY: "1"
+  PipTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.orseliyas.pip.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Pip
+  PipUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.orseliyas.pip.uitests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: Pip
+schemes:
+  Pip:
+    build:
+      targets:
+        Pip: all
+        PipKeyboard: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [PipTests, PipUITests]

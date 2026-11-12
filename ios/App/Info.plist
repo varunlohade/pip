@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AppGroupID</key>
+	<string>$(APP_GROUP_ID)</string>
+	<key>AppIdentifierPrefix</key>
+	<string>$(AppIdentifierPrefix)</string>
+	<key>AppName</key>
+	<string>$(PRODUCT_DISPLAY_NAME)</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>$(PRODUCT_DISPLAY_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>DefaultServerURL</key>
+	<string>$(DEFAULT_SERVER_URL)</string>
+	<key>DemoServerURL</key>
+	<string>$(DEMO_SERVER_URL)</string>
+	<key>KeyboardName</key>
+	<string>$(KEYBOARD_DISPLAY_NAME)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>$(PRODUCT_DISPLAY_NAME) reads today's events to show what's next, and adds the events you type. They stay on this phone.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>$(PRODUCT_DISPLAY_NAME) adds the events you type, such as "meeting with Ana tomorrow 3pm".</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>$(PRODUCT_DISPLAY_NAME) adds the reminders you type, such as "call supplier at 5". They stay on this phone.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Urbanist-400.ttf</string>
+		<string>Urbanist-500.ttf</string>
+		<string>Urbanist-600.ttf</string>
+		<string>GeistMono-Medium.ttf</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>

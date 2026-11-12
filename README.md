@@ -1,0 +1,3 @@
+# Pip
+
+Pip is an iOS keyboard that looks and types like Apple's own, with a little help built in: Fix cleans up typos on the phone, Rewrite makes a message more polite, shorter or friendlier, and smart chips turn "dinner with Ana friday 7pm" into a calendar event, reminder or note in one tap. The app in `ios/` (SwiftUI, XcodeGen) walks you through making Pip your default keyboard; the small Hono server in `server/` (Node 24) handles device sign-in, the writing help and the few sentences the phone cannot read on its own. Run `cd server && npm install && npm run setup && npm run dev`, then `cd ios && xcodegen` and open `Pip.xcodeproj`.
