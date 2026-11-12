@@ -138,8 +138,10 @@ final class KeyboardModel: ObservableObject {
     /// The question the server is answering now, so one pause sends it once.
     var explainPending: String?
     var explainCache: [String: ExplainResponse] = [:]
-    /// The tldraw page in the visual panel, while it is on screen.
+    /// The drawing page in the visual panel, while it is on screen.
     weak var visualPage: VisualPage?
+    /// Keeps the voice and the drawing in step while "Play with voice" is on.
+    var narration: NarrationSync?
 
     weak var host: TextHost?
     /// False in the intro scenes, which script the bar themselves. Then typing sends nothing.

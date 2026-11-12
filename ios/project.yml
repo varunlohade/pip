@@ -34,6 +34,10 @@ targets:
       - path: Visual
         type: folder
         buildPhase: resources
+      # The Excalidraw preview page, built from visual-excalidraw/, used only when visual_engine says so.
+      - path: VisualExcalidraw
+        type: folder
+        buildPhase: resources
     info:
       path: App/Info.plist
       properties:
@@ -91,6 +95,10 @@ targets:
       - Keyboard
       - Shared
       - path: Visual
+        type: folder
+        buildPhase: resources
+      # The Excalidraw preview page, built from visual-excalidraw/, used only when visual_engine says so.
+      - path: VisualExcalidraw
         type: folder
         buildPhase: resources
     info:

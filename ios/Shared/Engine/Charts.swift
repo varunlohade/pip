@@ -10,6 +10,8 @@ struct DrawScene: Encodable, Equatable {
         case ellipse(x: Double, y: Double, w: Double, h: Double, color: String, fill: String = "none")
         case arrow(x1: Double, y1: Double, x2: Double, y2: Double, color: String = "grey")
         case line(points: [[Double]], color: String)
+        /// A closed, filled shape, such as a pie slice. The page closes it.
+        case polygon(points: [[Double]], color: String, fill: String = "solid")
     }
 
     struct Step: Equatable { let say: String; let shapes: [Shape] }
@@ -53,6 +55,8 @@ struct DrawScene: Encodable, Equatable {
                     try put("type", "arrow"); try put("x1", r(x1)); try put("y1", r(y1)); try put("x2", r(x2)); try put("y2", r(y2)); try put("color", color)
                 case let .line(points, color):
                     try put("type", "line"); try put("points", points.map { $0.map(r) }); try put("color", color)
+                case let .polygon(points, color, fill):
+                    try put("type", "polygon"); try put("points", points.map { $0.map(r) }); try put("color", color); try put("fill", fill)
                 }
             }
         }
@@ -125,7 +129,10 @@ enum Chart {
 enum ChartScene {
     /// The plot box on the 800 x 500 board.
     static let left = 90.0, right = 760.0, top = 70.0, bottom = 410.0
-    static let palette = ["blue", "orange", "green", "violet", "red", "light-blue", "yellow", "light-green", "light-violet", "light-red", "grey", "black"]
+    /// Pip's colours on the canvas (the page maps them to the sky family): sky, deep sky, pale sky, then slate.
+    static let palette = ["blue", "violet", "light-blue", "grey"]
+    /// Bars and lines are all sky; values sit in sky over them.
+    static let main = "blue"
     /// Width of one character of size "s" text on the canvas, used to keep labels apart.
     static let charWidth = 10.0
 
@@ -168,14 +175,14 @@ enum ChartScene {
         let lo = floor(lo / step) * step, hi = ceil(hi / step) * step
         let y = { (v: Double) in bottom - (v - lo) / (hi - lo) * (bottom - top) }
         var shapes: [DrawScene.Shape] = [
-            .arrow(x1: left, y1: y(max(lo, min(0, hi))), x2: right + 20, y2: y(max(lo, min(0, hi)))),
-            .arrow(x1: left, y1: bottom + 6, x2: left, y2: top - 26),
+            .arrow(x1: left, y1: y(max(lo, min(0, hi))), x2: right + 20, y2: y(max(lo, min(0, hi))), color: "black"),
+            .arrow(x1: left, y1: bottom + 6, x2: left, y2: top - 26, color: "black"),
         ]
         var ticks: [Double] = []
         var t = lo
         while t <= hi + step / 2 {
             ticks.append(t)
-            shapes.append(.line(points: [[left - 6, y(t)], [left, y(t)]], color: "grey"))
+            shapes.append(.line(points: [[left - 6, y(t)], [left, y(t)]], color: "black"))
             let label = format(t)
             shapes.append(.text(x: left - 12 - textWidth(label), y: y(t) - 11, text: label, color: "grey"))
             t += step
@@ -192,9 +199,9 @@ enum ChartScene {
         for (i, it) in items.enumerated() {
             let x = left + slot * Double(i) + (slot - w) / 2
             let y0 = axes.y(0), y1 = axes.y(it.value)
-            bars.append(.rect(x: x, y: min(y0, y1), w: w, h: max(abs(y0 - y1), 1), color: palette[i % palette.count], fill: "solid"))
+            bars.append(.rect(x: x, y: min(y0, y1), w: w, h: max(abs(y0 - y1), 1), color: main, fill: "solid"))
             let value = format(it.value)
-            labels.append(.text(x: x + w / 2 - textWidth(value) / 2, y: min(y0, y1) - 26, text: value, color: palette[i % palette.count]))
+            labels.append(.text(x: x + w / 2 - textWidth(value) / 2, y: min(y0, y1) - 26, text: value, color: main))
             let name = fit(it.label, width: slot - 6)
             labels.append(.text(x: left + slot * Double(i) + slot / 2 - textWidth(name) / 2, y: bottom + 12, text: name))
         }
@@ -242,13 +249,13 @@ enum ChartScene {
                 let a = angle + sweep * Double(k) / Double(n)
                 pts.append([cx + r * cos(a), cy + r * sin(a)])
             }
-            pts.append([cx, cy])
+            // Past four slices the colours repeat, half-filled, so neighbours still differ.
             let color = palette[i % palette.count]
-            slices.append(.line(points: pts, color: color))
+            slices.append(.polygon(points: pts, color: color, fill: i < palette.count ? "solid" : "semi"))
             let pct = Int((it.value / total * 100).rounded())
             let y = 90 + rowGap * Double(i)
-            legend.append(.rect(x: 480, y: y, w: 18, h: 18, color: color, fill: "solid"))
-            legend.append(.text(x: 510, y: y - 4, text: fit("\(it.label) \(format(it.value)) (\(pct)%)", width: 280), color: color))
+            legend.append(.rect(x: 480, y: y, w: 18, h: 18, color: color, fill: i < palette.count ? "solid" : "semi"))
+            legend.append(.text(x: 510, y: y - 4, text: fit("\(it.label) \(format(it.value)) (\(pct)%)", width: 280), color: "black"))
             angle += sweep
         }
         return DrawScene(title: title ?? "Pie chart", steps: [
@@ -277,15 +284,15 @@ enum ChartScene {
         let py = { (v: Double) in bottom - (v - lo) / (hi - lo) * (bottom - top) }
         let zeroY = py(min(max(0, lo), hi)), zeroX = px(min(max(0, x0), x1))
         var axes: [DrawScene.Shape] = [
-            .arrow(x1: left - 10, y1: zeroY, x2: right + 20, y2: zeroY),
-            .arrow(x1: zeroX, y1: bottom + 10, x2: zeroX, y2: top - 26),
-            .text(x: right + 22, y: zeroY - 12, text: "x", color: "grey"),
-            .text(x: zeroX + 8, y: top - 34, text: "y", color: "grey"),
+            .arrow(x1: left - 10, y1: zeroY, x2: right + 20, y2: zeroY, color: "black"),
+            .arrow(x1: zeroX, y1: bottom + 10, x2: zeroX, y2: top - 26, color: "black"),
+            .text(x: right + 22, y: zeroY - 14, text: "x", size: "m"),
+            .text(x: zeroX + 10, y: top - 40, text: "y", size: "m"),
         ]
         var t = (x0 / xStep).rounded(.up) * xStep
         while t <= x1 + 1e-9 {
             if abs(t) > 1e-9 {
-                axes.append(.line(points: [[px(t), zeroY - 5], [px(t), zeroY + 5]], color: "grey"))
+                axes.append(.line(points: [[px(t), zeroY - 5], [px(t), zeroY + 5]], color: "black"))
                 let l = format(t)
                 axes.append(.text(x: px(t) - textWidth(l) / 2, y: zeroY + 8, text: l, color: "grey"))
             }
@@ -294,7 +301,7 @@ enum ChartScene {
         t = lo
         while t <= hi + 1e-9 {
             if abs(t) > 1e-9 {
-                axes.append(.line(points: [[zeroX - 5, py(t)], [zeroX + 5, py(t)]], color: "grey"))
+                axes.append(.line(points: [[zeroX - 5, py(t)], [zeroX + 5, py(t)]], color: "black"))
                 let l = format(t)
                 axes.append(.text(x: zeroX - 12 - textWidth(l), y: py(t) - 11, text: l, color: "grey"))
             }
@@ -312,8 +319,8 @@ enum ChartScene {
         var notes: [DrawScene.Shape] = [.text(x: left, y: 16, text: "y = \(text)", size: "m", color: "blue")]
         let y0 = e.eval(0)
         if y0.isFinite, y0 >= lo, y0 <= hi, x0 <= 0 {
-            notes.append(.ellipse(x: px(0) - 6, y: py(y0) - 6, w: 12, h: 12, color: "red", fill: "solid"))
-            notes.append(.text(x: px(0) + 12, y: py(y0) + 4, text: "(0, \(format(y0)))", color: "red"))
+            notes.append(.ellipse(x: px(0) - 7, y: py(y0) - 7, w: 14, h: 14, color: "blue", fill: "solid"))
+            notes.append(.text(x: px(0) + 12, y: py(y0) + 4, text: "(0, \(format(y0)))", size: "m"))
         }
         return DrawScene(title: "y = \(text)", steps: [
             .init(say: "Axes: x from \(format(x0)) to \(format(x1)), y from \(format(lo)) to \(format(hi)).", shapes: axes),

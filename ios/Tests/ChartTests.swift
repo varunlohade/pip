@@ -72,7 +72,7 @@ final class ChartSceneTests: XCTestCase {
             case let .text(x, y, t, _, _): pts = [(x, y), (x + ChartScene.textWidth(t), y)]
             case let .rect(x, y, w, h, _, _, _), let .ellipse(x, y, w, h, _, _): pts = [(x, y), (x + w, y + h)]
             case let .arrow(x1, y1, x2, y2, _): pts = [(x1, y1), (x2, y2)]
-            case let .line(p, _): pts = p.map { ($0[0], $0[1]) }
+            case let .line(p, _), let .polygon(p, _, _): pts = p.map { ($0[0], $0[1]) }
             }
             for (x, y) in pts { XCTAssertTrue((0...DrawScene.width).contains(x) && (0...DrawScene.height).contains(y), "\(shape) leaves the board", line: line) }
         }
@@ -110,17 +110,19 @@ final class ChartSceneTests: XCTestCase {
     func testPieSlicesShareTheCircleAndTheLegendRowsAreApart() {
         let items: [Chart.Item] = [.init(label: "work", value: 40), .init(label: "sleep", value: 56), .init(label: "other", value: 72)]
         let s = ChartScene.pie(items, title: "my week")
-        let slices = s.steps[1].shapes.compactMap { if case let .line(p, _) = $0 { return p }; return nil }
-        XCTAssertEqual(slices.count, 3)
+        let slices = s.steps[1].shapes.compactMap { if case let .polygon(p, _, fill) = $0 { XCTAssertEqual(fill, "solid"); return p }; return nil }
+        XCTAssertEqual(slices.count, 3, "slices are filled polygons")
         // Each slice's sweep matches its share of 168.
         for (p, it) in zip(slices, items) {
-            let a0 = atan2(p[1][1] - 260, p[1][0] - 250), a1 = atan2(p[p.count - 2][1] - 260, p[p.count - 2][0] - 250)
+            let a0 = atan2(p[1][1] - 260, p[1][0] - 250), a1 = atan2(p[p.count - 1][1] - 260, p[p.count - 1][0] - 250)
             var sweep = a1 - a0
             if sweep < 0 { sweep += 2 * .pi }
             XCTAssertEqual(sweep / (2 * .pi), it.value / 168, accuracy: 1e-6, it.label)
         }
         let legend = texts(s.steps[2])
         XCTAssertEqual(legend.map(\.text), ["work 40 (24%)", "sleep 56 (33%)", "other 72 (43%)"])
+        let colors = s.steps[1].shapes.compactMap { if case let .polygon(_, c, _) = $0 { return c }; return nil }
+        XCTAssertEqual(colors, ["blue", "violet", "light-blue"])
         let eight = ChartScene.pie((1...8).map { .init(label: "item \($0)", value: Double($0)) }, title: nil)
         let rows = texts(eight.steps[2]).map(\.y)
         for (a, b) in zip(rows, rows.dropFirst()) { XCTAssertGreaterThanOrEqual(b - a, 30) }
@@ -152,5 +154,8 @@ final class ChartSceneTests: XCTestCase {
         let steps = try XCTUnwrap(obj["steps"] as? [[String: Any]])
         let types = Set(steps.flatMap { ($0["shapes"] as? [[String: Any]] ?? []).compactMap { $0["type"] as? String } })
         XCTAssertEqual(types, ["arrow", "line", "text", "rect"])
+        // Bars are all sky, the main colour.
+        let bars = s.steps[1].shapes.compactMap { if case let .rect(_, _, _, _, c, f, _) = $0 { return c + "/" + f }; return nil }
+        XCTAssertEqual(Set(bars), ["blue/solid"])
     }
 }

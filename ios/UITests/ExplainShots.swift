@@ -18,34 +18,48 @@ final class ExplainShots: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@", id)).firstMatch
     }
 
-    private func openField() -> XCUIElement {
-        messages.terminate()
-        messages.launch()
-        let search = messages.searchFields.firstMatch
-        XCTAssertTrue(search.waitForExistence(timeout: 8))
-        search.tap()
-        let intro = messages.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Continue")).firstMatch
-        if intro.waitForExistence(timeout: 2) { intro.tap() }
-        let ours = element(messages, "pip.more")
-        for _ in 0..<5 where !ours.waitForExistence(timeout: 1.5) {
-            messages.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Next keyboard")).firstMatch.tap()
-        }
-        XCTAssertTrue(ours.exists, "Pip keyboard not shown")
-        return search
+    private func label(_ app: XCUIApplication, _ l: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", l)).firstMatch
     }
 
-    /// Pastes the text, then taps our space key, so the keyboard reads it as typed.
-    private func enter(_ text: String, in field: XCUIElement) {
-        let clear = field.buttons["Clear text"]
-        if clear.exists { clear.tap() }
+    private func paste(_ text: String, into field: XCUIElement) {
         UIPasteboard.general.string = text
         field.press(forDuration: 1.0)
-        let paste = messages.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Paste")).firstMatch
+        let paste = label(messages, "Paste")
         XCTAssertTrue(paste.waitForExistence(timeout: 4), "no Paste menu")
         paste.tap()
         let allow = messages.alerts.buttons["Allow Paste"]
         if allow.waitForExistence(timeout: 1) { allow.tap() }
         UIPasteboard.general.items = []
+    }
+
+    /// A real chat: the first conversation in Messages, with the Pip keyboard up in the message box.
+    private func openField() -> XCUIElement {
+        messages.terminate()
+        messages.launch()
+        let chat = messages.cells.firstMatch
+        XCTAssertTrue(chat.waitForExistence(timeout: 6), "no conversation: \(messages.debugDescription.suffix(3000))")
+        chat.tap()
+        // The message box: Messages calls it messageBodyField, with "iMessage" or "Text Message" as its placeholder.
+        let body = messages.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == 'messageBodyField' OR placeholderValue IN {'iMessage', 'Text Message', 'Message'} OR label IN {'iMessage', 'Text Message', 'Message'}")).firstMatch
+        if body.waitForExistence(timeout: 6) { body.tap() } else { messages.coordinate(withNormalizedOffset: CGVector(dx: 0.55, dy: 0.945)).tap() }
+        XCTAssertTrue(body.exists, "no message box: \(messages.debugDescription.suffix(3000))")
+        let intro = label(messages, "Continue")
+        if intro.waitForExistence(timeout: 2) { intro.tap() }
+        let ours = element(messages, "pip.more")
+        for _ in 0..<5 where !ours.waitForExistence(timeout: 1.5) { label(messages, "Next keyboard").tap() }
+        XCTAssertTrue(ours.exists, "Pip keyboard not shown")
+        return body
+    }
+
+    /// Empties the message box with Pip's delete key, pastes the text, then taps Pip's space key so the keyboard reads it as typed.
+    private func enter(_ text: String, in field: XCUIElement) {
+        let delete = element(messages, "delete")
+        for _ in 0..<6 where !((field.value as? String) ?? "").isEmpty && (field.value as? String) != field.placeholderValue {
+            delete.press(forDuration: 2.5)
+        }
+        paste(text, into: field)
         Thread.sleep(forTimeInterval: 0.3)
         element(messages, "space").tap()
     }
@@ -115,6 +129,53 @@ final class ExplainShots: XCTestCase {
         XCTAssertTrue(note.exists && linked.evaluate(with: note), "no Link added note: \(note.exists ? note.label : "none")")
         XCTAssertTrue((field.value as? String ?? "").contains("/d/"), "no link in the field: \(field.value ?? "")")
         shot("08-send-link")
+    }
+
+    /// The engine preview: the same three scenes with whichever engine pip-dev://engine set (TEST_RUNNER_ENGINE names the files).
+    /// It writes anim-start.txt (epoch seconds) when the log drawing starts, to cut a screen recording.
+    func test7EngineScenes() {
+        let engine = env["ENGINE"] ?? "tldraw"
+        XCUIDevice.shared.system.open(URL(string: "pip-dev://engine?name=\(engine)")!)
+        let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
+        if open.waitForExistence(timeout: 4) { open.tap() }
+        Thread.sleep(forTimeInterval: 1.5)
+        let field = openField()
+        let title = element(messages, "explain.title")
+        func waitDone(_ what: String) {
+            let started = Date().addingTimeInterval(8)
+            while !title.label.contains("step"), Date() < started { Thread.sleep(forTimeInterval: 0.1) }
+            let done = Date().addingTimeInterval(25)
+            while title.label.contains("step"), Date() < done { Thread.sleep(forTimeInterval: 0.2) }
+            XCTAssertFalse(title.label.contains("step"), "\(what) did not finish: \(title.label)")
+            Thread.sleep(forTimeInterval: 0.6)
+        }
+
+        enter("explain log function", in: field)
+        let more = element(messages, "chip.explain.more")
+        XCTAssertTrue(more.waitForExistence(timeout: 8), "no explain chip")
+        more.tap()
+        let visual = element(messages, "explain.visual")
+        XCTAssertTrue(visual.waitForExistence(timeout: 3))
+        if let dir = env["SHOT_DIR"] { try? String(Date().timeIntervalSince1970).write(toFile: dir + "/anim-start.txt", atomically: true, encoding: .utf8) }
+        visual.tap()
+        let mid = NSPredicate(format: "label CONTAINS %@", "step 2 of")
+        let deadline = Date().addingTimeInterval(15)
+        while !mid.evaluate(with: title), Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+        Thread.sleep(forTimeInterval: 0.5)
+        shot("\(engine)-1-log-mid")
+        waitDone("log")
+        shot("\(engine)-2-log-finished")
+        element(messages, "explain.close").tap()
+
+        for (name, text) in [("3-bar", "bar chart: rent 1200, food 400, fun 200"), ("4-pie", "pie chart of my week: work 40 sleep 56 other 72")] {
+            enter(text, in: field)
+            let chip = element(messages, "chip.explain")
+            XCTAssertTrue(chip.waitForExistence(timeout: 4), "no chart chip for \(text)")
+            chip.tap()
+            waitDone(name)
+            shot("\(engine)-\(name)")
+            element(messages, "explain.close").tap()
+        }
     }
 
     /// Charts read on the phone: no server call, drawn step by step, then finished.

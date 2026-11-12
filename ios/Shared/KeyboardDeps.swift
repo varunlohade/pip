@@ -79,6 +79,8 @@ struct KeyboardDeps {
     var sleep: (Duration) async throws -> Void
     /// The phone's calendar and reminders, for smart chips.
     var writer: SmartWriter = EventKitWriter()
+    /// The voice for "Play with voice". Only a tap starts it; tests pass a silent fake.
+    var speaker: @MainActor () -> Speaker = { SystemSpeaker() }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

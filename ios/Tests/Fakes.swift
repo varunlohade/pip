@@ -144,13 +144,27 @@ final class FakeClock {
     }
 }
 
+/// A voice that makes no sound: it records each line and finishes only when the test says so.
+@MainActor
+final class FakeSpeaker: Speaker {
+    private(set) var said: [String] = []
+    private(set) var stops = 0
+    private var pending: (() -> Void)?
+    nonisolated init() {}
+    /// Like the real one, a new line ends the one before it (its completion runs first).
+    func say(_ text: String, done: @escaping () -> Void) { let p = pending; pending = nil; p?(); said.append(text); pending = done }
+    func stop() { stops += 1; let p = pending; pending = nil; p?() }
+    /// The current line ends.
+    func finish() { let p = pending; pending = nil; p?() }
+}
+
 @MainActor
 extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
-                     clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter()) -> KeyboardDeps {
+                     clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker()) -> KeyboardDeps {
         KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
-                     sleep: { d in try await clock.sleep(d) }, writer: writer)
+                     sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker })
     }
 }
 

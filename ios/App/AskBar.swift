@@ -92,41 +92,89 @@ struct AskBar: View {
     }
 }
 
-/// Replays a saved drawing in the app: the same bundled tldraw page as the keyboard, with the network blocked.
+/// Replays a saved drawing in the app: the same bundled drawing page as the keyboard, with the network blocked.
+/// "Play with voice" replays it with each step's line spoken; nothing plays without that tap.
 struct ReplaySheet: View {
     let drawing: Drawing
+    @StateObject private var replay = ReplayController()
 
     var body: some View {
         VStack(spacing: Theme.Space.s) {
             Capsule().fill(Theme.Color.hairline).frame(width: 36, height: 5).padding(.top, 8)
             Text(drawing.title).font(Theme.Font.section).foregroundStyle(Theme.Color.text1)
-            ReplayWebView(scene: SharedStore.drawingSceneURL(drawing).flatMap { try? Data(contentsOf: $0) })
+            ReplayWebView(scene: SharedStore.drawingSceneURL(drawing).flatMap { try? Data(contentsOf: $0) }, controller: replay)
                 .ringCard(radius: 20)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .padding(.horizontal, Theme.Metric.cardInset)
-                .padding(.bottom, Theme.Space.m)
                 .accessibilityIdentifier("replay.canvas")
+            if replay.voice { Text("Turn the ringer on to hear Pip").font(Theme.Font.label).foregroundStyle(Theme.Color.text3) }
+            Button(replay.voice ? "Stop voice" : "Play with voice", action: replay.toggleVoice)
+                .buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
+                .padding(.horizontal, Theme.Metric.cardInset)
+                .padding(.bottom, Theme.Space.m)
+                .accessibilityIdentifier("replay.voice")
         }
         .presentationDetents([.medium, .large])
         .background(Theme.Color.bg)
+        .onDisappear { replay.stop() }
+    }
+}
+
+@MainActor
+final class ReplayController: ObservableObject {
+    @Published var voice = false
+    weak var web: WKWebView?
+    private var sync: NarrationSync?
+    var makeSpeaker: () -> Speaker = { SystemSpeaker() }
+
+    func js(_ code: String) { web?.evaluateJavaScript(code, completionHandler: nil) }
+
+    func toggleVoice() {
+        if voice { stop(); return }
+        sync = NarrationSync(speaker: makeSpeaker(), sleep: { try await Task.sleep(for: $0) }) { [weak self] in self?.js("pip.next()") }
+        voice = true
+        js("pip.voice(true)")
+        js("pip.replay()")
+    }
+
+    func stop() {
+        guard let s = sync else { return }
+        sync = nil
+        s.stop()
+        js("pip.voice(false)")
+        voice = false
+    }
+
+    func handle(_ body: [String: Any]) {
+        switch body["type"] as? String {
+        case "step": sync?.stepStarted(body["n"] as? Int ?? 0, say: body["say"] as? String)
+        case "stepDrawn": sync?.stepDrawn(body["n"] as? Int ?? 0)
+        case "done": if sync != nil { sync = nil; js("pip.voice(false)"); voice = false }
+        default: break
+        }
     }
 }
 
 struct ReplayWebView: UIViewRepresentable {
     let scene: Data?
+    let controller: ReplayController
 
-    func makeCoordinator() -> Coordinator { Coordinator(scene: scene) }
+    func makeCoordinator() -> Coordinator { Coordinator(scene: scene, controller: controller) }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(VisualWebView.WeakHandler(context.coordinator), name: "pip")
+        // Nothing is cached or kept on disk: each open loads the bundled page as shipped.
+        config.websiteDataStore = .nonPersistent()
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
         web.backgroundColor = .clear
         context.coordinator.web = web
+        controller.web = web
+        let folder = SharedStore.visualEngine.hasPrefix("excalidraw") ? "VisualExcalidraw" : "Visual"
         VisualWebView.Coordinator.noNetwork { rules in
             if let rules { config.userContentController.add(rules) }
-            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Visual") else { return }
+            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: folder) else { return }
             web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
         return web
@@ -134,14 +182,19 @@ struct ReplayWebView: UIViewRepresentable {
 
     func updateUIView(_ web: WKWebView, context: Context) {}
 
+    @MainActor
     final class Coordinator: NSObject, WKScriptMessageHandler {
         let scene: Data?
+        let controller: ReplayController
         weak var web: WKWebView?
-        init(scene: Data?) { self.scene = scene }
+        init(scene: Data?, controller: ReplayController) { self.scene = scene; self.controller = controller }
 
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
-            guard (m.body as? [String: Any])?["type"] as? String == "ready", let scene else { return }
-            web?.evaluateJavaScript("pip.play(\(String(decoding: scene, as: UTF8.self)))")
+            guard let body = m.body as? [String: Any] else { return }
+            if body["type"] as? String == "ready", let scene {
+                web?.evaluateJavaScript("pip.play(\(String(decoding: scene, as: UTF8.self)))")
+            }
+            controller.handle(body)
         }
     }
 }

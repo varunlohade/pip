@@ -47,6 +47,8 @@ struct VisualState: Equatable {
     var say: String?
     /// Export was tapped: the row offers Send as image and Send as link.
     var exporting = false
+    /// "Play with voice" is on: each step's line is spoken while it draws.
+    var voice = false
 
     enum Tool: String, Equatable { case hand, draw, eraser }
     /// A short line after a send, such as "Copied. Tap the message box and Paste, then send."
@@ -69,7 +71,11 @@ protocol VisualPage: AnyObject {
     func replay()
     func setTool(_ tool: VisualState.Tool)
     func undo()
+    func redo()
     func exportPNG()
+    /// With voice on, the page waits after each step until next().
+    func setVoice(_ on: Bool)
+    func next()
 }
 
 extension KeyboardModel {
@@ -176,6 +182,7 @@ extension KeyboardModel {
     }
 
     func closeExplain() {
+        stopVoice()
         visualTask?.cancel()
         explainPanel = nil
     }
@@ -228,8 +235,37 @@ extension KeyboardModel {
         if case .visual(let v) = explainPanel, let scene = v.scene { page.play(scene) }
     }
 
-    func visualStep(_ n: Int, of m: Int, say: String? = nil) { updateVisual { $0.status = .drawing(step: n, of: m); $0.say = say } }
-    func visualDone() { updateVisual { if case .drawing(_, let m) = $0.status { $0.status = .done(steps: m) } else { $0.status = .done(steps: 1) } } }
+    func visualStep(_ n: Int, of m: Int, say: String? = nil) {
+        updateVisual { $0.status = .drawing(step: n, of: m); $0.say = say }
+        narration?.stepStarted(n, say: say)
+    }
+    func visualStepDrawn(_ n: Int) { narration?.stepDrawn(n) }
+    func visualDone() {
+        updateVisual { if case .drawing(_, let m) = $0.status { $0.status = .done(steps: m) } else { $0.status = .done(steps: 1) } }
+        // The last line may still be speaking; it ends on its own, and the button goes back to "Play with voice".
+        if narration != nil { narration = nil; visualPage?.setVoice(false); updateVisual { $0.voice = false } }
+    }
+
+    /// "Play with voice": only this tap ever starts sound. It replays the drawing with each step's line spoken in time;
+    /// a second tap stops the voice at once. The audio is "ambient", so the silent switch mutes it.
+    func toggleVoice() {
+        host?.playClick()
+        guard case .visual(let v) = explainPanel else { return }
+        if v.voice { stopVoice(); return }
+        let sync = NarrationSync(speaker: deps.speaker(), sleep: deps.sleep) { [weak self] in self?.visualPage?.next() }
+        narration = sync
+        updateVisual { $0.voice = true; $0.note = "Turn the ringer on to hear Pip" }
+        visualPage?.setVoice(true)
+        visualPage?.replay()
+    }
+
+    private func stopVoice() {
+        guard let n = narration else { return }
+        narration = nil
+        n.stop()
+        visualPage?.setVoice(false)
+        updateVisual { $0.voice = false; $0.note = nil }
+    }
     /// Before the drawing shows, the panel says it failed; after, a failed export is only a note, and the drawing stays.
     func visualFailed(_ message: String) {
         updateVisual { v in
@@ -252,6 +288,11 @@ extension KeyboardModel {
     func undoVisual() {
         host?.playClick()
         visualPage?.undo()
+    }
+
+    func redoVisual() {
+        host?.playClick()
+        visualPage?.redo()
     }
 
     func toggleExport() {

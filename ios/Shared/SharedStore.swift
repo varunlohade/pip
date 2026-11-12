@@ -35,6 +35,13 @@ enum SharedStore {
         set { defaults?.set(newValue, forKey: keyboardSeenKey) }
     }
 
+    /// Which drawing page the keyboard loads: "tldraw" (default), or the Excalidraw preview, "excalidraw" (tuned) or
+    /// "excalidraw-default". Set from the Debug-only pip-dev://engine link while the owner compares them.
+    static var visualEngine: String {
+        get { defaults?.string(forKey: "visual_engine") ?? "tldraw" }
+        set { defaults?.set(newValue, forKey: "visual_engine") }
+    }
+
     /// Small JSON files in the App Group container. They stay on the device, encrypted while it is locked.
     static func load<T: Decodable>(_ type: T.Type, file: String) -> T? {
         guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: AppConfig.appGroupID)?.appendingPathComponent(file),

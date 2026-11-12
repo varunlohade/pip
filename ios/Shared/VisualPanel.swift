@@ -3,7 +3,7 @@ import WebKit
 import os
 
 /// The visual panel, in place of the keys (B2-4): a white ring canvas where the tldraw page draws the scene with the buddy
-/// leading the pen; pen, eraser and undo on the canvas; the step dashes and what the step says; then Export and Insert.
+/// leading the pen; pen, eraser and undo on the canvas; the step dashes and what the step says; then Send and Insert.
 struct VisualPanelView: View {
     @ObservedObject var model: KeyboardModel
     let state: VisualState
@@ -47,7 +47,9 @@ struct VisualPanelView: View {
             tool("pencil", .draw, id: "visual.draw", label: "Draw")
             tool("eraser", .eraser, id: "visual.eraser", label: "Erase")
             iconButton("arrow.uturn.backward", id: "visual.undo", label: "Undo", action: model.undoVisual)
+            iconButton("arrow.uturn.forward", id: "visual.redo", label: "Redo", action: model.redoVisual)
             iconButton("arrow.counterclockwise", id: "visual.replay", label: "Replay", action: model.replayVisual)
+            voiceButton
         }
         .padding(3)
         .background(.white, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -65,6 +67,21 @@ struct VisualPanelView: View {
         .accessibilityLabel(label)
         .accessibilityAddTraits(on ? .isSelected : [])
         .accessibilityIdentifier(id)
+    }
+
+    /// "Play with voice" / "Stop voice": a speaker that turns sky while Pip talks. Nothing plays without this tap.
+    private var voiceButton: some View {
+        Button(action: model.toggleVoice) {
+            Image(systemName: state.voice ? "speaker.wave.2.fill" : "speaker.wave.2").font(.system(size: 14, weight: .medium))
+                .foregroundStyle(state.voice ? .white : Color(hex: 0x3A3A3C))
+                .frame(width: 30, height: 30)
+                .background(state.voice ? Theme.Color.skyDeep : .clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .disabled(!drawn)
+        .opacity(drawn ? 1 : 0.4)
+        .accessibilityLabel(state.voice ? "Stop voice" : "Play with voice")
+        .accessibilityIdentifier("visual.voice")
     }
 
     private func iconButton(_ icon: String, id: String, label: String, action: @escaping () -> Void) -> some View {
@@ -99,7 +116,7 @@ struct VisualPanelView: View {
         }
     }
 
-    /// Export (frosted) and Insert (the glowing sky pill). Export opens the two ways to send.
+    /// Send (frosted) and Insert (the glowing sky pill). Send opens the two ways to send.
     @ViewBuilder private var buttons: some View {
         HStack(spacing: 10) {
             if state.exporting {
@@ -112,7 +129,7 @@ struct VisualPanelView: View {
                     .accessibilityLabel("Back")
                     .accessibilityIdentifier("visual.export.back")
             } else {
-                Button("Export", action: model.toggleExport).buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
+                Button("Send", action: model.toggleExport).buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
                     .disabled(!drawn || state.sending != nil).opacity(drawn ? 1 : 0.5)
                     .accessibilityIdentifier("visual.export")
                 Button("Insert", action: model.insertExplain).buttonStyle(SkyPill(height: 46, font: .system(size: 16, weight: .semibold)))
@@ -148,6 +165,8 @@ struct VisualWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(WeakHandler(context.coordinator), name: "pip")
+        // Nothing is cached or kept on disk: each open loads the bundled page as shipped.
+        config.websiteDataStore = .nonPersistent()
         let web = WKWebView(frame: .zero, configuration: config)
         web.isOpaque = false
         web.backgroundColor = .clear
@@ -157,9 +176,15 @@ struct VisualWebView: UIViewRepresentable {
         #endif
         context.coordinator.web = web
         context.coordinator.dark = dark
+        // The drawing engine: tldraw (Visual/) or the Excalidraw preview (VisualExcalidraw/), with its look.
+        let engine = SharedStore.visualEngine
+        if engine == "excalidraw-default" {
+            config.userContentController.addUserScript(WKUserScript(source: "window.PIP_LOOK = 'default'", injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        let folder = engine.hasPrefix("excalidraw") ? "VisualExcalidraw" : "Visual"
         Coordinator.noNetwork { rules in
             if let rules { config.userContentController.add(rules) }
-            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Visual") else {
+            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: folder) else {
                 context.coordinator.model?.visualFailed("page missing")
                 return
             }
@@ -207,6 +232,9 @@ struct VisualWebView: UIViewRepresentable {
         func replay() { js("pip.replay()") }
         func setTool(_ tool: VisualState.Tool) { js("pip.tool('\(tool.rawValue)')") }
         func undo() { js("pip.undo()") }
+        func redo() { js("pip.redo()") }
+        func setVoice(_ on: Bool) { js("pip.voice(\(on))") }
+        func next() { js("pip.next()") }
         func exportPNG() { js("pip.export()") }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -217,6 +245,8 @@ struct VisualWebView: UIViewRepresentable {
                 model.visualPageReady(self)
             case "step":
                 model.visualStep(body["n"] as? Int ?? 1, of: body["m"] as? Int ?? 1, say: body["say"] as? String)
+            case "stepDrawn":
+                model.visualStepDrawn(body["n"] as? Int ?? 0)
             case "done":
                 model.visualDone()
             case "png":

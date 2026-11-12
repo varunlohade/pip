@@ -297,6 +297,9 @@ final class ExplainModelTests: XCTestCase {
             var undos = 0
             func setTool(_ tool: VisualState.Tool) { tools.append(tool) }
             func undo() { undos += 1 }
+            func redo() {}
+            func setVoice(_ on: Bool) {}
+            func next() {}
             func exportPNG() { exports += 1 }
         }
         set("explain log function")
