@@ -14,6 +14,8 @@ enum StoreKey: String, CaseIterable {
     case accountEpoch = "account_epoch"
     /// The epoch the keyboard last acted on. The wipe clears it, so a fresh install and a wiped phone both start equal.
     case keyboardSeenEpoch = "keyboard_seen_epoch"
+    /// Set on first launch. iOS deletes the App Group on uninstall but keeps the Keychain, so no marker means stale secrets.
+    case installed = "installed"
 }
 
 /// Every App Group file, in one place. All are small JSON files, except the drawings folder.
@@ -203,6 +205,16 @@ enum SharedStore {
     }
 
     // MARK: secrets
+
+    /// Keychain items outlive an uninstall. A fresh install (no marker, no App Group data) drops what an earlier install left,
+    /// so the next person never opens as the last one. An update from a build without the marker keeps its data.
+    static func dropSecretsFromAnEarlierInstall() {
+        guard let d = defaults, !d.bool(forKey: StoreKey.installed.rawValue) else { return }
+        let hasData = StoreKey.allCases.contains { d.object(forKey: $0.rawValue) != nil }
+            || StoreFile.allCases.contains { $0 != .refreshLock && (url($0).map { FileManager.default.fileExists(atPath: $0.path) } ?? false) }
+        if !hasData { Keychain.deleteAll() }
+        d.set(true, forKey: StoreKey.installed.rawValue)
+    }
 
     /// Signed in: the Keychain holds a session (or a dev pairing token).
     static var signedIn: Bool { Keychain.get(.accessToken) != nil || Keychain.get(.refreshToken) != nil }

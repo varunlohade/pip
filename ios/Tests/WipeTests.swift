@@ -18,7 +18,6 @@ final class WipeTests: XCTestCase {
         SharedStore.learned = [Learned(subject: "btw", line: "by the way", kind: .word, date: Date())]
         SharedStore.caught = [Caught(title: "Lunch with Ana", place: .calendar, date: Date(), end: nil, seen: Date())]
         try SharedStore.saveDrawing(Data([0x89, 0x50]), title: "log function", scene: Data("{}".utf8))
-        try Data("x".utf8).write(to: XCTUnwrap(SharedStore.url(.refreshLock)))
         try Data("x".utf8).write(to: XCTUnwrap(SharedStore.container).appendingPathComponent("stray.bin"))
         let groupCaches = try XCTUnwrap(SharedStore.container).appendingPathComponent("Library/Caches", isDirectory: true)
         try FileManager.default.createDirectory(at: groupCaches, withIntermediateDirectories: true)
@@ -69,11 +68,16 @@ final class WipeTests: XCTestCase {
         for s in Secret.allCases where s != .deviceID { XCTAssertNil(Keychain.get(s), "Keychain \(s)") }
         XCTAssertFalse(SharedStore.signedIn)
         let d = try XCTUnwrap(SharedStore.defaults)
-        for k in StoreKey.allCases where k != .accountEpoch { XCTAssertNil(d.object(forKey: k.rawValue), "App Group default \(k)") }
+        // Two keys stay on purpose: the new epoch, and the install marker (it holds no data about the person).
+        for k in StoreKey.allCases where k != .accountEpoch && k != .installed { XCTAssertNil(d.object(forKey: k.rawValue), "App Group default \(k)") }
         XCTAssertNil(d.object(forKey: "some_old_key"), "an unknown App Group default")
         XCTAssertNotNil(SharedStore.accountEpoch)
         XCTAssertNotEqual(SharedStore.accountEpoch, oldEpoch, "a new epoch tells the keyboard")
-        XCTAssertEqual(contents(SharedStore.container), ["Library"], "App Group files")
+        // The empty refresh lock file stays: deleting a file another process holds locked would break the lock.
+        XCTAssertEqual(contents(SharedStore.container).filter { $0 != StoreFile.refreshLock.rawValue }, ["Library"], "App Group files")
+        if let lock = SharedStore.url(.refreshLock), FileManager.default.fileExists(atPath: lock.path) {
+            XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: lock.path)[.size] as? Int, 0, "the lock file holds nothing")
+        }
         XCTAssertEqual(contents(SharedStore.container?.appendingPathComponent("Library")).filter { $0 != "Preferences" }, [], "App Group Library")
         XCTAssertEqual(SharedStore.notes, Note.demo, "notes fall back to the built-in examples")
         XCTAssertTrue(SharedStore.drawings.isEmpty && SharedStore.learned.isEmpty && SharedStore.caught.isEmpty && SharedStore.appointments.isEmpty)
@@ -116,5 +120,59 @@ final class WipeTests: XCTestCase {
         model.keyboardAppeared()
         for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(wiped, wipesBefore + 1, "once per logout, not on every appearance")
+    }
+}
+
+/// Answers /v1/auth/refresh with new tokens. While it answers, the app logs out (the race in the iOS review, F2).
+final class RefreshDuringLogout: URLProtocol {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        LocalWipe.wipeShared()
+        let body = Data(#"{"access_token":"pat_last_person_new","refresh_token":"prt_last_person_new","expires_in":900}"#.utf8)
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@MainActor
+final class WipeRaceTests: XCTestCase {
+    func testARefreshThatFinishesAfterALogoutDoesNotSaveTheLastPersonsTokens() async {
+        Keychain.set(.accessToken, "pat_last_person_old")
+        Keychain.set(.refreshToken, "prt_last_person_old")
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [RefreshDuringLogout.self]
+        do {
+            _ = try await TokenRefresher.refreshed(baseURL: "https://pip.example", replacing: "pat_last_person_old", session: URLSession(configuration: config))
+            XCTFail("the refresh must not succeed across a logout")
+        } catch {
+            guard case APIError.notPaired = error else { return XCTFail("unexpected \(error)") }
+        }
+        XCTAssertNil(Keychain.get(.accessToken))
+        XCTAssertNil(Keychain.get(.refreshToken))
+        XCTAssertEqual(Keychain.count(), 0)
+    }
+
+    /// iOS keeps Keychain items after an uninstall. A fresh install must not open as the person before.
+    func testAFreshInstallDropsSecretsAnEarlierInstallLeft() async throws {
+        await LocalWipe.wipeAll()
+        let d = try XCTUnwrap(SharedStore.defaults)
+        d.removePersistentDomain(forName: AppConfig.appGroupID)
+        for k in StoreKey.allCases { d.removeObject(forKey: k.rawValue) }
+        Keychain.set(.refreshToken, "prt_from_before_the_uninstall")
+        SharedStore.dropSecretsFromAnEarlierInstall()
+        XCTAssertFalse(SharedStore.signedIn)
+        XCTAssertEqual(Keychain.count(), 0)
+        XCTAssertTrue(d.bool(forKey: StoreKey.installed.rawValue))
+
+        // An update from a build without the marker keeps the person signed in.
+        d.removeObject(forKey: StoreKey.installed.rawValue)
+        SharedStore.serverURL = "http://localhost:8787"
+        Keychain.set(.refreshToken, "prt_current_person")
+        SharedStore.dropSecretsFromAnEarlierInstall()
+        XCTAssertEqual(Keychain.get(.refreshToken), "prt_current_person")
+        Keychain.deleteAll()
     }
 }

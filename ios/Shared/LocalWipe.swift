@@ -7,6 +7,14 @@ enum LocalWipe {
     /// What the app and the keyboard share: the Keychain group, every App Group file and every App Group default.
     /// Ends by writing a new account epoch, which tells the keyboard to drop what it holds in memory.
     static func wipeShared() {
+        // Take the refresh lock when it is free within a second, so a refresh cannot write the last person's tokens back
+        // between its epoch check and its save. A refresh still running sees the new epoch and drops its tokens.
+        RefreshLock.held(waitingAtMost: 1) {
+            wipeSharedLocked()
+        }
+    }
+
+    private static func wipeSharedLocked() {
         Keychain.deleteAll()
         let fm = FileManager.default
         if let root = SharedStore.container {
@@ -16,7 +24,8 @@ enum LocalWipe {
                     for sub in (try? fm.contentsOfDirectory(at: item, includingPropertiesForKeys: nil)) ?? [] where sub.lastPathComponent != "Preferences" {
                         try? fm.removeItem(at: sub)
                     }
-                } else {
+                } else if item.lastPathComponent != StoreFile.refreshLock.rawValue {
+                    // The lock file stays: deleting a file another process holds locked would break the lock.
                     try? fm.removeItem(at: item)
                 }
             }
@@ -26,6 +35,7 @@ enum LocalWipe {
             for key in StoreKey.allCases { d.removeObject(forKey: key.rawValue) }
             d.synchronize()
         }
+        SharedStore.defaults?.set(true, forKey: StoreKey.installed.rawValue)
         SharedStore.accountEpoch = UUID().uuidString
     }
 

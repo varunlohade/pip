@@ -397,6 +397,7 @@ final class KeyboardModel: ObservableObject {
     var typed: String { (host?.contextBeforeInput ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 
     func toggleNotes() {
+        forgetIfAccountChanged()
         host?.playClick()
         writeOpen = false
         if !notesOpen { notes = deps.store.notes }
@@ -417,6 +418,7 @@ final class KeyboardModel: ObservableObject {
 
     /// "+" keeps the text before the cursor as a new note, on this device.
     func saveNote() {
+        forgetIfAccountChanged()
         guard canSaveNote else { return }
         host?.playClick()
         notes.insert(Note(text: typed), at: 0)
@@ -427,6 +429,8 @@ final class KeyboardModel: ObservableObject {
 
     /// Called on every edit, from our keys and from textDidChange.
     func textChanged() {
+        // A logout while the keyboard stayed on screen: forget before anything is read or written.
+        forgetIfAccountChanged()
         refreshAccess()
         updateAutoShift()
         updateFixable()

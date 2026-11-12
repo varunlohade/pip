@@ -27,6 +27,12 @@ final class Session: ObservableObject {
     /// Goes up when the account behind the app changes, so Home loads again.
     @Published var account = 0
 
+    init() {
+        SharedStore.dropSecretsFromAnEarlierInstall()
+        paired = SharedStore.signedIn
+        onboarding = !SharedStore.signedIn
+    }
+
     /// The server for sign-in. UI tests point a fresh install at the fake server: "-serverURL http://127.0.0.1:8799".
     var server: String {
         #if DEBUG

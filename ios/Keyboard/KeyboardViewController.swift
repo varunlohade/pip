@@ -20,6 +20,7 @@ final class KeyboardViewController: UIInputViewController, TextHost {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        SharedStore.dropSecretsFromAnEarlierInstall()
         model.host = self
         let hosting = UIHostingController(rootView: KeyboardView(model: model))
         hosting.view.translatesAutoresizingMaskIntoConstraints = false

@@ -48,16 +48,38 @@ enum TokenStore {
 
 /// Refreshes the access token under a file lock in the App Group, so the app and the keyboard never spend one refresh
 /// token twice (the server reads a second spend as theft and ends the session).
+/// An flock on `refresh.lock` in the App Group, shared by the app and the keyboard. The wipe holds it too.
+enum RefreshLock {
+    static func open() -> Int32 { SharedStore.url(.refreshLock).map { Darwin.open($0.path, O_CREAT | O_RDWR, 0o600) } ?? -1 }
+
+    /// Runs `body` holding the lock, or without it after `seconds`: a held lock never blocks a logout for long.
+    static func held<T>(waitingAtMost seconds: Double, _ body: () throws -> T) rethrows -> T {
+        let fd = open()
+        var locked = false
+        let end = Date().addingTimeInterval(seconds)
+        while fd >= 0 {
+            if flock(fd, LOCK_EX | LOCK_NB) == 0 { locked = true; break }
+            if Date() >= end { break }
+            usleep(20_000)
+        }
+        defer { if fd >= 0 { if locked { flock(fd, LOCK_UN) }; close(fd) } }
+        return try body()
+    }
+}
+
 enum TokenRefresher {
     static func refreshed(baseURL: String, replacing failed: String?, session: URLSession = .shared) async throws -> String {
-        let fd = SharedStore.url(.refreshLock).map { open($0.path, O_CREAT | O_RDWR, 0o600) } ?? -1
+        let fd = RefreshLock.open()
         if fd >= 0 { await Task.detached { _ = flock(fd, LOCK_EX) }.value }
         defer { if fd >= 0 { flock(fd, LOCK_UN); close(fd) } }
+        let epoch = SharedStore.accountEpoch
         // The other process refreshed while this one waited: use its token.
         if let now = Keychain.get(.accessToken), now != failed { return now }
         guard let refresh = Keychain.get(.refreshToken) else { throw APIError.notPaired }
         do {
             let p: TokenPair = try await APIClient.post(baseURL: baseURL, "/v1/auth/refresh", ["refresh_token": refresh], session: session)
+            // A logout happened meanwhile: these tokens belong to the last person, so they are dropped, not saved.
+            guard SharedStore.accountEpoch == epoch else { throw APIError.notPaired }
             guard TokenStore.save(p) else { throw APIError.message("Could not save your sign-in on this phone. Try again.") }
             return p.access_token
         } catch APIError.http(401, _) {

@@ -122,10 +122,17 @@ final class PersonaTests: XCTestCase {
     func testSwitchingPeopleWhileTheKeyboardStaysUp() async {
         let a = Self.people[0], b = Self.people[3]
         await use(a)
+        // The keyboard stays on screen: no keyboardAppeared. Typing must notice the logout before anything else.
+        signIn(a)
+        model.keyboardAppeared()
+        model.toggleNotes()
+        XCTAssertEqual(model.notes.map(\.text), [a.note])
         logOutAndWipe()
         signIn(b)
-        model.keyboardAppeared()
+        set("hello")
         assertNothingOf(a)
-        XCTAssertEqual(model.notes.map(\.text), [b.note])
+        model.toggleNotes()
+        XCTAssertEqual(model.notes.map(\.text), [b.note], "the next person sees only their own notes")
+        XCTAssertFalse(store.notes.contains { $0.text == a.note }, "nothing of the last person is written back")
     }
 }

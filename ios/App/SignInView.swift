@@ -5,8 +5,9 @@ import SwiftUI
 /// The raw nonce for Sign in with Apple: the app sends its SHA-256 to Apple and the raw value to the server.
 enum AppleNonce {
     static func random() -> String {
-        var bytes = [UInt8](repeating: 0, count: 32)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        // SystemRandomNumberGenerator is the system CSPRNG and cannot fail silently.
+        var rng = SystemRandomNumberGenerator()
+        let bytes = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &rng) }
         return Data(bytes).base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 
