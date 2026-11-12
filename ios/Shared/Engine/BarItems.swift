@@ -2,7 +2,7 @@ import Foundation
 
 /// What the suggestion bar shows, slot by slot. Pure: the view maps tones to colors and actions to model calls.
 enum BarItems {
-    enum Tone: Equatable { case label, secondary, accent, paid, due }
+    enum Tone: Equatable { case label, secondary, accent, success, warning }
 
     enum Action: Equatable {
         case useCopied
@@ -59,10 +59,10 @@ enum BarItems {
         if !s.hasFullAccess { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Allow Full Access in Settings for \(AppConfig.keyboardName)", tone: .secondary)] }
         if !s.paired { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Open \(AppConfig.displayName) to pair", tone: .secondary)] }
         if let u = s.undo {
-            return [Item(id: "written", title: u.label, tone: .paid), Item(id: "undo", title: "Undo", action: .undo)]
+            return [Item(id: "written", title: u.label, tone: .success), Item(id: "undo", title: "Undo", action: .undo)]
         }
         if let a = s.added {
-            return [Item(id: "added", title: a, tone: .paid), Item(id: "undo", title: "Undo", action: .undoSmart)]
+            return [Item(id: "added", title: a, tone: .success), Item(id: "undo", title: "Undo", action: .undoSmart)]
         }
         var out: [Item] = []
         if s.hasCalmOffer {
@@ -86,7 +86,7 @@ enum BarItems {
         case .done(let text):
             out.append(Item(id: "done", title: text, tone: .secondary))
         case .error(let text):
-            out.append(Item(id: "error", title: text, tone: .due))
+            out.append(Item(id: "error", title: text, tone: .warning))
         }
         return out
     }

@@ -62,7 +62,7 @@ struct ShortcutsView: View {
             Card {
                 VStack(alignment: .leading, spacing: Theme.Space.xs) {
                     HStack(spacing: Theme.Space.xs) {
-                        Text(trigger).font(Theme.Font.paper(14)).foregroundStyle(Theme.Color.text1)
+                        Text(trigger).font(Theme.Font.mono(14)).foregroundStyle(Theme.Color.text1)
                             .padding(.horizontal, Theme.Space.s).frame(height: Theme.Space.xl)
                             .background(Theme.Color.button, in: Capsule())
                         if dimmed { Text("Off").font(Theme.Font.label).foregroundStyle(Theme.Color.text3) }
@@ -111,10 +111,10 @@ struct ActionShortcutEditor: View {
                     .modifier(FieldStyle())
                     .accessibilityIdentifier("shortcut.trigger")
                 Text(problem ?? shortcut.detail)
-                    .font(Theme.Font.label).foregroundStyle(problem == nil ? Theme.Color.text2 : Theme.Color.due)
+                    .font(Theme.Font.label).foregroundStyle(problem == nil ? Theme.Color.text2 : Theme.Color.warning)
                     .padding(.horizontal, Theme.Space.xs).fixedSize(horizontal: false, vertical: true)
                 Toggle("On", isOn: $shortcut.enabled)
-                    .font(Theme.Font.body).foregroundStyle(Theme.Color.text1).tint(Theme.Color.paid)
+                    .font(Theme.Font.body).foregroundStyle(Theme.Color.text1).tint(Theme.Color.success)
                     .padding(.horizontal, Theme.Space.xs)
                     .accessibilityIdentifier("shortcut.enabled")
                 Button("Reset to \(ActionShortcut.defaults.first { $0.action == shortcut.action }?.trigger ?? "")") {

@@ -47,13 +47,20 @@ struct SuggestionBar: View {
         let items = model.barItems
         HStack(spacing: 0) {
             if let panel = model.explainPanel {
-                // The canvas shows "Step n of m"; the title keeps it for VoiceOver only.
-                Text(panelSubject(panel)).font(M.prediction.weight(.medium)).foregroundStyle(palette.label)
-                    .lineLimit(1).padding(.leading, Theme.Space.s)
+                Buddy(size: 30).padding(.leading, 6)
+                // The canvas shows "Step n of m"; the title keeps it for VoiceOver.
+                Text(panelSubject(panel)).font(.system(size: 15)).foregroundStyle(Theme.Color.text1)
+                    .lineLimit(1).truncationMode(.tail)
+                    .padding(.horizontal, 13).frame(height: 36)
+                    .background(Theme.Color.ice, in: Capsule())
+                    .padding(.leading, 6)
                     .accessibilityLabel(panelTitle(panel))
                     .accessibilityIdentifier("explain.title")
-                Spacer()
+                Spacer(minLength: 4)
                 barButton("keyboard", id: "explain.close", label: "Keyboard", action: model.closeExplain)
+            } else if !model.notesOpen, !model.writeOpen, let explain = items.first, explain.id == "explain" {
+                explainRow(explain)
+                Spacer(minLength: 0)
             } else if model.notesOpen {
                 Text("Notes").font(M.prediction.weight(.medium)).foregroundStyle(palette.label).padding(.leading, Theme.Space.s)
                 Spacer()
@@ -88,12 +95,12 @@ struct SuggestionBar: View {
                 .accessibilityIdentifier("chip.fix")
                 .transition(.opacity)
             }
-            if model.paired && !model.notesOpen && model.explainPanel == nil {
+            if model.paired && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.writeOpen ? "keyboard" : "wand.and.stars", id: "write.toggle", label: model.writeOpen ? "Keyboard" : "Rewrite", action: model.toggleWrite)
             }
             // Notes live in the App Group, which the keyboard reaches only with Full Access.
-            if model.hasFullAccess && !model.writeOpen && model.explainPanel == nil {
+            if model.hasFullAccess && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.notesOpen ? "keyboard" : "note.text", id: "notes.toggle", label: model.notesOpen ? "Keyboard" : "Notes", action: model.toggleNotes)
             }
@@ -104,9 +111,44 @@ struct SuggestionBar: View {
         .animation(Theme.Motion.chipAppear, value: showsFix)
     }
 
+    /// B2: the bar holds the answer in an ice bubble while a panel is open.
     private func panelSubject(_ p: ExplainPanel) -> String {
-        if case .visual(let v) = p { return "\u{201C}\(v.subject)\u{201D}" }
-        return "Explain"
+        switch p {
+        case .card(let o): "\u{201C}\(o.subject)\u{201D}"
+        case .visual(let v): v.summary
+        }
+    }
+
+    /// B2-3: the buddy, then the answer as a glowing sky chip ("btw → by the way"), then "Explain more".
+    private func explainRow(_ item: BarItems.Item) -> some View {
+        HStack(spacing: 8) {
+            Buddy(size: 30)
+            Button { model.tapExplainChip() } label: {
+                HStack(spacing: 7) {
+                    if let t = item.trigger {
+                        Text(t).font(.system(size: 15)).foregroundStyle(Theme.Color.skyOnText).lineLimit(1)
+                        Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.Color.skyOnText)
+                    }
+                    Text(item.title).font(.system(size: 16.5, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                }
+                .padding(.horizontal, 15).frame(height: 36)
+                .background(SkyFill())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel([item.trigger, item.title].compactMap { $0 }.joined(separator: ": "))
+            .accessibilityIdentifier("chip.explain")
+            if model.explainOfferHasMore {
+                Button { model.openExplainCard() } label: {
+                    Text("Explain more").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                        .padding(.horizontal, 14).frame(height: 36).background(FrostFill())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .accessibilityIdentifier("chip.explain.more")
+            }
+        }
+        .padding(.leading, 6)
     }
 
     private func panelTitle(_ p: ExplainPanel) -> String {
@@ -119,7 +161,7 @@ struct SuggestionBar: View {
 
     /// Fix sits beside the chips, so it never takes a chip's place.
     private var showsFix: Bool {
-        guard model.fixable, model.explainPanel == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
+        guard model.fixable, model.explainPanel == nil, model.explainOffer == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
         if case .idle = model.bar { return true }
         return false
     }
@@ -191,8 +233,8 @@ struct SuggestionBar: View {
             case .label: palette.label
             case .secondary: palette.secondaryLabel
             case .accent: palette.accent
-            case .paid: Theme.Color.paid
-            case .due: Theme.Color.due
+            case .success: Theme.Color.success
+            case .warning: Theme.Color.warning
             }
         }
     }

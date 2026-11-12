@@ -58,7 +58,7 @@ final class ExplainShots: XCTestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 4), "no btw chip")
         Thread.sleep(forTimeInterval: 0.6)
         shot("01-btw-chip")
-        chip.tap()
+        element(messages, "chip.explain.more").tap()
         XCTAssertTrue(element(messages, "explain.card").waitForExistence(timeout: 3))
         Thread.sleep(forTimeInterval: 0.4)
         shot("02-btw-card")
@@ -68,7 +68,7 @@ final class ExplainShots: XCTestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 8), "no explain chip from the server")
         Thread.sleep(forTimeInterval: 0.6)
         shot("03-explain-chip")
-        chip.tap()
+        element(messages, "chip.explain.more").tap()
         let visual = element(messages, "explain.visual")
         XCTAssertTrue(visual.waitForExistence(timeout: 3))
         Thread.sleep(forTimeInterval: 0.4)
@@ -86,12 +86,16 @@ final class ExplainShots: XCTestCase {
         shot("05-visual-mid-drawing")
 
         let copy = element(messages, "visual.send.image")
+        let export = element(messages, "visual.export")
         let done = Date().addingTimeInterval(20)
         while title.label.contains("step"), Date() < done { Thread.sleep(forTimeInterval: 0.2) }
         XCTAssertFalse(title.label.contains("step"), "drawing did not finish: \(title.label)")
         Thread.sleep(forTimeInterval: 0.5)
         shot("06-visual-finished")
 
+        export.tap()
+        XCTAssertTrue(copy.waitForExistence(timeout: 3))
+        shot("06b-export-choices")
         copy.tap()
         let note = element(messages, "visual.note")
         let copied = NSPredicate(format: "label BEGINSWITH %@", "Copied")
@@ -102,6 +106,8 @@ final class ExplainShots: XCTestCase {
         // hasImages does not show the paste prompt; reading the image would, so the test does not read it.
         XCTAssertTrue(UIPasteboard.general.hasImages, "no image on the pasteboard")
 
+        export.tap()
+        XCTAssertTrue(element(messages, "visual.send.link").waitForExistence(timeout: 3))
         element(messages, "visual.send.link").tap()
         let linked = NSPredicate(format: "label BEGINSWITH %@", "Link added")
         let linkBy = Date().addingTimeInterval(8)

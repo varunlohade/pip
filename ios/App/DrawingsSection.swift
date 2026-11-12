@@ -6,7 +6,7 @@ struct DrawingsSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            SectionHeader(title: "Your drawings", count: drawings.count)
+            SectionHeader(title: "Your drawings", count: drawings.count).padding(.leading, 8)
             ScrollView(.horizontal) {
                 HStack(spacing: Theme.Space.s) {
                     ForEach(drawings) { d in
@@ -26,7 +26,7 @@ struct DrawingsSection: View {
                         }
                     }
                 }
-                .padding(.horizontal, Theme.Metric.cardInset)
+                .padding(.horizontal, Theme.Metric.cardInset + 8)
             }
             .scrollIndicators(.hidden)
         }

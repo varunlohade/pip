@@ -81,16 +81,36 @@ enum SharedStore {
             .appendingPathComponent("drawings", isDirectory: true).appendingPathComponent(d.file)
     }
 
-    /// Newest first, at most 30: the oldest file goes when a new one comes.
-    static func saveDrawing(_ png: Data, title: String) throws {
-        let d = Drawing(id: UUID(), title: title, created: Date(), file: UUID().uuidString + ".png")
+    static func drawingSceneURL(_ d: Drawing) -> URL? {
+        d.sceneFile.flatMap { f in drawingURL(d)?.deletingLastPathComponent().appendingPathComponent(f) }
+    }
+
+    /// Newest first, at most 30: the oldest files go when a new one comes.
+    static func saveDrawing(_ png: Data, title: String, scene: Data?) throws {
+        let base = UUID().uuidString
+        let d = Drawing(id: UUID(), title: title, created: Date(), file: base + ".png", sceneFile: scene == nil ? nil : base + ".json")
         guard let url = drawingURL(d) else { throw CocoaError(.fileNoSuchFile) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try png.write(to: url, options: [.atomic, .completeFileProtection])
+        if let scene, let sceneURL = drawingSceneURL(d) { try scene.write(to: sceneURL, options: [.atomic, .completeFileProtection]) }
         var all = [d] + drawings
-        for old in all.dropFirst(30) { if let u = drawingURL(old) { try? FileManager.default.removeItem(at: u) } }
+        for old in all.dropFirst(30) {
+            for u in [drawingURL(old), drawingSceneURL(old)].compactMap({ $0 }) { try? FileManager.default.removeItem(at: u) }
+        }
         all = Array(all.prefix(30))
         drawings = all
+    }
+
+    /// What the owner looked up in the keyboard, newest first, kept for 30 days.
+    static var learned: [Learned] {
+        get { load([Learned].self, file: "learned.json") ?? [] }
+        set { save(Array(newValue.filter { $0.date > Date().addingTimeInterval(-30 * 86_400) }.prefix(200)), file: "learned.json") }
+    }
+
+    /// Plans the keyboard read in chats, newest first; one disappears once it is added.
+    static var caught: [Caught] {
+        get { load([Caught].self, file: "caught.json") ?? [] }
+        set { save(Array(newValue.filter { $0.seen > Date().addingTimeInterval(-7 * 86_400) }.prefix(20)), file: "caught.json") }
     }
 
     private static func baseQuery(_ account: String = account) -> [String: Any] {

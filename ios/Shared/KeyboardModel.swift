@@ -458,6 +458,7 @@ final class KeyboardModel: ObservableObject {
             try? await sleep(SuggestPolicy.debounce)
             guard let self, !Task.isCancelled else { return }
             self.smart = shown
+            self.recordCaught(shown)
         }
         return !found.isEmpty
     }
@@ -771,6 +772,7 @@ final class KeyboardModel: ObservableObject {
         }
         smartDone.insert(chip)
         smart.removeAll { $0 == chip }
+        if let c = Self.caught(chip, seen: deps.now()) { deps.store.removeCaught(id: c.id) }
         added = SmartAdded(chip: chip, label: chip.doneLabel(now: deps.now()), item: item)
         addedTask?.cancel()
         let sleep = deps.sleep
@@ -778,6 +780,20 @@ final class KeyboardModel: ObservableObject {
             try? await sleep(Self.undoWindow)
             guard !Task.isCancelled else { return }
             self?.added = nil
+        }
+    }
+
+    /// Events and reminders shown as chips go to Home's "From your chats", so the owner can add them later.
+    private func recordCaught(_ chips: [SmartChip]) {
+        guard hasFullAccess else { return }
+        for chip in chips { if let c = Self.caught(chip, seen: deps.now()) { deps.store.recordCaught(c) } }
+    }
+
+    static func caught(_ chip: SmartChip, seen: Date) -> Caught? {
+        switch chip.action {
+        case .event(let title, let start, let end): Caught(title: title, place: .calendar, date: start, end: end, seen: seen)
+        case .reminder(let title, let due): Caught(title: title, place: .reminder, date: due, end: nil, seen: seen)
+        case .note: nil
         }
     }
 

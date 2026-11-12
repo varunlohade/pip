@@ -26,7 +26,7 @@ struct NotesView: View {
                             VStack(alignment: .leading, spacing: Theme.Space.xs) {
                                 Text(note.text).font(Theme.Font.body).foregroundStyle(Theme.Color.text1)
                                     .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
-                                if let t = note.trigger { Text(t).font(Theme.Font.paper(13)).foregroundStyle(Theme.Color.text2) }
+                                if let t = note.trigger { Text(t).font(Theme.Font.mono(13)).foregroundStyle(Theme.Color.text2) }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -85,7 +85,7 @@ struct NoteEditor: View {
                     .modifier(FieldStyle())
                     .accessibilityIdentifier("note.trigger")
                 Text(triggerProblem ?? "Type the shortcut, then space. The keyboard puts this note in the message.")
-                    .font(Theme.Font.label).foregroundStyle(triggerProblem == nil ? Theme.Color.text2 : Theme.Color.due)
+                    .font(Theme.Font.label).foregroundStyle(triggerProblem == nil ? Theme.Color.text2 : Theme.Color.warning)
                     .padding(.horizontal, Theme.Space.xs).fixedSize(horizontal: false, vertical: true)
                 TextEditor(text: $note.text)
                     .font(Theme.Font.body)

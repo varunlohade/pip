@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// v3 card: #131315, R28, 1 px white 6% edge, no shadow.
+/// B2 card: white, radius 22, the thin ring shadow, no border.
 struct Card<Content: View>: View {
     var padding: CGFloat = Theme.Metric.cardPadding
     @ViewBuilder let content: Content
@@ -9,54 +9,50 @@ struct Card<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.Color.card, in: RoundedRectangle(cornerRadius: Theme.Metric.radius, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Theme.Metric.radius, style: .continuous).strokeBorder(Theme.Color.edge, lineWidth: 1))
+            .ringCard()
     }
 }
 
-/// 44 pt circle with a 1.5 px line icon.
+/// A 40 pt frosted circle with a line icon, as the profile button in the B2 mocks.
 struct IconCircle: View {
     let systemImage: String
-    var size: CGFloat = Theme.Metric.iconButton
+    var size: CGFloat = 40
 
     var body: some View {
         Image(systemName: systemImage)
-            .font(.system(size: size * 0.36, weight: .regular))
+            .font(.system(size: size * 0.4, weight: .regular))
             .foregroundStyle(Theme.Color.text1)
             .frame(width: size, height: size)
-            .background(Theme.Color.button, in: Circle())
-            .overlay(Circle().strokeBorder(Theme.Color.edge, lineWidth: 1))
+            .background(Circle().fill(.white.opacity(0.72)).background(.ultraThinMaterial, in: Circle()))
+            .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1))
+            .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
     }
 }
 
+/// Pip's mark is the buddy itself.
 struct MarkView: View {
     var size: CGFloat = 36
 
     var body: some View {
-        Image("Mark")
-            .resizable()
-            .interpolation(.high)
-            .frame(width: size, height: size)
-            .clipShape(Circle())
-            .overlay(Circle().strokeBorder(Theme.Color.edge, lineWidth: 1))
-            .accessibilityHidden(true)
+        Buddy(size: size)
     }
 }
 
+/// "Words", "From your chats": 17 pt semibold ink, flush with the cards.
 struct SectionHeader: View {
     let title: String
     var count: Int? = nil
 
     var body: some View {
         HStack(spacing: Theme.Space.xs) {
-            Text(title).font(Theme.Font.section).foregroundStyle(Theme.Color.text2)
+            Text(title).font(Theme.Font.section).foregroundStyle(Theme.Color.text1)
             if let count {
-                Text("\(count)").font(Theme.Font.count).monospacedDigit().foregroundStyle(Theme.Color.text2)
+                Text("\(count)").font(Theme.Font.count).monospacedDigit().foregroundStyle(Theme.Color.skyDeep)
                     .frame(minWidth: Theme.Space.l, minHeight: Theme.Space.l).padding(.horizontal, Theme.Space.xxs)
-                    .background(Theme.Color.button, in: RoundedRectangle(cornerRadius: Theme.Space.s, style: .continuous))
+                    .background(Theme.Color.ice, in: Capsule())
             }
         }
-        .padding(.horizontal, Theme.Metric.margin)
+        .padding(.horizontal, Theme.Metric.cardInset)
     }
 }
 

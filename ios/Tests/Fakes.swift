@@ -59,8 +59,13 @@ final class FakeStore: KeyboardStore {
     var appointments: [Appointment] = []
     var notes: [Note] = []
     var actionShortcuts: [ActionShortcut] = ActionShortcut.defaults
-    private(set) var drawings: [(png: Data, title: String)] = []
-    func saveDrawing(_ png: Data, title: String) throws { drawings.append((png, title)) }
+    private(set) var drawings: [(png: Data, title: String, scene: Data?)] = []
+    func saveDrawing(_ png: Data, title: String, scene: Data?) throws { drawings.append((png, title, scene)) }
+    private(set) var learned: [Learned] = []
+    func recordLearned(_ l: Learned) { learned.append(l) }
+    private(set) var caught: [Caught] = []
+    func recordCaught(_ c: Caught) { if !caught.contains(where: { $0.id == c.id }) { caught.append(c) } }
+    func removeCaught(id: String) { caught.removeAll { $0.id == id } }
 }
 
 /// The phone's calendar and reminders, in memory. `granted` is what the app was allowed.

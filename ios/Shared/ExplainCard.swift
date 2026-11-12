@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The explain card, in place of the keys: the meaning or answer, an example, then Insert. Plain current theme; restyle here.
+/// The explain card, in place of the keys (B2): a white ring card with the answer, an example or a few lines,
+/// then Back, Show visually and the glowing Insert.
 struct ExplainCardView: View {
     @ObservedObject var model: KeyboardModel
     let offer: ExplainOffer
@@ -8,30 +9,36 @@ struct ExplainCardView: View {
     typealias M = Theme.SystemKeyboard
 
     var body: some View {
-        VStack(spacing: M.keyGap) {
-            VStack(alignment: .leading, spacing: Theme.Space.xs) {
-                (Text("\u{201C}\(offer.subject)\u{201D}  ").foregroundColor(palette.accent) + Text(offer.line).foregroundColor(palette.label))
-                    .font(M.mode.weight(.semibold))
+        VStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                (Text("\u{201C}\(offer.subject)\u{201D}  ").foregroundColor(Theme.Color.skyDeep) + Text(offer.line).foregroundColor(Theme.Color.text1))
+                    .font(.system(size: 18, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("explain.line")
                 ForEach(Array(details.enumerated()), id: \.offset) { _, line in
-                    Text(line).font(M.predictionSmall).foregroundStyle(palette.secondaryLabel)
+                    Text(line).font(.system(size: 15)).foregroundStyle(Theme.Color.text2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Theme.Space.s).padding(.vertical, Theme.Space.xs)
+            .padding(.horizontal, 16).padding(.vertical, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(palette.key, in: RoundedRectangle(cornerRadius: M.cornerRadius, style: .continuous))
+            .ringCard(radius: 20)
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("explain.card")
 
-            HStack(spacing: M.keyGap) {
-                button("Back", id: "explain.back", action: model.closeExplain)
-                if showsVisual { button("Show visually", id: "explain.visual", action: model.showVisual) }
-                button("Insert", id: "explain.insert", accent: true, action: model.insertExplain)
+            HStack(spacing: 10) {
+                Button("Back", action: model.closeExplain).buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
+                    .accessibilityIdentifier("explain.back")
+                if showsVisual {
+                    Button("Show visually", action: model.showVisual).buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
+                        .accessibilityIdentifier("explain.visual")
+                }
+                Button("Insert", action: model.insertExplain).buttonStyle(SkyPill(height: 46, font: .system(size: 16, weight: .semibold)))
+                    .accessibilityIdentifier("explain.insert")
             }
         }
-        .padding(.horizontal, M.sideInset)
+        .padding(.horizontal, 10)
         .padding(.vertical, 4)
     }
 
@@ -47,16 +54,5 @@ struct ExplainCardView: View {
     private var showsVisual: Bool {
         if case .answer(_, let r) = offer { return r.visual_ok && model.paired }
         return false
-    }
-
-    private func button(_ title: String, id: String, accent: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title).font(M.mode).foregroundStyle(accent ? .white : palette.label)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, minHeight: M.keyHeight, maxHeight: M.keyHeight)
-                .background(accent ? palette.accent : palette.key, in: RoundedRectangle(cornerRadius: M.cornerRadius, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
     }
 }

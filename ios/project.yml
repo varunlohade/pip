@@ -44,7 +44,8 @@ targets:
         DefaultServerURL: $(DEFAULT_SERVER_URL)
         DemoServerURL: $(DEMO_SERVER_URL)
         KeyboardName: $(KEYBOARD_DISPLAY_NAME)
-        UIAppFonts: [Urbanist-400.ttf, Urbanist-500.ttf, Urbanist-600.ttf, GeistMono-Medium.ttf]
+        # B2 is a light look only; the keyboard still follows the field and the system.
+        UIUserInterfaceStyle: Light
         AppGroupID: $(APP_GROUP_ID)
         AppIdentifierPrefix: $(AppIdentifierPrefix)
         UILaunchScreen: {}

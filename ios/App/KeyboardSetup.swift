@@ -98,7 +98,7 @@ struct KeyboardDefaultGuide: View {
             Group {
                 if setup.state.isOn {
                     Label("\(AppConfig.displayName) is on", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(Theme.Color.paidInk)
+                        .foregroundStyle(Theme.Color.successInk)
                         .accessibilityIdentifier("keyboard.on")
                     if setup.state == .notFirst {
                         Label(KeyboardState.notFirst.homeTitle, systemImage: "arrow.up")

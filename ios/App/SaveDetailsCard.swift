@@ -36,7 +36,7 @@ struct SaveDetailsCard: View {
                 .disabled(busy)
                 .accessibilityIdentifier("save.apple")
                 if let error {
-                    Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.due).fixedSize(horizontal: false, vertical: true)
+                    Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.warning).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("save.error")
                 }
             }

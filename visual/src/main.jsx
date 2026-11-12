@@ -26,9 +26,8 @@ let run = 0
 const Cancelled = Symbol('cancelled')
 
 const pen = Object.assign(document.createElement('div'), { className: 'pip-pen' })
-const step = Object.assign(document.createElement('div'), { className: 'pip-step' })
 pen.style.opacity = '0'
-document.body.append(pen, step)
+document.body.append(pen)
 
 function movePen(x, y) {
   const p = editor.pageToViewport({ x, y })
@@ -132,18 +131,9 @@ async function drawShape(s, token) {
   }
 }
 
-function showStep(n, m, say) {
-  step.innerHTML = ''
-  const b = document.createElement('b')
-  b.textContent = `Step ${n} of ${m}`
-  const span = document.createElement('span')
-  span.textContent = say
-  step.append(b, span)
-}
-
 function fit() {
   if (!editor || !scene) return
-  editor.zoomToBounds({ x: -16, y: -40, w: scene.canvas.w + 32, h: scene.canvas.h + 56 }, { immediate: true })
+  editor.zoomToBounds({ x: -12, y: -12, w: scene.canvas.w + 24, h: scene.canvas.h + 24 }, { immediate: true })
 }
 
 async function play() {
@@ -155,7 +145,6 @@ async function play() {
     const m = scene.steps.length
     for (let i = 0; i < m; i++) {
       const st = scene.steps[i]
-      showStep(i + 1, m, st.say)
       post({ type: 'step', n: i + 1, m, say: st.say })
       for (const s of st.shapes) await drawShape(s, token)
       pen.style.opacity = '0'
@@ -190,7 +179,8 @@ async function exportPng() {
 window.pip = {
   play(json) { scene = typeof json === 'string' ? JSON.parse(json) : json; play() },
   replay() { if (scene) play() },
-  tool(name) { editor.setCurrentTool(name === 'draw' ? 'draw' : 'hand') },
+  tool(name) { editor.setCurrentTool(['draw', 'eraser'].includes(name) ? name : 'hand') },
+  undo() { editor.undo() },
   theme(dark) { editor.user.updateUserPreferences({ colorScheme: dark ? 'dark' : 'light' }) },
   export: exportPng,
 }
@@ -204,7 +194,7 @@ function App() {
       onMount={(e) => {
         editor = e
         editor.setCurrentTool('hand')
-        editor.updateInstanceState({ isGridMode: false })
+        editor.updateInstanceState({ isGridMode: true })
         window.addEventListener('resize', fit)
         post({ type: 'ready' })
       }}

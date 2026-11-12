@@ -24,7 +24,7 @@ struct OnboardingView: View {
         case .keyboard: "Turn on the keyboard"
         case .makeDefault: "Make it your default"
         case .calendar: "Allow Calendar & Reminders"
-        case .start: "Write better in any chat"
+        case .start: AppConfig.tagline
         }
     }
     private var line: String {
@@ -33,7 +33,7 @@ struct OnboardingView: View {
         case .keyboard: "Three taps in Settings. Then come back."
         case .makeDefault: setup.state == .notFirst ? KeyboardState.reorderSteps : "So it opens first in every chat."
         case .calendar: "The keyboard adds the events and reminders you type. They stay on this phone."
-        case .start: "\(AppConfig.displayName) fixes typos and adds your plans while you type."
+        case .start: AppConfig.taglineLine
         }
     }
     private var stepMotion: Animation { reduceMotion ? Theme.Motion.crossfade : Theme.Motion.onboardingStep }
@@ -45,7 +45,7 @@ struct OnboardingView: View {
     var body: some View {
         Group {
             if step == .intro {
-                IntroView { Task { await advance(from: .intro) } }.transition(.opacity)
+                OnboardingHero { Task { await advance(from: .intro) } }.transition(.opacity)
             } else {
                 steps.transition(.opacity)
             }
@@ -70,7 +70,8 @@ struct OnboardingView: View {
                 Spacer(minLength: 0).frame(maxHeight: step == .start ? .infinity : Theme.Space.xl)
                 mark
                 VStack(spacing: Theme.Space.xs) {
-                    Text(title).font(Theme.Font.title).foregroundStyle(Theme.Color.text1)
+                    Text(title).font(Theme.Font.title).tracking(Theme.Tracking.title).foregroundStyle(Theme.Color.text1)
+                        .multilineTextAlignment(.center)
                     Text(line).font(Theme.Font.body).foregroundStyle(Theme.Color.text2)
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                     if step == .keyboard { keyboardSteps.padding(.top, Theme.Space.m) }
@@ -81,7 +82,7 @@ struct OnboardingView: View {
                 .transition(slide)
                 Spacer(minLength: Theme.Space.l).frame(maxHeight: .infinity)
                 if let error = session.error {
-                    Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.due)
+                    Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.warning)
                         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, Theme.Space.s)
                         .accessibilityIdentifier("onboarding.error")
@@ -95,7 +96,14 @@ struct OnboardingView: View {
             .padding(.bottom, Theme.Space.m)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.Color.bg.ignoresSafeArea())
+        .background(alignment: .top) {
+            // B2: the sky stays on onboarding, fading to white behind the steps.
+            ZStack(alignment: .top) {
+                Theme.Color.bg
+                CloudSky(clouds: CloudSky.home).frame(height: 300)
+            }
+            .ignoresSafeArea()
+        }
     }
 
     /// The mark is one view for the whole flow. It is large on the first screen, then moves up and shrinks.
@@ -107,10 +115,10 @@ struct OnboardingView: View {
             if checked {
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.4, weight: .semibold))
-                    .foregroundStyle(Theme.Color.paidInk)
+                    .foregroundStyle(Theme.Color.successInk)
                     .frame(width: size, height: size)
-                    .background(Theme.Color.paidChip, in: Circle())
-                    .overlay(Circle().strokeBorder(Theme.Color.paidChipEdge, lineWidth: 1))
+                    .background(Theme.Color.successChip, in: Circle())
+                    .overlay(Circle().strokeBorder(Theme.Color.successEdge, lineWidth: 1))
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.4).combined(with: .opacity))
             }
         }
@@ -247,7 +255,7 @@ struct StepDots: View {
         HStack(spacing: Theme.Space.xs) {
             ForEach(0..<count, id: \.self) { i in
                 Capsule()
-                    .fill(i == current ? Theme.Color.text1 : i < current ? Theme.Color.text2 : Theme.Color.tick)
+                    .fill(i <= current ? Theme.Color.sky : Color.white.opacity(0.8))
                     .frame(width: i == current ? Theme.Space.l : 6, height: 6)
             }
         }
@@ -285,7 +293,7 @@ struct DevPairingSheet: View {
                 .modifier(FieldStyle())
                 .accessibilityIdentifier("token")
             if let error = session.error {
-                Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.due)
+                Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.warning)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("pair.error")
             }
@@ -398,14 +406,9 @@ struct FieldStyle: ViewModifier {
     }
 }
 
+/// The one main action on a screen: B2's glowing sky pill.
 struct PrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Theme.Font.cardTitle)
-            .foregroundStyle(Theme.Color.bg)
-            .frame(maxWidth: .infinity, minHeight: Theme.Metric.primaryButton)
-            .background(Theme.Color.text1, in: Capsule())
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(Theme.Motion.press, value: configuration.isPressed)
+        SkyPill().makeBody(configuration: configuration)
     }
 }

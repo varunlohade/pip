@@ -57,10 +57,34 @@ enum Shortcuts {
     }
 }
 
-/// A visual explanation the owner exported from the keyboard. The PNG sits next to the list in the App Group.
+/// A visual explanation the owner exported from the keyboard. The PNG (and the scene, for Replay) sit next to the list in the App Group.
 struct Drawing: Codable, Identifiable, Equatable {
     let id: UUID
     let title: String
     let created: Date
     let file: String
+    /// The scene JSON file, so Home can replay the drawing. Older drawings have none.
+    var sceneFile: String? = nil
+}
+
+/// Something Pip explained when the owner tapped it: a word ("btw"), an answer or a chart. Home counts today's.
+struct Learned: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable { case word, answer, chart }
+    var id: String { "\(kind.rawValue)|\(subject)" }
+    let subject: String
+    let line: String
+    let kind: Kind
+    let date: Date
+}
+
+/// A plan the keyboard read in a chat ("quiz on friday 9 am") and showed as a chip. Home offers to add the ones not added yet.
+struct Caught: Codable, Equatable, Identifiable {
+    enum Place: String, Codable { case calendar, reminder }
+    let title: String
+    let place: Place
+    let date: Date
+    /// Nil for an all-day event or a reminder.
+    let end: Date?
+    let seen: Date
+    var id: String { "\(place.rawValue)|\(title.lowercased())|\(Int(date.timeIntervalSince1970))" }
 }

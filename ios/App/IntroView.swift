@@ -25,7 +25,10 @@ final class DemoStore: KeyboardStore {
     var appointments: [Appointment] = []
     var notes: [Note] = Note.demo
     let actionShortcuts = ActionShortcut.defaults
-    func saveDrawing(_ png: Data, title: String) throws {}
+    func saveDrawing(_ png: Data, title: String, scene: Data?) throws {}
+    func recordLearned(_ l: Learned) {}
+    func recordCaught(_ c: Caught) {}
+    func removeCaught(id: String) {}
 }
 
 /// The intro's calendar: it says yes and keeps nothing, so a scene never touches the real calendar.
@@ -226,7 +229,7 @@ struct IntroView: View {
                 HStack(spacing: Theme.Space.s) {
                     HStack(spacing: Theme.Space.xxs) {
                         ForEach(IntroScene.all.indices, id: \.self) { i in
-                            Capsule().fill(i == player.index ? Theme.Color.text1 : i < player.index ? Theme.Color.text2 : Theme.Color.tick).frame(height: 4)
+                            Capsule().fill(i == player.index ? Theme.Color.text1 : i < player.index ? Theme.Color.text2 : Theme.Color.hairline).frame(height: 4)
                         }
                     }
                     .accessibilityElement(children: .ignore)

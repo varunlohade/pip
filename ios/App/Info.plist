@@ -43,18 +43,13 @@
 	<string>$(PRODUCT_DISPLAY_NAME) adds the events you type, such as "meeting with Ana tomorrow 3pm".</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>$(PRODUCT_DISPLAY_NAME) adds the reminders you type, such as "call supplier at 5". They stay on this phone.</string>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Urbanist-400.ttf</string>
-		<string>Urbanist-500.ttf</string>
-		<string>Urbanist-600.ttf</string>
-		<string>GeistMono-Medium.ttf</string>
-	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 </dict>
 </plist>

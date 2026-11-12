@@ -23,8 +23,13 @@ protocol KeyboardStore: AnyObject {
     var appointments: [Appointment] { get }
     var notes: [Note] { get set }
     var actionShortcuts: [ActionShortcut] { get }
-    /// An exported visual explanation, kept in the App Group so the app's Home shows it.
-    func saveDrawing(_ png: Data, title: String) throws
+    /// An exported visual explanation, kept in the App Group so the app's Home shows it and can replay it.
+    func saveDrawing(_ png: Data, title: String, scene: Data?) throws
+    /// Home's "things learned today": a word, answer or chart the owner opened.
+    func recordLearned(_ l: Learned)
+    /// Home's "From your chats": plans shown as chips. `added` removes one the owner already added.
+    func recordCaught(_ c: Caught)
+    func removeCaught(id: String)
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -43,7 +48,13 @@ final class SharedKeyboardStore: KeyboardStore {
         set { SharedStore.notes = newValue }
     }
     var actionShortcuts: [ActionShortcut] { SharedStore.actionShortcuts }
-    func saveDrawing(_ png: Data, title: String) throws { try SharedStore.saveDrawing(png, title: title) }
+    func saveDrawing(_ png: Data, title: String, scene: Data?) throws { try SharedStore.saveDrawing(png, title: title, scene: scene) }
+    func recordLearned(_ l: Learned) { SharedStore.learned = [l] + SharedStore.learned.filter { $0.id != l.id } }
+    func recordCaught(_ c: Caught) {
+        let all = SharedStore.caught
+        if !all.contains(where: { $0.id == c.id }) { SharedStore.caught = [c] + all }
+    }
+    func removeCaught(id: String) { SharedStore.caught = SharedStore.caught.filter { $0.id != id } }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.

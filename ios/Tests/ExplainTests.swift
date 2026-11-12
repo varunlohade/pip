@@ -191,6 +191,35 @@ final class ExplainModelTests: XCTestCase {
         XCTAssertEqual(api.explained, ["bar chart of my spending"])
     }
 
+    func testTheSkyChipTypesTheMeaningAndCountsAsLearned() {
+        set("what does btw mean")
+        XCTAssertTrue(model.explainOfferHasMore)
+        model.tapExplainChip()
+        XCTAssertEqual(host.text, "what does btw mean by the way")
+        XCTAssertEqual(store.learned.map(\.subject), ["btw"])
+        XCTAssertEqual(store.learned.first?.kind, .word)
+        XCTAssertNil(model.explainPanel)
+    }
+
+    func testOpeningAChartCountsAsLearned() {
+        set("graph y = x^2")
+        XCTAssertFalse(model.explainOfferHasMore)
+        model.tapExplainChip()
+        XCTAssertTrue(model.visualOpen)
+        XCTAssertEqual(store.learned.first?.kind, .chart)
+    }
+
+    func testPlansShownAsChipsAreKeptForHomeUntilAdded() async {
+        set("dentist friday 10am")
+        await until("smart sleep") { clock.sleeping > 0 }
+        clock.advance(SuggestPolicy.debounce.seconds)
+        await until("smart chip") { !model.smart.isEmpty }
+        XCTAssertEqual(store.caught.map(\.place), [.calendar])
+        XCTAssertEqual(store.caught.first?.title, "Dentist")
+        model.tapSmart(model.smart[0])
+        XCTAssertEqual(store.caught, [])
+    }
+
     func testTheMeaningTakesTheBarFromTheDayChips() {
         let chip = BarItems.Item(id: "explain", title: "by the way", action: .explain, trigger: "btw")
         let next = Appointment(start: Date(), end: Date().addingTimeInterval(1800), title: "Team standup")
@@ -264,7 +293,10 @@ final class ExplainModelTests: XCTestCase {
             var exports = 0
             func play(_ scene: Data) { played.append(scene) }
             func replay() {}
-            func setTool(draw: Bool) {}
+            var tools: [VisualState.Tool] = []
+            var undos = 0
+            func setTool(_ tool: VisualState.Tool) { tools.append(tool) }
+            func undo() { undos += 1 }
             func exportPNG() { exports += 1 }
         }
         set("explain log function")
@@ -279,8 +311,17 @@ final class ExplainModelTests: XCTestCase {
         await until("scene") { page.played.count == 1 }
         XCTAssertEqual(api.calls, ["explain", "visual"])
         XCTAssertEqual(api.explained.last, "log function")
-        model.visualStep(2, of: 4)
+        model.visualStep(2, of: 4, say: "Draw y = log(x).")
+        guard case .visual(let mid)? = model.explainPanel else { return XCTFail("panel closed") }
+        XCTAssertEqual(mid.say, "Draw y = log(x).")
+        model.selectVisualTool(.draw)
+        model.selectVisualTool(.eraser)
+        model.selectVisualTool(.eraser)
+        model.undoVisual()
+        XCTAssertEqual(page.tools, [.draw, .eraser, .hand])
+        XCTAssertEqual(page.undos, 1)
         model.visualDone()
+        model.toggleExport()
         model.sendVisual(.image)
         XCTAssertEqual(page.exports, 1)
         let png = Data([0x89, 0x50, 0x4E, 0x47])

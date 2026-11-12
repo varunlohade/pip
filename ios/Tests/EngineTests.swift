@@ -117,6 +117,6 @@ final class BarItemsTests: XCTestCase {
     }
 
     func testErrorIsDueTone() {
-        XCTAssertEqual(BarItems.build(state(.error("No connection"))).first?.tone, .due)
+        XCTAssertEqual(BarItems.build(state(.error("No connection"))).first?.tone, .warning)
     }
 }

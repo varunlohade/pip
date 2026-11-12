@@ -15,6 +15,14 @@ enum ExplainOffer: Equatable {
         }
     }
 
+    var learnedKind: Learned.Kind {
+        switch self {
+        case .meaning: .word
+        case .answer: .answer
+        case .chart: .chart
+        }
+    }
+
     /// The one line the bar shows and Insert types.
     var line: String {
         switch self {
@@ -27,13 +35,20 @@ enum ExplainOffer: Equatable {
 
 /// The visual panel: the topic, the scene once it came, and where the drawing is.
 struct VisualState: Equatable {
-    enum Status: Equatable { case loading, drawing(step: Int, of: Int), done, failed(String) }
+    enum Status: Equatable { case loading, drawing(step: Int, of: Int), done(steps: Int), failed(String) }
     let subject: String
     /// The one-line answer, for Insert.
     let summary: String
     var status: Status = .loading
     var scene: Data?
-    var drawing = false
+    /// What the finger does on the canvas: move it, draw on it, or erase.
+    var tool: Tool = .hand
+    /// What the step being drawn says, shown under the canvas.
+    var say: String?
+    /// Export was tapped: the row offers Send as image and Send as link.
+    var exporting = false
+
+    enum Tool: String, Equatable { case hand, draw, eraser }
     /// A short line after a send, such as "Copied. Tap the message box and Paste, then send."
     var note: String?
     /// Which send asked the page for its PNG.
@@ -52,7 +67,8 @@ enum ExplainPanel: Equatable {
 protocol VisualPage: AnyObject {
     func play(_ scene: Data)
     func replay()
-    func setTool(draw: Bool)
+    func setTool(_ tool: VisualState.Tool)
+    func undo()
     func exportPNG()
 }
 
@@ -135,12 +151,28 @@ extension KeyboardModel {
         host?.playClick()
         notesOpen = false
         writeOpen = false
+        deps.store.recordLearned(Learned(subject: o.subject, line: o.line, kind: o.learnedKind, date: deps.now()))
         if case .chart(let subject, let scene, let question) = o {
             // Insert types "y = x^2" for a graph, or the data for a chart.
             openVisual(subject: subject, summary: question.hasPrefix("graph ") ? subject : question, scene: scene, ask: question)
         } else {
             explainPanel = .card(o)
         }
+    }
+
+    /// A meaning or answer has a card with more; a chart opens its drawing straight away.
+    var explainOfferHasMore: Bool {
+        if case .chart = explainOffer { return false }
+        return explainOffer != nil
+    }
+
+    /// The sky chip: a meaning or an answer goes straight into the message, like a suggestion; a chart opens its drawing.
+    func tapExplainChip() {
+        guard let o = explainOffer else { return }
+        if case .chart = o { openExplainCard(); return }
+        deps.store.recordLearned(Learned(subject: o.subject, line: o.line, kind: o.learnedKind, date: deps.now()))
+        explainPanel = .card(o)
+        insertExplain()
     }
 
     func closeExplain() {
@@ -196,8 +228,8 @@ extension KeyboardModel {
         if case .visual(let v) = explainPanel, let scene = v.scene { page.play(scene) }
     }
 
-    func visualStep(_ n: Int, of m: Int) { updateVisual { $0.status = .drawing(step: n, of: m) } }
-    func visualDone() { updateVisual { $0.status = .done } }
+    func visualStep(_ n: Int, of m: Int, say: String? = nil) { updateVisual { $0.status = .drawing(step: n, of: m); $0.say = say } }
+    func visualDone() { updateVisual { if case .drawing(_, let m) = $0.status { $0.status = .done(steps: m) } else { $0.status = .done(steps: 1) } } }
     /// Before the drawing shows, the panel says it failed; after, a failed export is only a note, and the drawing stays.
     func visualFailed(_ message: String) {
         updateVisual { v in
@@ -210,10 +242,21 @@ extension KeyboardModel {
         visualPage?.replay()
     }
 
-    func toggleVisualDraw() {
+    /// The canvas tools: tap a tool to use it, tap it again to go back to moving the canvas.
+    func selectVisualTool(_ tool: VisualState.Tool) {
         host?.playClick()
-        updateVisual { $0.drawing.toggle() }
-        if case .visual(let v) = explainPanel { visualPage?.setTool(draw: v.drawing) }
+        updateVisual { $0.tool = $0.tool == tool ? .hand : tool }
+        if case .visual(let v) = explainPanel { visualPage?.setTool(v.tool) }
+    }
+
+    func undoVisual() {
+        host?.playClick()
+        visualPage?.undo()
+    }
+
+    func toggleExport() {
+        host?.playClick()
+        updateVisual { $0.exporting.toggle(); $0.note = nil }
     }
 
     static let needsFullAccessToSend = "Turn on Full Access to send drawings"
@@ -224,14 +267,14 @@ extension KeyboardModel {
     func sendVisual(_ kind: VisualState.Send) {
         host?.playClick()
         guard hasFullAccess else { updateVisual { $0.note = Self.needsFullAccessToSend }; return }
-        updateVisual { $0.sending = kind; $0.note = kind == .image ? "Making the image\u{2026}" : "Making the link\u{2026}" }
+        updateVisual { $0.sending = kind; $0.exporting = false; $0.note = kind == .image ? "Making the image\u{2026}" : "Making the link\u{2026}" }
         visualPage?.exportPNG()
     }
 
     /// The page's PNG for the send that asked for it. Every send also keeps the drawing in "your drawings".
     func visualExported(_ png: Data) {
         guard case .visual(let v) = explainPanel, let kind = v.sending else { return }
-        try? deps.store.saveDrawing(png, title: v.subject)
+        try? deps.store.saveDrawing(png, title: v.subject, scene: v.scene)
         switch kind {
         case .image:
             deps.pasteboard.setPNG(png)
