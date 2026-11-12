@@ -35,7 +35,7 @@ enum LocalWipe {
     /// What this process alone holds: URL cache, cookies, web data of every type, temp files, caches, and its own defaults.
     @MainActor
     static func wipeProcess() async {
-        URLCache.shared.removeAllCachedResponses()
+        await clearURLCache()
         for jar in [HTTPCookieStorage.shared, HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: AppConfig.appGroupID)] {
             jar.removeCookies(since: .distantPast)
             for c in jar.cookies ?? [] { jar.deleteCookie(c) }
@@ -46,6 +46,22 @@ enum LocalWipe {
         let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)
         for dir in [fm.temporaryDirectory] + caches { empty(dir) }
         if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+    }
+
+    /// URLCache clears on a background queue and has no completion. Zero capacity makes it drop what it holds, and
+    /// URLSession.shared.reset (the only session the app uses; it shares this cache) returns once its caches are flushed.
+    /// Without the wait, a response stored just before logout could land after the clear, and SQLite's truncate scratch
+    /// files (tmpsqlitetruncatedb*) appeared in tmp after the folder was emptied.
+    @MainActor
+    private static func clearURLCache() async {
+        let cache = URLCache.shared
+        let (memory, disk) = (cache.memoryCapacity, cache.diskCapacity)
+        cache.removeAllCachedResponses()
+        cache.memoryCapacity = 0
+        cache.diskCapacity = 0
+        await URLSession.shared.reset()
+        cache.memoryCapacity = memory
+        cache.diskCapacity = disk
     }
 
     /// Every file and folder in `dir`, one by one, except `keep` and iOS's own container record
@@ -61,6 +77,21 @@ enum LocalWipe {
     @MainActor
     static func wipeAll() async {
         wipeShared()
+        await sharedDefaultsReachDisk()
         await wipeProcess()
+    }
+
+    /// cfprefsd writes the App Group plist to disk on its own schedule, so the last person's values could still sit in the
+    /// file when logout returns. Wait, at most two seconds, until the file holds only the keys the wipe keeps.
+    @MainActor
+    private static func sharedDefaultsReachDisk() async {
+        guard let file = SharedStore.container?.appendingPathComponent("Library/Preferences/\(AppConfig.appGroupID).plist") else { return }
+        let kept: Set<String> = [StoreKey.accountEpoch.rawValue, StoreKey.installed.rawValue]
+        for _ in 0..<100 {
+            guard let data = FileManager.default.contents(atPath: file.path),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  !Set(plist.keys).isSubset(of: kept) else { return }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
     }
 }

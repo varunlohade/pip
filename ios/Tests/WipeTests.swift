@@ -7,38 +7,58 @@ import XCTest
 final class WipeTests: XCTestCase {
     private let site = URL(string: "https://pip.example/v1/me")!
     static let containerRecord = ".com.apple.mobile_container_manager.metadata.plist"
+    /// One marker per run, written into every store. After the wipe no file on disk may hold it.
+    private let mark = "pip-wipe-marker-\(UUID().uuidString)"
 
     private func seedEverything() async throws {
-        for s in Secret.allCases { XCTAssertEqual(Keychain.set(s, "seed-\(s.rawValue)"), errSecSuccess, "Keychain write \(s)") }
+        for s in Secret.allCases { XCTAssertEqual(Keychain.set(s, "\(mark)-\(s.rawValue)"), errSecSuccess, "Keychain write \(s)") }
         let d = try XCTUnwrap(SharedStore.defaults)
-        for k in StoreKey.allCases { d.set("seed", forKey: k.rawValue) }
-        d.set("left by an older build", forKey: "some_old_key")
-        SharedStore.notes = [Note(text: "Ana's pin is in the drawer", trigger: ";pin")]
-        SharedStore.appointments = [Appointment(start: Date(), end: Date().addingTimeInterval(600), title: "Dentist")]
+        for k in StoreKey.allCases { d.set("\(mark) \(k.rawValue)", forKey: k.rawValue) }
+        d.set("left by an older build \(mark)", forKey: "some_old_key")
+        SharedStore.notes = [Note(text: "Ana's pin is in the drawer \(mark)", trigger: ";pin")]
+        SharedStore.appointments = [Appointment(start: Date(), end: Date().addingTimeInterval(600), title: "Dentist \(mark)")]
         SharedStore.actionShortcuts = ActionShortcut.defaults
-        SharedStore.learned = [Learned(subject: "btw", line: "by the way", kind: .word, date: Date())]
-        SharedStore.caught = [Caught(title: "Lunch with Ana", place: .calendar, date: Date(), end: nil, seen: Date())]
-        try SharedStore.saveDrawing(Data([0x89, 0x50]), title: "log function", scene: Data("{}".utf8))
-        try Data("x".utf8).write(to: XCTUnwrap(SharedStore.container).appendingPathComponent("stray.bin"))
+        SharedStore.learned = [Learned(subject: "btw", line: "by the way \(mark)", kind: .word, date: Date())]
+        SharedStore.caught = [Caught(title: "Lunch with Ana \(mark)", place: .calendar, date: Date(), end: nil, seen: Date())]
+        try SharedStore.saveDrawing(Data([0x89, 0x50]) + Data(mark.utf8), title: "log function \(mark)", scene: Data("{\"m\":\"\(mark)\"}".utf8))
+        try Data(mark.utf8).write(to: XCTUnwrap(SharedStore.container).appendingPathComponent("stray.bin"))
         let groupCaches = try XCTUnwrap(SharedStore.container).appendingPathComponent("Library/Caches", isDirectory: true)
         try FileManager.default.createDirectory(at: groupCaches, withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: groupCaches.appendingPathComponent("preview.jpg"))
+        try Data(mark.utf8).write(to: groupCaches.appendingPathComponent("preview.jpg"))
 
         let response = HTTPURLResponse(url: site, statusCode: 200, httpVersion: nil, headerFields: ["Cache-Control": "max-age=600"])!
-        URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: Data("{\"email\":\"ana@example.com\"}".utf8)), for: URLRequest(url: site))
-        let cookie = try XCTUnwrap(HTTPCookie(properties: [.domain: "pip.example", .path: "/", .name: "sid", .value: "seed", .expires: Date().addingTimeInterval(3600)]))
+        // A small body stays in the cache database; a large one goes to its own file next to it.
+        URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: Data("{\"email\":\"\(mark)@example.com\"}".utf8)), for: URLRequest(url: site))
+        let big = Data(String(repeating: "\(mark) ", count: 2000).utf8)
+        URLCache.shared.storeCachedResponse(CachedURLResponse(response: response, data: big), for: URLRequest(url: site.appendingPathComponent("big")))
+        let cookie = try XCTUnwrap(HTTPCookie(properties: [.domain: "pip.example", .path: "/", .name: "sid", .value: mark, .expires: Date().addingTimeInterval(3600)]))
         HTTPCookieStorage.shared.setCookie(cookie)
         HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: AppConfig.appGroupID).setCookie(cookie)
         await WKWebsiteDataStore.default().httpCookieStore.setCookie(cookie)
-        try Data("x".utf8).write(to: FileManager.default.temporaryDirectory.appendingPathComponent("share-preview.jpg"))
+        try Data(mark.utf8).write(to: FileManager.default.temporaryDirectory.appendingPathComponent("share-preview.jpg"))
         let caches = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
         try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
-        try Data("x".utf8).write(to: caches.appendingPathComponent("render.png"))
-        UserDefaults.standard.set(true, forKey: "intro_seen")
+        try Data(mark.utf8).write(to: caches.appendingPathComponent("render.png"))
+        UserDefaults.standard.set(mark, forKey: "intro_seen")
     }
 
     private func webRecords() async -> Int {
         await WKWebsiteDataStore.default().dataRecords(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes()).count
+    }
+
+    /// Every file under `dirs` whose bytes hold the marker, as UTF-8 or UTF-16.
+    private func filesHoldingMark(under dirs: [URL]) -> [String] {
+        let needles = [Data(mark.utf8), mark.data(using: .utf16LittleEndian)!, mark.data(using: .utf16BigEndian)!]
+        var hits: [String] = []
+        for dir in dirs {
+            let walk = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.isRegularFileKey])
+            while let url = walk?.nextObject() as? URL {
+                guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+                      let bytes = try? Data(contentsOf: url) else { continue }
+                if needles.contains(where: { bytes.range(of: $0) != nil }) { hits.append(url.path) }
+            }
+        }
+        return hits
     }
 
     private func contents(_ url: URL?) -> [String] {
@@ -60,6 +80,10 @@ final class WipeTests: XCTestCase {
         XCTAssertTrue(SharedStore.signedIn)
         XCTAssertFalse(SharedStore.drawings.isEmpty)
         XCTAssertNotNil(URLCache.shared.cachedResponse(for: URLRequest(url: site)))
+        let tmp = FileManager.default.temporaryDirectory
+        let caches = try XCTUnwrap(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first)
+        let group = try XCTUnwrap(SharedStore.container)
+        XCTAssertFalse(filesHoldingMark(under: [tmp, caches, group]).isEmpty, "the marker search finds seeded files")
         XCTAssertFalse((HTTPCookieStorage.shared.cookies ?? []).isEmpty)
         let webBefore = await webRecords()
         XCTAssertGreaterThan(webBefore, 0)
@@ -91,13 +115,16 @@ final class WipeTests: XCTestCase {
         XCTAssertEqual(SharedStore.notes, Note.demo, "notes fall back to the built-in examples")
         XCTAssertTrue(SharedStore.drawings.isEmpty && SharedStore.learned.isEmpty && SharedStore.caught.isEmpty && SharedStore.appointments.isEmpty)
         XCTAssertNil(URLCache.shared.cachedResponse(for: URLRequest(url: site)), "URLCache")
+        XCTAssertNil(URLCache.shared.cachedResponse(for: URLRequest(url: site.appendingPathComponent("big"))), "URLCache, large body")
         XCTAssertEqual(HTTPCookieStorage.shared.cookies ?? [], [], "cookies")
         XCTAssertEqual(HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: AppConfig.appGroupID).cookies ?? [], [], "group cookies")
         let webAfter = await webRecords()
         XCTAssertEqual(webAfter, 0, "WKWebsiteDataStore")
-        XCTAssertEqual(contents(FileManager.default.temporaryDirectory), [], "temp files")
-        XCTAssertEqual(contents(FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first), [], "caches")
+        XCTAssertEqual(contents(tmp), [], "temp files")
+        XCTAssertEqual(contents(caches), [], "caches")
         XCTAssertNil(UserDefaults.standard.object(forKey: "intro_seen"), "the app's own defaults")
+        // The real proof: no file left in temp, caches or the App Group holds the marker.
+        XCTAssertEqual(filesHoldingMark(under: [tmp, caches, group]), [], "files that still hold the last person's data")
     }
 
     /// The keyboard runs in its own process. It sees the new epoch the next time it appears and drops the last person's state.
