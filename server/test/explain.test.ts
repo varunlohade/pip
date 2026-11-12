@@ -4,6 +4,7 @@ import { createAi } from '../src/ai.ts';
 import { config } from '../src/config.ts';
 import { CANVAS, ExplanationSchema, LIMITS, SceneSchema, type SceneShape } from '../src/explain.ts';
 import { setup } from './helpers.ts';
+import logScene from './fixtures/log-scene.json' with { type: 'json' };
 
 const inside = (s: SceneShape) => {
   const xs = s.type === 'line' ? s.points.map((p) => p[0]) : s.type === 'arrow' ? [s.x1, s.x2] : [s.x];
@@ -139,6 +140,15 @@ test('visual: clamps coordinates and text, caps steps and shapes, drops bad shap
   assert.ok(scene.steps.flatMap((s) => s.shapes).every(inside));
 });
 
+test('visual: axes get tick marks and numbers; the log fixture has x 2..10 and y -1, 1', () => {
+  const { steps } = SceneSchema.parse(logScene);
+  const labels = steps[0].shapes.filter((s) => s.type === 'text').map((s) => (s as { text: string }).text);
+  for (const t of ['2', '4', '6', '8', '10', '-1', '1', 'x', 'y']) assert.ok(labels.includes(t), `missing ${t} in ${labels}`);
+  const ticks = steps[0].shapes.filter((s) => s.type === 'line' && s.points.length === 2);
+  assert.equal(ticks.length, 7);
+  assert.ok(steps[3].shapes.some((s) => s.type === 'text' && s.text === 'climbs, but slowly'));
+});
+
 test('explain text keeps powers: 10² stays 10^2, not 102', () => {
   assert.equal(ExplanationSchema.parse({ short: '10² = 100', body: ['2¹⁰ = 1024'], visual_ok: false }).short, '10^2 = 100');
   assert.equal(ExplanationSchema.parse({ short: 'x', body: ['2¹⁰ = 1024'], visual_ok: false }).body, '2^10 = 1024');
@@ -163,7 +173,8 @@ test('createAi: explain and visual send one call to the primary model and parse 
   const ai = createAi({ typesafeKey: 'k', openrouterKey: 'k' });
   assert.deepEqual(await ai.explain('explain log function'), { short: 'A log is the power you need.', body: 'log10(100) = 2', visual_ok: true });
   const scene = await ai.visual('log function');
-  assert.equal(scene.steps[0].shapes.filter((s) => s.type === 'line').length, 1);
+  // One sampled curve; the other lines are two-point tick marks.
+  assert.equal(scene.steps[0].shapes.filter((s) => s.type === 'line' && s.points.length > 2).length, 1);
   assert.equal(bodies.length, 2);
   assert.ok(bodies.every((b) => b.model === config.llm.primary.model));
   assert.equal(bodies[0].messages[1].content, 'explain log function');

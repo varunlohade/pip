@@ -1,5 +1,5 @@
 {
-  "title": "The log function",
+  "title": "y = log(x)",
   "steps": [
     {
       "say": "Start with a graph: x goes right, y goes up.",
@@ -7,23 +7,15 @@
         {
           "type": "axes",
           "x": 60,
-          "y": 60,
-          "w": 480,
-          "h": 380,
-          "x_min": -1,
-          "x_max": 10,
-          "y_min": -2,
-          "y_max": 1.2,
+          "y": 40,
+          "w": 700,
+          "h": 430,
+          "x_min": 0,
+          "x_max": 10.5,
+          "y_min": -1.3,
+          "y_max": 1.3,
           "x_label": "x",
           "y_label": "y"
-        },
-        {
-          "type": "text",
-          "x": 60,
-          "y": 20,
-          "text": "y = log10(x)",
-          "size": "l",
-          "color": "black"
         }
       ]
     },
@@ -42,50 +34,48 @@
       "shapes": [
         {
           "type": "ellipse",
-          "x": 139,
-          "y": 195,
+          "x": 119,
+          "y": 247,
           "w": 16,
           "h": 16,
-          "color": "red"
+          "color": "blue"
         },
         {
           "type": "arrow",
-          "x1": 280,
-          "y1": 300,
-          "x2": 158,
-          "y2": 212,
-          "label": "log(1) = 0",
-          "color": "red"
+          "x1": 146,
+          "y1": 336,
+          "x2": 129,
+          "y2": 268,
+          "color": "black"
+        },
+        {
+          "type": "text",
+          "x": 128,
+          "y": 340,
+          "text": "(1, 0)",
+          "size": "m",
+          "color": "black"
         }
       ]
     },
     {
-      "say": "At x = 10 the log is 1: one 10 makes 10.",
+      "say": "Past 1 it climbs slowly. x = 10 only gets you to 1.",
       "shapes": [
         {
+          "type": "text",
+          "x": 250,
+          "y": 58,
+          "text": "climbs, but slowly",
+          "size": "m",
+          "color": "blue"
+        },
+        {
           "type": "ellipse",
-          "x": 532,
-          "y": 76,
+          "x": 719,
+          "y": 82,
           "w": 16,
           "h": 16,
-          "color": "green"
-        },
-        {
-          "type": "rect",
-          "x": 585,
-          "y": 50,
-          "w": 195,
-          "h": 70,
-          "label": "10¹ = 10, so log(10) = 1",
-          "color": "green"
-        },
-        {
-          "type": "arrow",
-          "x1": 583,
-          "y1": 85,
-          "x2": 552,
-          "y2": 84,
-          "color": "green"
+          "color": "blue"
         }
       ]
     }

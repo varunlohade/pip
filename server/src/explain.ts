@@ -85,18 +85,40 @@ export type SceneShape =
   | { type: 'line'; points: [number, number][]; color: Color };
 export type Scene = { title: string; canvas: typeof CANVAS; steps: { say: string; shapes: SceneShape[] }[] };
 
-/** Axes become two arrows and their end labels. */
+/** A round tick step: 1, 2 or 5 times a power of ten, about `count` ticks across the span. */
+export function tickStep(span: number, count = 5): number {
+  const raw = span / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const f = raw / mag;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag;
+}
+const tickLabel = (v: number) => String(Math.round(v * 100) / 100);
+
+/** Axes become two arrows with tick marks and numbers (0 left out, where the axes cross), and the end labels. */
 function axesShapes(a: Axes): SceneShape[] {
   const x2 = Math.min(CANVAS.w, a.x + a.w), y2 = Math.min(CANVAS.h, a.y + a.h);
+  const px = (v: number) => Math.round(a.x + ((v - a.x_min) / (a.x_max - a.x_min)) * (x2 - a.x));
+  const py = (v: number) => Math.round(y2 - ((v - a.y_min) / (a.y_max - a.y_min)) * (y2 - a.y));
   // The x axis sits at y = 0 when 0 is in range, else at the bottom; the y axis at x = 0 when in range, else at the left.
-  const zeroY = a.y_min <= 0 && a.y_max >= 0 ? Math.round(y2 - ((0 - a.y_min) / (a.y_max - a.y_min)) * (y2 - a.y)) : y2;
-  const zeroX = a.x_min <= 0 && a.x_max >= 0 ? Math.round(a.x + ((0 - a.x_min) / (a.x_max - a.x_min)) * (x2 - a.x)) : a.x;
+  const zeroY = a.y_min <= 0 && a.y_max >= 0 ? py(0) : y2;
+  const zeroX = a.x_min <= 0 && a.x_max >= 0 ? px(0) : a.x;
   const out: SceneShape[] = [
-    { type: 'arrow', x1: a.x, y1: zeroY, x2, y2: zeroY, color: 'grey' },
-    { type: 'arrow', x1: zeroX, y1: y2, x2: zeroX, y2: a.y, color: 'grey' },
+    { type: 'arrow', x1: a.x, y1: zeroY, x2, y2: zeroY, color: 'black' },
+    { type: 'arrow', x1: zeroX, y1: y2, x2: zeroX, y2: a.y, color: 'black' },
   ];
-  if (a.x_label) out.push({ type: 'text', x: Math.min(x2, CANVAS.w - 40), y: Math.min(zeroY + 8, CANVAS.h - 20), text: a.x_label, size: 's', color: 'grey' });
-  if (a.y_label) out.push({ type: 'text', x: Math.min(zeroX + 8, CANVAS.w - 40), y: a.y, text: a.y_label, size: 's', color: 'grey' });
+  const xs = tickStep(a.x_max - a.x_min, 6), ys = tickStep(a.y_max - a.y_min);
+  for (let v = Math.ceil(a.x_min / xs) * xs; v <= a.x_max - xs / 4; v += xs) {
+    if (Math.abs(v) < xs / 1000) continue;
+    out.push({ type: 'line', points: [[px(v), zeroY - 6], [px(v), zeroY + 6]], color: 'black' });
+    out.push({ type: 'text', x: Math.max(0, px(v) - 6), y: Math.min(CANVAS.h - 20, zeroY + 10), text: tickLabel(v), size: 's', color: 'grey' });
+  }
+  for (let v = Math.ceil(a.y_min / ys) * ys; v <= a.y_max - ys / 4; v += ys) {
+    if (Math.abs(v) < ys / 1000) continue;
+    out.push({ type: 'line', points: [[zeroX - 6, py(v)], [zeroX + 6, py(v)]], color: 'black' });
+    out.push({ type: 'text', x: Math.max(0, zeroX - 14 - 9 * tickLabel(v).length), y: Math.max(0, py(v) - 12), text: tickLabel(v), size: 's', color: 'grey' });
+  }
+  if (a.x_label) out.push({ type: 'text', x: Math.min(x2 + 4, CANVAS.w - 20), y: Math.min(zeroY + 8, CANVAS.h - 20), text: a.x_label, size: 'm', color: 'black' });
+  if (a.y_label) out.push({ type: 'text', x: Math.min(zeroX + 10, CANVAS.w - 40), y: Math.max(0, a.y - 6), text: a.y_label, size: 'm', color: 'black' });
   return out;
 }
 
