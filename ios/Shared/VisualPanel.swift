@@ -2,7 +2,7 @@ import SwiftUI
 import WebKit
 import os
 
-/// The visual panel, in place of the keys (B2-4): a white ring canvas where the tldraw page draws the scene with the buddy
+/// The visual panel, in place of the keys (B2-4): a white ring canvas where the Excalidraw page draws the scene with the buddy
 /// leading the pen; pen, eraser and undo on the canvas; the step dashes and what the step says; then Send and Insert.
 struct VisualPanelView: View {
     @ObservedObject var model: KeyboardModel
@@ -154,7 +154,7 @@ struct VisualPanelView: View {
     }
 }
 
-/// Hosts the bundled tldraw page (ios/Visual, built from visual/). A content rule blocks every http(s) load, so the page
+/// Hosts the bundled Excalidraw page (ios/Visual, built from visual/). A content rule blocks every http(s) load, so the page
 /// can never reach a network; it talks to the keyboard only through the "pip" message handler.
 struct VisualWebView: UIViewRepresentable {
     let model: KeyboardModel
@@ -176,15 +176,9 @@ struct VisualWebView: UIViewRepresentable {
         #endif
         context.coordinator.web = web
         context.coordinator.dark = dark
-        // The drawing engine: tldraw (Visual/) or the Excalidraw preview (VisualExcalidraw/), with its look.
-        let engine = SharedStore.visualEngine
-        if engine == "excalidraw-default" {
-            config.userContentController.addUserScript(WKUserScript(source: "window.PIP_LOOK = 'default'", injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        }
-        let folder = engine.hasPrefix("excalidraw") ? "VisualExcalidraw" : "Visual"
         Coordinator.noNetwork { rules in
             if let rules { config.userContentController.add(rules) }
-            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: folder) else {
+            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Visual") else {
                 context.coordinator.model?.visualFailed("page missing")
                 return
             }

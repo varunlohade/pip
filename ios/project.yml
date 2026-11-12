@@ -30,12 +30,8 @@ targets:
     sources:
       - App
       - Shared
-      # The tldraw page, built from visual/ (npm run build). A folder reference keeps its paths.
+      # The drawing page (Excalidraw), built from visual/ (npm run build). A folder reference keeps its paths.
       - path: Visual
-        type: folder
-        buildPhase: resources
-      # The Excalidraw preview page, built from visual-excalidraw/, used only when visual_engine says so.
-      - path: VisualExcalidraw
         type: folder
         buildPhase: resources
     info:
@@ -95,10 +91,6 @@ targets:
       - Keyboard
       - Shared
       - path: Visual
-        type: folder
-        buildPhase: resources
-      # The Excalidraw preview page, built from visual-excalidraw/, used only when visual_engine says so.
-      - path: VisualExcalidraw
         type: folder
         buildPhase: resources
     info:

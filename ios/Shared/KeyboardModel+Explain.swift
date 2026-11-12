@@ -64,7 +64,7 @@ enum ExplainPanel: Equatable {
     case visual(VisualState)
 }
 
-/// The tldraw page in the visual panel. VisualWebView is the real one.
+/// The drawing page in the visual panel. VisualWebView is the real one.
 @MainActor
 protocol VisualPage: AnyObject {
     func play(_ scene: Data)

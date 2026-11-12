@@ -171,10 +171,9 @@ struct ReplayWebView: UIViewRepresentable {
         web.backgroundColor = .clear
         context.coordinator.web = web
         controller.web = web
-        let folder = SharedStore.visualEngine.hasPrefix("excalidraw") ? "VisualExcalidraw" : "Visual"
         VisualWebView.Coordinator.noNetwork { rules in
             if let rules { config.userContentController.add(rules) }
-            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: folder) else { return }
+            guard let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "Visual") else { return }
             web.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
         return web

@@ -121,12 +121,6 @@ final class Session: ObservableObject {
     /// Release builds ignore it, so no web page can pair the app to another server.
     func handle(url: URL) {
         #if DEBUG
-        if url.scheme == "pip-dev", url.host == "engine",
-           let name = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "name" })?.value,
-           ["tldraw", "excalidraw", "excalidraw-default"].contains(name) {
-            SharedStore.visualEngine = name
-            return
-        }
         guard url.scheme == "pip-dev", url.host == "pair",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
               let token = items.first(where: { $0.name == "token" })?.value else { return }

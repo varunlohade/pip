@@ -30,6 +30,8 @@ final class ExplainShots: XCTestCase {
         paste.tap()
         let allow = messages.alerts.buttons["Allow Paste"]
         if allow.waitForExistence(timeout: 1) { allow.tap() }
+        // The paste lands a moment after the tap; clearing the pasteboard sooner can empty it first.
+        Thread.sleep(forTimeInterval: 0.6)
         UIPasteboard.general.items = []
     }
 
@@ -131,14 +133,10 @@ final class ExplainShots: XCTestCase {
         shot("08-send-link")
     }
 
-    /// The engine preview: the same three scenes with whichever engine pip-dev://engine set (TEST_RUNNER_ENGINE names the files).
+    /// The three drawing scenes in a Messages chat: log (mid-drawing and finished), a bar chart and a pie chart.
     /// It writes anim-start.txt (epoch seconds) when the log drawing starts, to cut a screen recording.
-    func test7EngineScenes() {
-        let engine = env["ENGINE"] ?? "tldraw"
-        XCUIDevice.shared.system.open(URL(string: "pip-dev://engine?name=\(engine)")!)
-        let open = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Open"]
-        if open.waitForExistence(timeout: 4) { open.tap() }
-        Thread.sleep(forTimeInterval: 1.5)
+    func test7DrawingScenes() {
+        let engine = "pip"
         let field = openField()
         let title = element(messages, "explain.title")
         func waitDone(_ what: String) {
