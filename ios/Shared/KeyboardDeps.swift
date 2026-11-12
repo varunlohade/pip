@@ -17,7 +17,11 @@ extension APIClient: KeyboardAPI {}
 
 /// What the keyboard reads and writes on the device. SharedKeyboardStore is the real one.
 protocol KeyboardStore: AnyObject {
-    var deviceToken: String? { get }
+    /// The Keychain holds a session the keyboard can use.
+    var signedIn: Bool { get }
+    /// Changes after every logout wipe. When it differs from `keyboardSeenEpoch`, the keyboard drops what it holds.
+    var accountEpoch: String? { get }
+    var keyboardSeenEpoch: String? { get set }
     var keyboardLastSeen: Date? { get set }
     var lastPasteboardChange: Int { get set }
     var appointments: [Appointment] { get }
@@ -33,7 +37,12 @@ protocol KeyboardStore: AnyObject {
 }
 
 final class SharedKeyboardStore: KeyboardStore {
-    var deviceToken: String? { SharedStore.deviceToken }
+    var signedIn: Bool { SharedStore.signedIn }
+    var accountEpoch: String? { SharedStore.accountEpoch }
+    var keyboardSeenEpoch: String? {
+        get { SharedStore.keyboardSeenEpoch }
+        set { SharedStore.keyboardSeenEpoch = newValue }
+    }
     var keyboardLastSeen: Date? {
         get { SharedStore.keyboardLastSeen }
         set { SharedStore.keyboardLastSeen = newValue }
@@ -81,6 +90,8 @@ struct KeyboardDeps {
     var writer: SmartWriter = EventKitWriter()
     /// The voice for "Play with voice". Only a tap starts it; tests pass a silent fake.
     var speaker: @MainActor () -> Speaker = { SystemSpeaker() }
+    /// Clears this process's caches after a logout. Tests pass a recorder.
+    var wipeProcess: @MainActor () async -> Void = { await LocalWipe.wipeProcess() }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

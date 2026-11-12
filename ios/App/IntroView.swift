@@ -19,7 +19,9 @@ struct DemoAPI: KeyboardAPI {
 
 /// The intro's device storage: kept in memory, gone when the intro ends.
 final class DemoStore: KeyboardStore {
-    let deviceToken: String? = "demo"
+    let signedIn = true
+    let accountEpoch: String? = nil
+    var keyboardSeenEpoch: String?
     var keyboardLastSeen: Date?
     var lastPasteboardChange = 0
     var appointments: [Appointment] = []

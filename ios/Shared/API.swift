@@ -56,9 +56,6 @@ struct WriteResponse: Decodable { let text: String; let changed: Bool? }
 struct ToneResponse: Decodable { let tone: String; let calm: String? }
 /// POST /v1/explain: `short` is one line, `body` up to four lines split by newlines.
 struct ExplainResponse: Decodable, Equatable { let short: String; let body: String; let visual_ok: Bool }
-struct DeviceAuthResponse: Decodable { let device_token: String }
-/// `recovered`: this Apple account already had a Pip account from an earlier install. `device_token` is then the token of that account.
-struct AppleLinkResponse: Decodable, Equatable { let linked: Bool; let recovered: Bool; let device_token: String? }
 
 enum APIError: Error, LocalizedError {
     case notPaired
@@ -100,25 +97,11 @@ struct APIClient {
     var session: URLSession = .shared
 
     static func shared() -> APIClient {
-        APIClient(baseURL: SharedStore.serverURL, token: SharedStore.deviceToken)
-    }
-
-    /// "Get started": makes a device account and returns its device token. The only call with no token.
-    /// `deviceID` is a random UUID from this phone's Keychain. The server makes a new user on each call.
-    static func deviceSignIn(baseURL: String, deviceID: String) async throws -> String {
-        guard let url = URL(string: baseURL + "/v1/auth/device") else { throw APIError.message("Server address is wrong") }
-        var r = URLRequest(url: url, timeoutInterval: 20)
-        r.httpMethod = "POST"
-        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try JSONEncoder().encode(["device_id": deviceID])
-        let (data, resp) = try await URLSession.shared.data(for: r)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard code == 200 else { throw APIError.http(code, "") }
-        return try JSONDecoder().decode(DeviceAuthResponse.self, from: data).device_token
+        APIClient(baseURL: SharedStore.serverURL, token: TokenStore.access)
     }
 
     /// `tap`: the call starts from the owner's tap. The server refuses writing help without this header.
-    private func request(_ method: String, _ path: String, body: Encodable? = nil, tap: Bool = false) throws -> URLRequest {
+    func request(_ method: String, _ path: String, body: Encodable? = nil, tap: Bool = false) throws -> URLRequest {
         guard let token else { throw APIError.notPaired }
         guard let url = URL(string: baseURL + path) else { throw APIError.message("Server address is wrong") }
         var r = URLRequest(url: url, timeoutInterval: 20)
@@ -134,11 +117,23 @@ struct APIClient {
         return r
     }
 
-    private func send<T: Decodable>(_ r: URLRequest, as: T.Type) async throws -> T {
-        let (data, resp) = try await session.data(for: r)
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+    func send<T: Decodable>(_ r: URLRequest, as: T.Type) async throws -> T {
+        try JSONDecoder().decode(T.self, from: await data(r))
+    }
+
+    /// One call. An expired access token gets one refresh (shared with the keyboard through the Keychain) and one retry.
+    private func data(_ r: URLRequest) async throws -> Data {
+        var (data, resp) = try await session.data(for: r)
+        var code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401, Keychain.get(.refreshToken) != nil {
+            let fresh = try await TokenRefresher.refreshed(baseURL: baseURL, replacing: token, session: session)
+            var again = r
+            again.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
+            (data, resp) = try await session.data(for: again)
+            code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        }
         guard (200..<300).contains(code) else { throw APIError.http(code, String(decoding: data, as: UTF8.self)) }
-        return try JSONDecoder().decode(T.self, from: data)
+        return data
     }
 
     func suggest(_ text: String, context: String? = nil) async throws -> SuggestResponse {
@@ -170,10 +165,7 @@ struct APIClient {
 
     /// The drawn scene, as JSON the visual page reads. The phone does not decode it; the server already clamped it.
     func explainVisual(_ topic: String) async throws -> Data {
-        let (data, resp) = try await session.data(for: request("POST", "/v1/explain/visual", body: ["topic": topic], tap: true))
-        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-        guard (200..<300).contains(code) else { throw APIError.http(code, String(decoding: data, as: UTF8.self)) }
-        return data
+        try await data(request("POST", "/v1/explain/visual", body: ["topic": topic], tap: true))
     }
 
     /// "Send": uploads the drawing PNG, its JPEG link preview and its title, and returns the short link the keyboard types into
@@ -208,10 +200,5 @@ struct APIClient {
     func me() async throws {
         struct Me: Decodable { let ok: Bool }
         _ = try await send(request("GET", "/v1/me"), as: Me.self)
-    }
-
-    /// "Save your details": attaches the Apple account to this device account. The server checks the identity token and the raw nonce.
-    func linkApple(identityToken: String, nonce: String) async throws -> AppleLinkResponse {
-        try await send(request("POST", "/v1/auth/apple/link", body: ["identity_token": identityToken, "nonce": nonce]), as: AppleLinkResponse.self)
     }
 }

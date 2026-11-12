@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// One short flow: the intro, turn on the keyboard, make it the default, allow Calendar & Reminders, Get started, Home. There is no sign-in.
+/// One short flow: the intro, turn on the keyboard, make it the default, allow Calendar & Reminders, sign in (Apple, email,
+/// or skip for now), Home.
 /// After the intro, each step fits one screen and has one main button.
 struct OnboardingView: View {
     enum Step: Int, CaseIterable { case intro, keyboard, makeDefault, calendar, start }
@@ -150,11 +151,7 @@ struct OnboardingView: View {
         VStack(spacing: Theme.Space.xs) {
             switch step {
             case .start:
-                Button(busy ? "One moment\u{2026}" : "Get started") { Task { await getStarted() } }
-                    .buttonStyle(PrimaryButton())
-                    .opacity(busy ? 0.5 : 1)
-                    .accessibilityIdentifier("onboarding.start")
-                quietButton("", action: {}).hidden()
+                SignInChoices(busy: busy, skip: { Task { await getStarted() } }, signedIn: { Task { await complete(.start) } })
             case .keyboard:
                 Button("Open Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }

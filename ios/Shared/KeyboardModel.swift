@@ -175,7 +175,7 @@ final class KeyboardModel: ObservableObject {
 
     func refreshAccess() {
         hasFullAccess = host?.hasFullAccess ?? false
-        paired = hasFullAccess && deps.store.deviceToken != nil
+        paired = hasFullAccess && deps.store.signedIn
         returnStyle = ReturnStyle(host?.returnKeyType ?? .default)
     }
 
@@ -329,6 +329,7 @@ final class KeyboardModel: ObservableObject {
 
     /// On appear: note that the keyboard is on, and offer copied text (without reading it).
     func keyboardAppeared() {
+        forgetIfAccountChanged()
         refreshAccess()
         layout = .letters
         updateAutoShift()
@@ -345,6 +346,43 @@ final class KeyboardModel: ObservableObject {
     /// What the app last wrote for the ready chips: today's appointments.
     private func reloadSnapshot() {
         appointments = deps.store.appointments
+    }
+
+    /// The app wiped the phone (logout or account delete) since this keyboard last looked: drop the previous person's state.
+    func forgetIfAccountChanged() {
+        let epoch = deps.store.accountEpoch
+        guard epoch != deps.store.keyboardSeenEpoch else { return }
+        deps.store.keyboardSeenEpoch = epoch
+        forgetAccount()
+    }
+
+    /// Everything this keyboard holds in memory from the previous person, then this process's caches on disk.
+    func forgetAccount() {
+        closeExplain()
+        resetWriting()
+        for t in [suggestTask, smartTask, addedTask, explainTask] { t?.cancel() }
+        explainTask = nil
+        explainPending = nil
+        explainCache = [:]
+        explainOffer = nil
+        sharePrepared = nil
+        shareAttempt = nil
+        narration = nil
+        notes = []
+        notesOpen = false
+        appointments = []
+        actions = ActionShortcut.defaults
+        smart = []
+        added = nil
+        smartDone = []
+        serverSmart = nil
+        fixPlan = nil
+        lastSent = ""
+        lastLatencyMs = nil
+        copiedAvailable = false
+        bar = .idle
+        let wipe = deps.wipeProcess
+        Task { await wipe() }
     }
 
     func keyboardDisappeared() {

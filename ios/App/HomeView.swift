@@ -77,6 +77,9 @@ struct HomeView: View {
             NavigationLink { NotesView() } label: { IconCircle(systemImage: "note.text") }
                 .accessibilityLabel("Notes")
                 .accessibilityIdentifier("nav.notes")
+            NavigationLink { AccountView() } label: { IconCircle(systemImage: "person") }
+                .accessibilityLabel("Account")
+                .accessibilityIdentifier("nav.account")
         }
         .padding(.horizontal, Theme.Metric.cardInset + 8)
         .padding(.top, 62)
@@ -192,8 +195,6 @@ struct HomeView: View {
                 .font(Theme.Font.label).foregroundStyle(Theme.Color.text2)
                 .frame(minHeight: Theme.Metric.iconButton)
             #endif
-            Button("Unpair this device", role: .destructive) { session.unpair() }
-                .font(Theme.Font.label).frame(minHeight: Theme.Metric.iconButton)
         }
         .padding(.horizontal, Theme.Metric.cardInset + 8)
     }

@@ -48,10 +48,11 @@ final class PlainLineTests: XCTestCase {
 final class SessionTests: XCTestCase {
     func testAppleLinkAnswerDecodesAndSaysWelcomeBackOnlyForAnEarlierAccount() throws {
         let fresh = try JSONDecoder().decode(AppleLinkResponse.self, from: Data(#"{"linked":true,"recovered":false}"#.utf8))
-        XCTAssertEqual(fresh, AppleLinkResponse(linked: true, recovered: false, device_token: nil))
+        XCTAssertEqual(fresh, AppleLinkResponse(linked: true, recovered: false))
+        XCTAssertNil(fresh.tokens)
         XCTAssertTrue(Session.linkNotice(fresh).hasPrefix("Saved"))
-        let back = try JSONDecoder().decode(AppleLinkResponse.self, from: Data(#"{"linked":true,"recovered":true,"device_token":"pkd_earlier_account_token_0001"}"#.utf8))
-        XCTAssertEqual(back.device_token, "pkd_earlier_account_token_0001")
+        let back = try JSONDecoder().decode(AppleLinkResponse.self, from: Data(#"{"linked":true,"recovered":true,"access_token":"pat_a","refresh_token":"prt_r","expires_in":900}"#.utf8))
+        XCTAssertEqual(back.tokens, TokenPair(access_token: "pat_a", refresh_token: "prt_r", expires_in: 900))
         XCTAssertTrue(Session.linkNotice(back).hasPrefix("Welcome back"))
     }
 }

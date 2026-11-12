@@ -63,7 +63,11 @@ final class FakeAPI: KeyboardAPI {
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.
 final class FakeStore: KeyboardStore {
-    var deviceToken: String? = "pkd_fake"
+    var signedIn = true
+    var accountEpoch: String?
+    var keyboardSeenEpoch: String?
+    /// How many times the keyboard wiped its own process caches.
+    var processWipes = 0
     var keyboardLastSeen: Date?
     var lastPasteboardChange = 0
     var appointments: [Appointment] = []
@@ -174,7 +178,8 @@ extension KeyboardDeps {
                      clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker()) -> KeyboardDeps {
         KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
-                     sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker })
+                     sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
+                     wipeProcess: { store.processWipes += 1 })
     }
 }
 

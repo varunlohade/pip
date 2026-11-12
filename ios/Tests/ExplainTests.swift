@@ -229,7 +229,7 @@ final class ExplainModelTests: XCTestCase {
     }
 
     func testTheMeaningShowsEvenWithoutPairing() {
-        store.deviceToken = nil
+        store.signedIn = false
         model.keyboardAppeared()
         set("what does tbh mean")
         XCTAssertEqual(model.barItems.map(\.id), ["explain"])

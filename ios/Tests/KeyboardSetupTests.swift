@@ -103,7 +103,7 @@ final class KeyboardHeartbeatTests: XCTestCase {
     func testHeartbeatOnEveryAppearanceEvenUnpaired() {
         let clock = FakeClock()
         let store = FakeStore()
-        store.deviceToken = nil
+        store.signedIn = false
         let deps = KeyboardDeps.fake(api: FakeAPI(), store: store, clock: clock)
         let model = KeyboardModel(deps: deps)
         let host = FakeHost()
