@@ -55,10 +55,10 @@ struct VisualState: Equatable {
     var note: String?
     /// A quieter second line under the note, such as "Image also copied".
     var hint: String?
-    /// Which send asked the page for its PNG. `prefetch` is the upload that starts by itself when the drawing finishes.
+    /// Which send asked the page for its PNG. `prepare` is the export when the drawing finishes; it stays on the phone.
     var sending: Send?
 
-    enum Send: Equatable { case image, link, prefetch }
+    enum Send: Equatable { case image, link, prepare }
 }
 
 enum ExplainPanel: Equatable {
@@ -216,8 +216,8 @@ extension KeyboardModel {
     private func openVisual(subject: String, summary: String, scene: Data?, ask topic: String) {
         explainPanel = .visual(VisualState(subject: subject, summary: summary, scene: scene))
         visualTask?.cancel()
-        shareUpload = nil
-        sharedLink = nil
+        sharePrepared = nil
+        shareAttempt = nil
         if let scene { visualPage?.play(scene); return }
         visualTask = Task { [weak self] in
             do {
@@ -248,7 +248,7 @@ extension KeyboardModel {
         updateVisual { if case .drawing(_, let m) = $0.status { $0.status = .done(steps: m) } else { $0.status = .done(steps: 1) } }
         // The last line may still be speaking; it ends on its own, and the button goes back to "Play with voice".
         if narration != nil { narration = nil; visualPage?.setVoice(false); updateVisual { $0.voice = false } }
-        prefetchShare()
+        prepareShare()
     }
 
     /// "Play with voice": only this tap ever starts sound. It replays the drawing with each step's line spoken in time;
@@ -272,11 +272,11 @@ extension KeyboardModel {
         updateVisual { $0.voice = false; $0.note = nil }
     }
     /// Before the drawing shows, the panel says it failed; after, a failed export is only a note, and the drawing stays.
-    /// A failed upload-ahead export says nothing; Send exports again.
+    /// A failed export made ahead of Send says nothing; Send exports again.
     func visualFailed(_ message: String) {
         updateVisual { v in
             if case .loading = v.status { v.status = .failed("Could not draw that. Try again.") }
-            else if v.sending != .prefetch { v.note = "That did not work. Try again."; v.hint = nil }
+            else if v.sending != .prepare { v.note = "That did not work. Try again."; v.hint = nil }
             v.sending = nil
         }
     }
@@ -314,15 +314,16 @@ extension KeyboardModel {
     static let linkAdded = "Link added. Tap send."
     static let imageAlsoCopied = "Image also copied"
     static let sendingNote = "Sending\u{2026}"
-    /// How long Send waits for an upload still running before it falls back to the copied image.
+    /// How long Send waits for the upload before it falls back to the copied image.
     static let shareWait: Duration = .seconds(5)
 
     /// The line typed before the link, such as "y = log(x), explained:".
     static func shareCaption(_ subject: String) -> String { "\(subject), explained:" }
 
-    /// Send (one tap): the caption and the short link go into the message, and the PNG goes to the pasteboard as a fallback.
-    /// The link opens a page whose preview shows the picture in the chat. Send as image (in the small menu) only copies the PNG.
-    /// A keyboard cannot attach a file. Both need Full Access (pasteboard, App Group, network).
+    /// Send (one tap): the drawing uploads, then the caption and the short link take the place of the typed request.
+    /// The PNG goes to the pasteboard at once as a fallback. The link opens a page whose preview shows the picture in the chat.
+    /// Send as image (in the small menu) only copies the PNG. A keyboard cannot attach a file.
+    /// Both need Full Access (pasteboard, App Group, network). Nothing leaves the phone before the tap.
     func sendVisual(_ kind: VisualState.Send) {
         host?.playClick()
         guard hasFullAccess else { updateVisual { $0.note = Self.needsFullAccessToSend; $0.hint = nil }; return }
@@ -330,40 +331,19 @@ extension KeyboardModel {
         visualPage?.exportPNG()
     }
 
-    /// As soon as the drawing finishes, its PNG goes up, so Send can type the link with no wait.
-    private func prefetchShare() {
-        guard hasFullAccess, paired, case .visual(let v) = explainPanel, v.sending == nil else { return }
-        updateVisual { $0.sending = .prefetch }
+    /// When the drawing finishes, its PNG and JPEG preview are made on the phone, so Send only uploads.
+    private func prepareShare() {
+        guard hasFullAccess, case .visual(let v) = explainPanel, v.sending == nil else { return }
+        updateVisual { $0.sending = .prepare }
         visualPage?.exportPNG()
-    }
-
-    /// The upload for this PNG: the one already running or done for the same bytes, else a new one.
-    /// Send exports again, so a drawing changed with the pen after it finished gets its own upload.
-    @discardableResult
-    private func upload(_ png: Data, title: String) -> Task<String, Error> {
-        if let u = shareUpload, u.png == png { return u.task }
-        let api = deps.api()
-        let task = Task { [weak self] () throws -> String in
-            do {
-                let url = try await api.shareDrawing(png, preview: LinkPreview.jpeg(png), title: title)
-                if self?.shareUpload?.png == png { self?.sharedLink = (png, url) }
-                return url
-            } catch {
-                // A failed upload is not kept, so the next Send tries again.
-                if self?.shareUpload?.png == png { self?.shareUpload = nil }
-                throw error
-            }
-        }
-        shareUpload = (png, task)
-        return task
     }
 
     /// The page's PNG for the export that asked for it. Every send also keeps the drawing in "your drawings".
     func visualExported(_ png: Data) {
         guard case .visual(let v) = explainPanel, let kind = v.sending else { return }
-        if kind == .prefetch {
+        if kind == .prepare {
             updateVisual { $0.sending = nil }
-            upload(png, title: v.subject)
+            if sharePrepared?.png != png { sharePrepared = (png, LinkPreview.jpeg(png)) }
             return
         }
         try? deps.store.saveDrawing(png, title: v.subject, scene: v.scene)
@@ -372,37 +352,55 @@ extension KeyboardModel {
             updateVisual { $0.sending = nil; $0.note = Self.pasteHint; $0.hint = nil }
             return
         }
-        if let done = sharedLink, done.png == png { insertShareLink(done.url, subject: v.subject); return }
-        let task = upload(png, title: v.subject)
+        // Send exports again, so a drawing changed with the pen after it finished gets a new preview.
+        if sharePrepared?.png != png { sharePrepared = (png, LinkPreview.jpeg(png)) }
+        let preview = sharePrepared?.preview
+        let attempt = UUID()
+        shareAttempt = attempt
         updateVisual { $0.note = Self.sendingNote }
         // Whichever comes first: the link, or five seconds, after which the copied image is the way to send.
         // Awaiting an upload cannot be cancelled, so the two waits are separate tasks and the first one ends the send.
+        let api = deps.api()
         Task { [weak self] in
-            let url = try? await task.value
-            guard let self, url == nil || self.sharedLink?.png == png else { return }
-            self.finishShare(url, subject: v.subject)
+            let url = try? await api.shareDrawing(png, preview: preview, title: v.subject)
+            self?.finishShare(attempt, url: url, subject: v.subject)
         }
         visualTask?.cancel()
         let sleep = deps.sleep
         visualTask = Task { [weak self] in
             try? await sleep(Self.shareWait)
             guard let self, !Task.isCancelled else { return }
-            self.finishShare(nil, subject: v.subject)
+            self.finishShare(attempt, url: nil, subject: v.subject)
         }
     }
 
-    /// Ends a Send still waiting: the caption and link on success, else the copied-image hint.
-    private func finishShare(_ url: String?, subject: String) {
-        guard case .visual(let v) = explainPanel, v.sending == .link else { return }
+    /// Ends the Send that is waiting: the caption and link on success, else the copied-image hint.
+    private func finishShare(_ attempt: UUID, url: String?, subject: String) {
+        guard shareAttempt == attempt, case .visual(let v) = explainPanel, v.sending == .link else { return }
+        shareAttempt = nil
         if let url { insertShareLink(url, subject: subject) }
         else { updateVisual { $0.sending = nil; $0.note = Self.pasteHint; $0.hint = nil } }
     }
 
+    /// The caption and link replace the request that opened the drawing ("explain log function"), so nothing repeats.
+    /// Text typed before the request stays. When the request is no longer the last sentence, the link goes after the text.
     private func insertShareLink(_ url: String, subject: String) {
-        let before = host?.contextBeforeInput ?? ""
+        var before = host?.contextBeforeInput ?? ""
+        let sentence = SmartDetect.lastSentence(before)
+        if !sentence.isEmpty, Self.requestSubject(before) == subject, let r = before.range(of: sentence, options: .backwards) {
+            let drop = before.distance(from: r.lowerBound, to: before.endIndex)
+            for _ in 0..<drop { host?.deleteBackward() }
+            before.removeSubrange(r.lowerBound...)
+        }
         host?.insert((before.isEmpty || before.last?.isWhitespace == true ? "" : " ") + Self.shareCaption(subject) + " " + url)
         updateVisual { $0.sending = nil; $0.note = Self.linkAdded; $0.hint = Self.imageAlsoCopied }
         updateAutoShift()
+    }
+
+    /// The subject the last sentence asks to draw or explain, as the visual panel names it.
+    private static func requestSubject(_ text: String) -> String? {
+        if let chart = Chart.detect(text) { return chartOffer(chart).subject }
+        return Explain.detect(text)?.subject
     }
 
     private func updateVisual(_ change: (inout VisualState) -> Void) {

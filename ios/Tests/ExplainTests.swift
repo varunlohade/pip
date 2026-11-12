@@ -311,28 +311,32 @@ final class ExplainModelTests: XCTestCase {
         XCTAssertEqual(page.tools, [.draw, .eraser, .hand])
         XCTAssertEqual(page.undos, 1)
 
-        // The drawing finishes: its PNG and JPEG preview go up at once.
+        // The drawing finishes: its PNG and JPEG preview are made on the phone. Nothing goes up yet.
         model.visualDone()
         XCTAssertEqual(page.exports, 1)
         let png = Self.png
         model.visualExported(png)
-        await until("upload ahead") { model.sharedLink != nil }
-        XCTAssertEqual(api.shared.count, 1)
-        XCTAssertEqual(api.shared[0].png, png)
-        XCTAssertEqual(api.shared[0].title, "log function")
-        XCTAssertEqual(api.shared[0].preview?.prefix(3), Data([0xFF, 0xD8, 0xFF]), "a JPEG preview")
-        XCTAssertEqual(store.drawings.count, 0, "nothing is kept before Send")
+        XCTAssertEqual(model.sharePrepared?.png, png)
+        XCTAssertEqual(model.sharePrepared?.preview?.prefix(3), Data([0xFF, 0xD8, 0xFF]), "a JPEG preview")
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(api.shared.count, 0, "nothing leaves the phone before Send")
+        XCTAssertEqual(store.drawings.count, 0)
         XCTAssertNil(pasteboard.png)
         guard case .visual(let ready)? = model.explainPanel else { return XCTFail("panel closed") }
-        XCTAssertNil(ready.note, "the upload is quiet")
+        XCTAssertNil(ready.note, "making the preview is quiet")
 
-        // One tap: the caption and the link go into the message with no wait, and the image is copied too.
+        // One tap: it uploads, then the caption and link replace the typed request. The image is copied at once.
         model.sendVisual(.link)
         XCTAssertEqual(page.exports, 2)
         model.visualExported(png)
-        XCTAssertEqual(host.text, "explain log function log function, explained: " + api.shareReply)
-        XCTAssertEqual(api.shared.count, 1, "the upload is not sent twice")
+        XCTAssertEqual(note, KeyboardModel.sendingNote)
         XCTAssertEqual(pasteboard.png, png)
+        await until("link") { host.text.hasSuffix(api.shareReply) }
+        XCTAssertEqual(host.text, "log function, explained: " + api.shareReply)
+        XCTAssertEqual(api.shared.count, 1)
+        XCTAssertEqual(api.shared[0].png, png)
+        XCTAssertEqual(api.shared[0].preview, model.sharePrepared?.preview, "the preview made ahead is the one sent")
+        XCTAssertEqual(api.shared[0].title, "log function")
         XCTAssertEqual(store.drawings.map(\.title), ["log function"])
         guard case .visual(let sent)? = model.explainPanel else { return XCTFail("panel closed") }
         XCTAssertEqual(sent.note, KeyboardModel.linkAdded)
@@ -359,44 +363,61 @@ final class ExplainModelTests: XCTestCase {
         XCTAssertEqual(model.keyboardHeight, Theme.SystemKeyboard.height)
     }
 
-    /// A graph opens its drawing at once; the page reports it finished.
-    private func drawnGraph() -> FakePage {
-        set("graph y = x^2")
+    /// A graph opens its drawing at once; the page reports it finished, and its PNG comes back.
+    @discardableResult
+    private func drawnGraph(_ text: String = "graph y = x^2") -> FakePage {
+        set(text)
         model.tapExplainChip()
         let page = FakePage()
         model.visualPageReady(page)
         model.visualDone()
+        model.visualExported(Self.png)
         return page
+    }
+
+    private func send(_ png: Data = ExplainModelTests.png) {
+        model.sendVisual(.link)
+        model.visualExported(png)
     }
 
     private var note: String? { if case .visual(let v)? = model.explainPanel { return v.note }; return nil }
     private var hint: String? { if case .visual(let v)? = model.explainPanel { return v.hint }; return nil }
 
-    func testSendWhileTheUploadRunsSaysSendingThenTypesTheLink() async {
+    func testSendSaysSendingUntilTheUploadEndsThenTypesTheLink() async {
         api.holdShares = true
         let page = drawnGraph()
-        model.visualExported(Self.png)
-        await until("upload") { api.shared.count == 1 }
-        model.sendVisual(.link)
+        send()
         XCTAssertEqual(page.exports, 2)
-        model.visualExported(Self.png)
+        await until("upload") { api.shared.count == 1 }
         XCTAssertEqual(note, KeyboardModel.sendingNote)
         XCTAssertEqual(host.text, "graph y = x^2")
         XCTAssertEqual(pasteboard.png, Self.png, "the image is copied at the same moment")
         api.releaseShares()
         await until("link") { host.text.hasSuffix(api.shareReply) }
-        XCTAssertEqual(host.text, "graph y = x^2 y = x^2, explained: " + api.shareReply)
-        XCTAssertEqual(api.shared.count, 1, "Send waited for the upload already running")
+        XCTAssertEqual(host.text, "y = x^2, explained: " + api.shareReply)
         XCTAssertEqual(note, KeyboardModel.linkAdded)
         XCTAssertEqual(hint, KeyboardModel.imageAlsoCopied)
     }
 
+    func testTextBeforeTheRequestStays() async {
+        drawnGraph("ha ok. graph y = x^2")
+        send()
+        await until("link") { host.text.hasSuffix(api.shareReply) }
+        XCTAssertEqual(host.text, "ha ok. y = x^2, explained: " + api.shareReply)
+    }
+
+    func testWhenTheRequestIsNoLongerLastTheLinkGoesAfterTheText() async {
+        drawnGraph()
+        host.text = "graph y = x^2. see this"
+        send()
+        await until("link") { host.text.hasSuffix(api.shareReply) }
+        XCTAssertEqual(host.text, "graph y = x^2. see this y = x^2, explained: " + api.shareReply)
+    }
+
     func testAnUploadSlowerThanFiveSecondsFallsBackToTheCopiedImage() async {
         api.holdShares = true
-        _ = drawnGraph()
-        model.visualExported(Self.png)
-        model.sendVisual(.link)
-        model.visualExported(Self.png)
+        drawnGraph()
+        send()
         await until("the wait") { clock.sleeps.contains(KeyboardModel.shareWait) }
         clock.advance(KeyboardModel.shareWait.seconds)
         await until("fallback") { note == KeyboardModel.pasteHint }
@@ -406,48 +427,43 @@ final class ExplainModelTests: XCTestCase {
         guard case .visual(let v)? = model.explainPanel else { return XCTFail("panel closed") }
         XCTAssertNil(v.sending, "Send works again")
         api.releaseShares()
+        for _ in 0..<50 { await Task.yield() }
+        XCTAssertEqual(host.text, "graph y = x^2", "a late link is dropped")
+        XCTAssertEqual(note, KeyboardModel.pasteHint)
     }
 
-    func testAFailedUploadAheadIsTriedAgainOnSend() async {
+    func testAFailedUploadFallsBackAndTheNextSendTriesAgain() async {
         api.shareFails = true
-        _ = drawnGraph()
-        model.visualExported(Self.png)
-        await until("failed upload") { api.shared.count == 1 && model.shareUpload == nil }
-        XCTAssertNil(note, "a failed upload ahead says nothing")
+        drawnGraph()
+        send()
+        await until("fallback") { note == KeyboardModel.pasteHint }
+        XCTAssertEqual(host.text, "graph y = x^2")
+        XCTAssertEqual(pasteboard.png, Self.png)
         api.shareFails = false
-        model.sendVisual(.link)
-        model.visualExported(Self.png)
+        send()
         await until("link") { host.text.hasSuffix(api.shareReply) }
         XCTAssertEqual(api.shared.count, 2)
     }
 
-    func testAFailedUploadOnSendFallsBackToTheCopiedImage() async {
-        api.shareFails = true
-        _ = drawnGraph()
-        model.visualExported(Self.png)
-        await until("failed upload") { model.shareUpload == nil && api.shared.count == 1 }
-        model.sendVisual(.link)
-        model.visualExported(Self.png)
-        await until("fallback") { note == KeyboardModel.pasteHint }
-        XCTAssertEqual(host.text, "graph y = x^2")
-        XCTAssertEqual(pasteboard.png, Self.png)
-    }
-
-    func testADrawingChangedWithThePenUploadsAgainOnSend() async {
-        _ = drawnGraph()
-        model.visualExported(Self.png)
-        await until("upload ahead") { model.sharedLink != nil }
+    func testADrawingChangedWithThePenGetsANewPreview() async {
+        drawnGraph()
+        let first = model.sharePrepared?.preview
         let edited = Self.makePNG(width: 410, height: 250)
-        model.sendVisual(.link)
-        model.visualExported(edited)
+        send(edited)
         await until("link") { host.text.hasSuffix(api.shareReply) }
-        XCTAssertEqual(api.shared.map(\.png), [Self.png, edited])
+        XCTAssertEqual(api.shared.map(\.png), [edited])
+        XCTAssertNotNil(api.shared[0].preview)
+        XCTAssertNotEqual(api.shared[0].preview, first)
     }
 
-    func testWithoutFullAccessNothingGoesUp() {
+    func testWithoutFullAccessNothingIsMadeOrSent() {
         host.hasFullAccess = false
         model.keyboardAppeared()
-        let page = drawnGraph()
+        set("graph y = x^2")
+        model.tapExplainChip()
+        let page = FakePage()
+        model.visualPageReady(page)
+        model.visualDone()
         XCTAssertEqual(page.exports, 0)
         model.sendVisual(.link)
         XCTAssertEqual(page.exports, 0)

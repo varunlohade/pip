@@ -116,10 +116,7 @@ final class ExplainShots: XCTestCase {
         XCTAssertFalse(title.label.contains("step"), "drawing did not finish: \(title.label)")
         Thread.sleep(forTimeInterval: 0.5)
         shot("06-visual-finished")
-        // The upload started when the drawing finished; give it a moment so Send types the link at once.
-        Thread.sleep(forTimeInterval: 1.5)
-
-        // One tap: the caption and the short link go into the message, and the image is copied as a fallback.
+        // One tap: the drawing uploads, the caption and short link replace the request, and the image is copied as a fallback.
         send.tap()
         let note = element(messages, "visual.note")
         let linked = NSPredicate(format: "label BEGINSWITH %@", "Link added")
@@ -127,7 +124,7 @@ final class ExplainShots: XCTestCase {
         while !(note.exists && linked.evaluate(with: note)), Date() < linkBy { Thread.sleep(forTimeInterval: 0.2) }
         XCTAssertTrue(note.exists && linked.evaluate(with: note), "no Link added note: \(note.exists ? note.label : "none")")
         let typed = field.value as? String ?? ""
-        XCTAssertTrue(typed.contains("log function, explained: http"), "no caption and link in the field: \(typed)")
+        XCTAssertTrue(typed.hasPrefix("log function, explained: http"), "the request is not replaced by the caption and link: \(typed)")
         XCTAssertTrue(typed.contains("/d/"), "no link in the field: \(typed)")
         XCTAssertEqual(element(messages, "visual.hint").label, "Image also copied")
         // hasImages does not show the paste prompt; reading the image would, so the test does not read it.

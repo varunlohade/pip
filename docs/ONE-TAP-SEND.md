@@ -6,16 +6,14 @@ Every path is in this repo (`/Users/varun/pip-keyboard`). Port it to Muninn in t
 
 ## How it works
 
-1. The drawing finishes, and the keyboard exports the PNG at once. It makes a JPEG preview on the phone and uploads both. The owner sees nothing.
-2. The owner taps **Send**. The keyboard exports the PNG again and compares the bytes.
-   - The bytes match a finished upload: the caption and link go in at once.
-   - The upload for these bytes is still running: the note says "Sending…". The link goes in when the upload ends.
-   - The bytes differ, because the owner drew with the pen: a new upload starts and waits as above.
-   - After 5 s, or on an error: the old hint shows ("Copied. Tap the message box and Paste, then send.").
-3. At the same moment, the PNG goes to the pasteboard. A small second line says "Image also copied".
-4. **Send as image** moved into a small `…` menu next to Send. It only copies the PNG, as before.
+1. The drawing finishes. The keyboard exports the PNG and makes the JPEG preview on the phone. Nothing leaves the phone.
+2. The owner taps **Send**. The keyboard exports the PNG again. If the bytes differ (the owner drew with the pen), it makes a new preview. Then it uploads the PNG and the preview, and the note says "Sending…" (a 55 KB preview takes well under a second).
+3. At the same moment, the PNG goes to the pasteboard as a fallback.
+4. The upload ends. The caption and link replace the typed request: "explain log function" becomes "log function, explained: <link>". Text typed before the request stays. If the request is no longer the last sentence, the link goes after the text. The note says "Link added. Tap send.", with a quieter "Image also copied" under it.
+5. After 5 s, or on an error, the old hint shows ("Copied. Tap the message box and Paste, then send."). A late link is dropped. The next Send tries again.
+6. **Send as image** moved into a small `…` menu next to Send. It only copies the PNG, as before.
 
-A failed upload-ahead is not kept, so Send tries again. With no Full Access or no pairing, nothing goes up.
+With no Full Access, nothing is made or sent.
 
 ## Server
 
@@ -45,12 +43,12 @@ Every `/d/` answer has `X-Robots-Tag: noindex, nofollow`. Images use `max-age=mi
 | `ios/Shared/LinkPreview.swift` | New. `LinkPreview.jpeg(png)`: flattens on white, 600 to 1200 px wide, JPEG quality 0.8 down to 0.35, then smaller, until it is at most 300 KB. (`SharePreview` clashes with SwiftUI.) |
 | `ios/Shared/API.swift` | `shareDrawing(_ png:, preview:, title:)` sends multipart, or the bare PNG when `preview` is nil. |
 | `ios/Shared/KeyboardDeps.swift` | The `KeyboardAPI.shareDrawing` signature. |
-| `ios/Shared/KeyboardModel.swift` | Stored `shareUpload: (png, task)?` and `sharedLink: (png, url)?`. |
-| `ios/Shared/KeyboardModel+Explain.swift` | `VisualState.hint`; `Send.prefetch`. `visualDone()` calls `prefetchShare()`. New: `upload(_:title:)` (reuses the upload for the same bytes), `finishShare`, `insertShareLink`, `shareCaption`, and the `linkAdded`, `imageAlsoCopied`, `sendingNote` and `shareWait` constants. Rewritten: `sendVisual` and `visualExported`. `visualFailed` stays quiet for the upload-ahead and clears `sending`. `openVisual` resets both share fields. |
+| `ios/Shared/KeyboardModel.swift` | Stored `sharePrepared: (png, preview)?` and `shareAttempt: UUID?`. |
+| `ios/Shared/KeyboardModel+Explain.swift` | `VisualState.hint`; `Send.prepare`. `visualDone()` calls `prepareShare()`. New: `finishShare` (ends only the current attempt), `insertShareLink` (deletes the request with `deleteBackward`, then types the caption and link), `requestSubject`, `shareCaption`, and the `linkAdded`, `imageAlsoCopied`, `sendingNote` and `shareWait` constants. Rewritten: `sendVisual` and `visualExported`. `visualFailed` stays quiet for the export made ahead and clears `sending`. `openVisual` resets both share fields. |
 | `ios/Shared/VisualPanel.swift` | Buttons: Send (`visual.send`, one tap), `…` (`visual.more`) and Insert. The menu holds Send as image (`visual.send.image`) and close. The note pill shows `hint` as a smaller second line (`visual.hint`). |
 | `ios/App/IntroView.swift` | The stub API's new signature. |
 | `ios/Tests/Fakes.swift` | `FakeAPI.shareDrawing` records png, preview and title. It has `shareFails`, `holdShares` and `releaseShares()`. |
-| `ios/Tests/ExplainTests.swift` | One-tap send, Sending then link, 5 s fallback, failed upload tried again, a pen edit uploads again, no Full Access, the preview size. `FakePage` moved to file scope. |
+| `ios/Tests/ExplainTests.swift` | Nothing uploads before Send, one-tap send, Sending then link, request replaced, earlier text kept, 5 s fallback with a late link dropped, failed upload tried again, a pen edit gets a new preview, no Full Access, the preview size. `FakePage` moved to file scope. |
 | `ios/UITests/ExplainShots.swift` | `test2Explain` drives Send, the menu and Send as image in Messages. `openField` starts a chat on a new simulator. |
 
 The 5 s wait uses two tasks, not a task group: awaiting `Task.value` cannot be cancelled, so a group would wait for the whole upload.
@@ -59,4 +57,3 @@ The 5 s wait uses two tasks, not a task group: awaiting `Task.value` cannot be c
 
 - Set `PUBLIC_URL` to the public https address. `og:image` must be absolute and public, or chats show no picture.
 - After deploy, send a link in iMessage, WhatsApp, Telegram and Slack, and check the picture shows. Local checks cannot test this.
-- Every finished drawing now uploads, even one the owner never sends. That matters for privacy and the 20 per hour upload limit.
