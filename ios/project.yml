@@ -10,7 +10,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
     MARKETING_VERSION: "0.1"
-    CURRENT_PROJECT_VERSION: "4"
+    CURRENT_PROJECT_VERSION: "1"
     # The one place for the app name. Both Info.plists read it.
     PRODUCT_DISPLAY_NAME: Pip
     KEYBOARD_DISPLAY_NAME: $(PRODUCT_DISPLAY_NAME) Keyboard
@@ -40,6 +40,8 @@ targets:
         CFBundleDisplayName: $(PRODUCT_DISPLAY_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Only standard HTTPS and Apple crypto, so no export compliance question.
+        ITSAppUsesNonExemptEncryption: false
         AppName: $(PRODUCT_DISPLAY_NAME)
         DefaultServerURL: $(DEFAULT_SERVER_URL)
         DemoServerURL: $(DEMO_SERVER_URL)
@@ -99,6 +101,8 @@ targets:
         CFBundleDisplayName: $(KEYBOARD_DISPLAY_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Only standard HTTPS and Apple crypto, so no export compliance question.
+        ITSAppUsesNonExemptEncryption: false
         AppName: $(PRODUCT_DISPLAY_NAME)
         DefaultServerURL: $(DEFAULT_SERVER_URL)
         DemoServerURL: $(DEMO_SERVER_URL)
