@@ -5,6 +5,13 @@
 - Apple user ids (`sub`): we store only a keyed hash, `HMAC-SHA256(HKDF(DATA_ENCRYPTION_KEY, info = "pip/index/v1"), sub)`. We ask Apple for no name and no email.
 - We do not store typed text. `/v1/suggest` and `/v1/write/*` read it, send it to the models, and drop it.
 
+## Shared drawings ("Send as link")
+- `POST /v1/drawings` takes one PNG (checked by its magic bytes), at most 1 MB, 20 an hour per user.
+- The id is 128 random bits (`/d/<22 base64url chars>.png`). It holds nothing about the user or the time, and no route lists ids.
+- `GET /d/<id>.png` needs no token: whoever has the link sees the image, served as `image/png` with `nosniff` and `default-src 'none'`, and nothing else. 120 views a minute per address.
+- A link works for 30 days. Expired rows are deleted on the next upload, and an expired id answers like an unknown one (404).
+- The image itself is not encrypted at rest: anyone with the link may see it, by design.
+
 ## Encryption helper
 - `crypto.ts` has an AES-256-GCM cipher for any per-user field that needs it: a random 12-byte IV per record, a 16-byte auth tag. Format: `v1:base64(iv | tag | ciphertext)`.
 - Each user gets their own data key: `HKDF-SHA256(DATA_ENCRYPTION_KEY, salt = user_id, info = "pip/data/v1")`.

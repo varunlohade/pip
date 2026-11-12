@@ -5,6 +5,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { z } from 'zod';
 import { config, TONES } from './config.ts';
 import { randomToken, sha256, type Cipher } from './crypto.ts';
+import { randomBytes } from 'node:crypto';
 import type { Db } from './db.ts';
 import type { Ai, DeviceAction } from './ai.ts';
 import { log } from './log.ts';
@@ -114,7 +115,10 @@ export function createApp(deps: Deps) {
 
   app.use('*', secureHeaders());
   app.use('*', cors({ origin: (origin) => (config.corsOrigins.includes(origin) ? origin : null), allowMethods: ['GET', 'POST', 'PUT', 'DELETE'] }));
-  app.use('/v1/*', bodyLimit({ maxSize: config.bodyLimitBytes, onError: (c) => c.json({ error: 'body too large' }, 413) }));
+  const smallBody = bodyLimit({ maxSize: config.bodyLimitBytes, onError: (c) => c.json({ error: 'body too large' }, 413) });
+  // Every /v1 body is small JSON, except a drawing PNG sent to share as a link, which gets its own cap.
+  app.use('/v1/*', (c, next) => (c.req.path === '/v1/drawings' ? next() : smallBody(c, next)));
+  app.use('/v1/drawings', bodyLimit({ maxSize: config.sharedImage.maxBytes, onError: (c) => c.json({ error: 'image too large' }, 413) }));
 
   app.onError((err, c) => {
     if (err instanceof z.ZodError) return c.json({ error: 'invalid request', issues: err.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`) }, 400);
@@ -124,6 +128,19 @@ export function createApp(deps: Deps) {
   });
 
   app.get('/health', (c) => c.json({ ok: true }));
+
+  // ---- a shared drawing. No token: whoever has the link sees the image and nothing else. An unknown or expired id is a plain 404.
+  app.get('/d/:file', rateLimiter('shareView', clientIp), (c) => {
+    const m = /^([A-Za-z0-9_-]{22})\.png$/.exec(c.req.param('file'));
+    const png = m ? db.sharedImage(m[1], now()) : undefined;
+    if (!png) return c.text('not found', 404);
+    return c.body(new Uint8Array(png), 200, {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=86400',
+      'Content-Security-Policy': "default-src 'none'",
+      'X-Content-Type-Options': 'nosniff',
+    });
+  });
 
   // ---- Sign in with Apple: the one /v1 route with no device token. It sits before the token check on purpose.
   // Every failure is a plain 401, so a caller learns nothing about which check failed.
@@ -279,6 +296,24 @@ export function createApp(deps: Deps) {
     const draft = b.text ?? '', client = b.context ?? '';
     // jev judges the tone; the LLM writes a calm reply only when the tone is not ok.
     return writing(c, 'tone', draft.length + client.length, () => ai.toneCheck(draft, client), (out) => (out.tone === 'ok' ? 1 : 2));
+  });
+
+  // ---- "Send as link": the keyboard uploads a drawing PNG and types the short link into the chat.
+  const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  app.post('/v1/drawings', rateLimiter('shareUpload', byUser), async (c) => {
+    if (c.req.header('content-type') !== 'image/png') return c.json({ error: 'send a PNG image' }, 400);
+    const png = new Uint8Array(await c.req.arrayBuffer());
+    if (png.length < PNG_MAGIC.length || PNG_MAGIC.some((b, i) => png[i] !== b)) return c.json({ error: 'send a PNG image' }, 400);
+    if (png.length > config.sharedImage.maxBytes) return c.json({ error: 'image too large' }, 413);
+    const at = now();
+    db.purgeSharedImages(at);
+    // 128 random bits: the link cannot be guessed, and ids say nothing about the user or the time.
+    const id = randomBytes(16).toString('base64url');
+    const expiresAt = at + config.sharedImage.ttlMs;
+    db.addSharedImage(id, c.get('userId'), png, at, expiresAt);
+    log('share_image', { user_id: c.get('userId'), bytes: png.length });
+    const base = config.publicUrl || new URL(c.req.url).origin;
+    return c.json({ url: `${base}/d/${id}.png`, expires_at: new Date(expiresAt).toISOString() });
   });
 
   // ---- explain: the phone sends only text its own regex read as an explain request, so plain chat never reaches here.

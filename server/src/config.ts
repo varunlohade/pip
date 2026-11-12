@@ -15,6 +15,9 @@ export const config = {
   maxContextChars: 1000,
   maxWriteChars: 1500,
   maxExplainChars: 200,
+  // "Send as link": a drawing PNG kept for 30 days at an unguessable URL. PUBLIC_URL is the address people open; else the request's own origin.
+  sharedImage: { maxBytes: 1024 * 1024, ttlMs: 30 * 86_400_000 },
+  publicUrl: (env.PUBLIC_URL ?? '').replace(/\/+$/, ''),
 
   apple: {
     // The app bundle id. Apple puts it in the identity token as aud.
@@ -51,6 +54,9 @@ export const config = {
     // Explain and draw are paid calls a person asks for, so a few a minute and a cap per day.
     explain: { limit: 10, windowMs: 60_000 },
     explainDaily: { limit: 100, windowMs: 86_400_000 },
+    shareUpload: { limit: 20, windowMs: 3_600_000 },
+    // Opening a shared link needs no token, so it is limited per address.
+    shareView: { limit: 120, windowMs: 60_000 },
     other: { limit: 120, windowMs: 60_000 },
     auth: { limit: 10, windowMs: 60_000 },
     // A device account needs no proof of who asks, so one address gets few of them.
