@@ -70,11 +70,11 @@ enum APIError: Error, LocalizedError {
 func plainLine(_ error: Error) -> String {
     let again = "Something went wrong. Try again."
     switch error {
-    case APIError.notPaired: return "Open \(AppConfig.displayName) to pair"
+    case APIError.notPaired: return "Open \(AppConfig.displayName) to sign in"
     case APIError.message(let s): return s
     case APIError.http(let code, let body):
         switch code {
-        case 401: return "Open \(AppConfig.displayName) to pair"
+        case 401: return "Open \(AppConfig.displayName) to sign in"
         case 429: return "Too many tries. Wait a minute."
         case 400..<500: return serverWords(body) ?? again
         default: return again

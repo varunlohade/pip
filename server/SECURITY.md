@@ -44,6 +44,7 @@
 ## Known gaps
 - The rate limiter lives in memory, so it resets on restart and does not span instances. It keys IPv6 clients by /64. It drops ended windows first and the oldest live one only when it holds 100,000 keys; it never clears all.
 - Passwords: scrypt N=2^16, r=8, p=2 (64 MB per hash). At most 2 hashes run at once; others wait up to 10 s, then get 503.
+- Password tries live in SQLite (`auth_failures`), counted before the hash: 5 per (email, address) in 15 minutes, then 20 an hour per email with a delay that doubles up to 5 minutes.
 - There is no key rotation yet. The `v1:` prefix leaves room for it.
 - CORS allows no origins by default. Set `CORS_ORIGINS` for a web client.
 - The server trusts `X-Forwarded-For` only with `TRUST_PROXY=1`, and then only the right-most hop. Behind Cloudflare, set `CLIENT_IP_HEADER=cf-connecting-ip`, because there the right-most hop is the Cloudflare edge.

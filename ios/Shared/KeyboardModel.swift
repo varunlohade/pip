@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import UIKit
 import os
@@ -169,8 +170,23 @@ final class KeyboardModel: ObservableObject {
     private let log = Logger(subsystem: "com.orseliyas.pip", category: "keyboard")
     static let pasteTimeout: TimeInterval = 8
 
+    private var rejected: AnyCancellable?
+
     init(deps: KeyboardDeps = .live()) {
         self.deps = deps
+        // The server refused the session (a 401 outside /v1/auth/). The keyboard does not wipe the phone: the app does that.
+        // It drops what it holds in memory and asks the owner to open the app.
+        rejected = NotificationCenter.default.publisher(for: APIClient.tokenRejected)
+            .map { $0.userInfo?["epoch"] as? String }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] epoch in self?.sessionRejected(epoch: epoch) }
+    }
+
+    /// A late answer from before the last wipe or sign-in does nothing.
+    func sessionRejected(epoch: String?) {
+        guard epoch == deps.store.accountEpoch else { return }
+        forgetMemory()
+        paired = false
     }
 
     func refreshAccess() {
@@ -367,6 +383,13 @@ final class KeyboardModel: ObservableObject {
 
     /// Everything this keyboard holds in memory from the previous person, then this process's caches on disk.
     func forgetAccount() {
+        forgetMemory()
+        let wipe = deps.wipeProcess
+        Task { await wipe() }
+    }
+
+    /// Everything this keyboard holds in memory about the account: notes, cached answers, chips, writing state.
+    func forgetMemory() {
         closeExplain()
         resetWriting()
         for t in [suggestTask, smartTask, addedTask, explainTask] { t?.cancel() }
@@ -390,8 +413,6 @@ final class KeyboardModel: ObservableObject {
         lastLatencyMs = nil
         copiedAvailable = false
         bar = .idle
-        let wipe = deps.wipeProcess
-        Task { await wipe() }
     }
 
     func keyboardDisappeared() {

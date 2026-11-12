@@ -52,11 +52,11 @@ export const config = {
     codeMaxAttempts: 5,
     // Wrong codes per user per day, across all codes. Then no code works until the day ends.
     codeDailyMisses: 10,
-    // Password sign-in per email: after 5 misses, a lock of 30 s that doubles with each miss, up to an hour.
-    // The count resets a day after the last miss.
-    lockAfter: 5,
-    lockBaseMs: 30_000,
-    lockMaxMs: 3_600_000,
+    // Password tries, counted before the hash. One client address gets 5 tries per email in 15 minutes, then waits 15 minutes:
+    // that address alone, so a stranger cannot lock the owner out. Across all addresses an email gets 20 tries an hour;
+    // after that each try waits longer (1 s, 2 s, 4 s ... up to 5 minutes), so slow guessing from many addresses still slows down.
+    lockout: { perIpMax: 5, perIpWindowMs: 15 * 60_000, perIpLockMs: 15 * 60_000, perEmailMax: 20, perEmailWindowMs: 60 * 60_000, maxDelayMs: 5 * 60_000 },
+    // Wrong emailed codes per user count over a day.
     failureWindowMs: 86_400_000,
   },
 

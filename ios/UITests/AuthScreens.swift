@@ -42,10 +42,9 @@ final class AuthScreens: XCTestCase {
         XCTAssertTrue(el("signin.apple").exists, "no sign-in screen: \(app.debugDescription.suffix(1500))")
     }
 
-    /// Onboarding again: the intro, or a setup step (the test launches with intro_seen).
-    private func onboardingShows() -> Bool {
-        let step = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "onboarding.step.")).firstMatch
-        return step.waitForExistence(timeout: 8) || el("hero.add").exists
+    /// After a logout the app opens straight at the sign-in step: not the intro, not a setup step.
+    private func signInShows() -> Bool {
+        el("signin.apple").waitForExistence(timeout: 8) && !el("hero.add").exists
     }
 
     private func logOut() {
@@ -53,7 +52,7 @@ final class AuthScreens: XCTestCase {
         XCTAssertTrue(el("account.logout").waitForExistence(timeout: 5))
         el("account.logout").tap()
         app.alerts["Log out?"].buttons["Log out"].firstMatch.tap()
-        XCTAssertTrue(onboardingShows(), "back to the start after logout")
+        XCTAssertTrue(signInShows(), "sign-in after logout: \(app.debugDescription.suffix(1500))")
     }
 
     /// iOS may offer to save the password when a password field goes away. The test says Not Now.
@@ -164,7 +163,7 @@ final class AuthScreens: XCTestCase {
 
         el("account.logout").tap()
         app.alerts["Log out?"].buttons["Log out"].firstMatch.tap()
-        XCTAssertTrue(onboardingShows(), "back to the start after logout")
+        XCTAssertTrue(signInShows(), "sign-in after logout: \(app.debugDescription.suffix(1500))")
         XCTAssertFalse(el("nav.account").exists)
         shot("auth-9-after-logout")
     }

@@ -84,7 +84,7 @@ test('scrypt: a full queue answers 503 with Retry-After and gives the try back',
     const busy = rs.filter((r) => r.status === 503);
     assert.ok(busy.length >= 1, rs.map((r) => r.status).join());
     assert.equal(busy[0].headers.get('retry-after'), '5');
-    const counted = (s.db.raw.prepare('SELECT count FROM login_failures').get() as { count: number }).count;
+    const counted = (s.db.raw.prepare('SELECT MAX(count) AS count FROM auth_failures').get() as { count: number }).count;
     assert.equal(counted, rs.filter((r) => r.status === 401).length, 'only tries that were checked count');
   } finally {
     Object.assign(config.password, saved);

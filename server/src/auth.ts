@@ -96,27 +96,24 @@ export function createAuth(d: AuthDeps) {
     return row;
   }
 
-  function lockedFor(key: string): number {
-    const f = db.failures(key);
-    return f && f.locked_until > now() ? f.locked_until - now() : 0;
+  type Try = { pair: string; key: string };
+  const pairKey = (c: Context<Env>, emailHash: string) => cipher.lookupHash('email-ip', `${emailHash}:${clientIp(c)}`);
+  /**
+   * Counts this password try BEFORE the hash, so parallel guesses cannot slip past: per (email, client address), and per
+   * email across all addresses (config.auth.lockout). Any email counts, with or without an account.
+   * Returns the 429 to send, or the keys to release after the check.
+   */
+  function tryPassword(c: Context<Env>, emailHash: string): { blocked: Response } | Try {
+    const l = config.auth.lockout;
+    const pair = pairKey(c, emailHash);
+    const until = db.reserveAuthAttempt([
+      { key: pair, max: l.perIpMax, windowMs: l.perIpWindowMs, lockFor: () => l.perIpLockMs },
+      { key: emailHash, max: l.perEmailMax, windowMs: l.perEmailWindowMs, lockFor: (n) => Math.min(1000 * 2 ** (n - l.perEmailMax), l.maxDelayMs) },
+    ]);
+    if (!until) return { pair, key: emailHash };
+    c.header('Retry-After', String(Math.max(1, Math.ceil((until - now()) / 1000))));
+    return { blocked: c.json({ error: 'too many tries. wait a while, then try again' }, 429) };
   }
-  function failed(key: string) {
-    const f = db.failures(key);
-    const count = (f && now() - f.last_at < config.auth.failureWindowMs ? f.count : 0) + 1;
-    const a = config.auth;
-    const lock = count >= a.lockAfter ? now() + Math.min(a.lockBaseMs * 2 ** (count - a.lockAfter), a.lockMaxMs) : 0;
-    db.setFailures(key, count, lock);
-  }
-  function unfailed(key: string) {
-    const f = db.failures(key);
-    if (!f) return;
-    const count = Math.max(f.count - 1, 0);
-    db.setFailures(key, count, count >= config.auth.lockAfter ? f.locked_until : 0);
-  }
-  const locked = (c: Context<Env>, ms: number) => {
-    c.header('Retry-After', String(Math.ceil(ms / 1000)));
-    return c.json({ error: 'too many tries. wait a while, then try again' }, 429);
-  };
 
   /**
    * Checks an Apple identity token, then spends its nonce: a captured token and nonce work once.
@@ -133,15 +130,20 @@ export function createAuth(d: AuthDeps) {
     return sub;
   }
 
-  /** One try is counted against `key` before the hash; a hash that never ran (the queue was full) gives it back. */
-  async function checkPassword(key: string, password: string, stored: string | Promise<string>): Promise<boolean> {
-    failed(key);
+  /**
+   * The password check for a reserved try. A right password gives the try back: the address is cleared and the email
+   * count drops by one. A hash that never ran (the queue was full) gives the try back too, then the 503 goes out.
+   */
+  async function checkPassword(t: Try, password: string, stored: string | Promise<string>): Promise<boolean> {
+    let ok: boolean;
     try {
-      return await verifyPassword(password, await stored);
+      ok = await verifyPassword(password, await stored);
     } catch (e) {
-      if (e instanceof PasswordBusyError) unfailed(key);
+      if (e instanceof PasswordBusyError) db.releaseAuthAttempt([], [t.pair, t.key]);
       throw e;
     }
+    if (ok) db.releaseAuthAttempt([t.pair], [t.key]);
+    return ok;
   }
 
   /** After a right password, a hash made with older scrypt settings is made again. When hashing is busy it waits for the next login. */
@@ -242,17 +244,15 @@ export function createAuth(d: AuthDeps) {
     app.post('/v1/auth/email/login', ip, async (c) => {
       const { email, password } = EmailPassword.parse(await json(c));
       const key = emailKey(email);
-      const wait = lockedFor(key);
-      if (wait) return locked(c, wait);
-      // The miss is counted before the slow hash, so many guesses at once still meet the lock after the fifth.
+      const t = tryPassword(c, key);
+      if ('blocked' in t) return t.blocked;
       const u = db.userByEmailHash(key);
-      const ok = await checkPassword(key, password, u?.password_hash ?? dummyHash());
+      const ok = await checkPassword(t, password, u?.password_hash ?? dummyHash());
       // An account still waiting for its code answers like a wrong password, so sign-in never tells a new email from a known one.
       if (!u || !u.password_hash || !ok || !u.email_verified_at) {
         log('email_login_failed', {});
         return c.json(WRONG, 401);
       }
-      db.clearFailures(key);
       await rehash(u.id, password, u.password_hash);
       log('email_login', { user_id: u.id });
       return c.json(issue(u.id, 'email'));
@@ -280,7 +280,7 @@ export function createAuth(d: AuthDeps) {
       db.setPassword(u.id, await hashPassword(b.data.password));
       db.markVerified(u.id);
       db.deleteAllSessions(u.id);
-      db.clearFailures(key);
+      db.releaseAuthAttempt([key, pairKey(c, key)], []);
       log('password_reset', { user_id: u.id });
       return c.json(issue(u.id, 'email'));
     });
@@ -393,12 +393,11 @@ export function createAuth(d: AuthDeps) {
       const b = z.object({ password: Password.optional(), confirm: z.literal(true).optional() }).strict().safeParse(await c.req.json().catch(() => null));
       if (!b.success || (!u.password_hash && !b.data.confirm)) return c.json({ error: 'confirm to delete your account' }, 400);
       if (u.password_hash) {
-        const key = u.email_hash!;
-        const wait = lockedFor(key);
-        if (wait) return locked(c, wait);
-        if (!b.data.password || !(await checkPassword(key, b.data.password, u.password_hash))) return c.json({ error: 'wrong password' }, 403);
+        const t = tryPassword(c, u.email_hash!);
+        if ('blocked' in t) return t.blocked;
+        if (!b.data.password || !(await checkPassword(t, b.data.password, u.password_hash))) return c.json({ error: 'wrong password' }, 403);
       }
-      if (u.email_hash) db.clearFailures(u.email_hash);
+      if (u.email_hash) db.releaseAuthAttempt([u.email_hash, pairKey(c, u.email_hash)], []);
       db.clearFailures(`code:${userId}`);
       db.deleteUser(userId);
       log('account_deleted', { user_id: userId });

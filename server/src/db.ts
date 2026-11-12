@@ -79,6 +79,10 @@ CREATE TABLE login_failures (key TEXT PRIMARY KEY, count INTEGER NOT NULL, locke
   (db) => {
     db.exec('CREATE TABLE apple_nonces (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0);');
   },
+  // 5: Password tries per (email, client address) and per email, counted before the hash. Keys are keyed hashes.
+  (db) => {
+    db.exec('CREATE TABLE auth_failures (key TEXT PRIMARY KEY, count INTEGER NOT NULL, first_at INTEGER NOT NULL, locked_until INTEGER);');
+  },
 ];
 
 function migrate(db: DatabaseSync) {
@@ -305,7 +309,7 @@ export function openDb(path: string, o: { now?: () => number } = {}) {
       q('DELETE FROM email_codes WHERE user_id = ? AND purpose = ?').run(userId, purpose);
     },
 
-    // ---- login failures, keyed by the email hash
+    // ---- wrong emailed codes per user (`code:<user id>`). Password tries live in auth_failures.
     failures(key: string): { count: number; locked_until: number; last_at: number } | undefined {
       return q('SELECT count, locked_until, last_at FROM login_failures WHERE key = ?').get(key) as { count: number; locked_until: number; last_at: number } | undefined;
     },
@@ -315,6 +319,36 @@ export function openDb(path: string, o: { now?: () => number } = {}) {
     },
     clearFailures(key: string) {
       q('DELETE FROM login_failures WHERE key = ?').run(key);
+    },
+
+    // ---- password tries, per (email, client address) and per email
+    /**
+     * Counts one password try against each key BEFORE the password is checked, so parallel guesses cannot slip past.
+     * Returns the latest locked_until when any key is locked (nothing is counted then), else 0. Synchronous, so it is
+     * atomic inside this process. Reaching `max` tries in the window sets locked_until = now + lockFor(count).
+     */
+    reserveAuthAttempt(keys: { key: string; max: number; windowMs: number; lockFor: (count: number) => number }[]): number {
+      const at = now();
+      q('DELETE FROM auth_failures WHERE first_at < ? AND (locked_until IS NULL OR locked_until < ?)').run(at - 3_600_000, at);
+      const get = q('SELECT count, first_at, locked_until FROM auth_failures WHERE key = ?');
+      const rows = keys.map((k) => get.get(k.key) as { count: number; first_at: number; locked_until: number | null } | undefined);
+      const locked = Math.max(0, ...rows.map((r) => (r?.locked_until && r.locked_until > at ? r.locked_until : 0)));
+      if (locked) return locked;
+      keys.forEach((k, i) => {
+        const r = rows[i];
+        const fresh = !r || r.first_at <= at - k.windowMs;
+        const count = fresh ? 1 : r.count + 1;
+        const until = count >= k.max ? at + k.lockFor(count) : null;
+        q(`INSERT INTO auth_failures (key, count, first_at, locked_until) VALUES (?, ?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET count = excluded.count, first_at = excluded.first_at, locked_until = excluded.locked_until`)
+          .run(k.key, count, fresh ? at : r.first_at, until);
+      });
+      return 0;
+    },
+    /** `clear` keys are forgotten; `undo` keys give back the one try counted for this request and drop their wait. */
+    releaseAuthAttempt(clear: string[], undo: string[]) {
+      for (const k of clear) q('DELETE FROM auth_failures WHERE key = ?').run(k);
+      for (const k of undo) q('UPDATE auth_failures SET count = MAX(count - 1, 0), locked_until = NULL WHERE key = ?').run(k);
     },
 
     // A drawing shared as a link. The id is the only way to reach it; no query lists them.

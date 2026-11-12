@@ -39,7 +39,7 @@ final class PlainLineTests: XCTestCase {
             XCTAssertEqual(line, "Something went wrong. Try again.")
             XCTAssertFalse(line.contains(String(code)))
         }
-        XCTAssertEqual(plainLine(APIError.http(401, "")), "Open \(AppConfig.displayName) to pair")
+        XCTAssertEqual(plainLine(APIError.http(401, "")), "Open \(AppConfig.displayName) to sign in")
         XCTAssertEqual(plainLine(APIError.http(429, "")), "Too many tries. Wait a minute.")
     }
 }

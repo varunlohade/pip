@@ -20,7 +20,8 @@ async function signUp(s: S, email: string, password = PW) {
   assert.equal(r.status, 200);
   return r.body as { access_token: string; refresh_token: string };
 }
-const login = (s: S, email: string, password: string) => s.call(null, 'POST', '/v1/auth/email/login', { email, password });
+const login = (s: S, email: string, password: string, headers: Record<string, string> = {}) =>
+  s.call(null, 'POST', '/v1/auth/email/login', { email, password }, headers);
 const upload = (s: S, token: string) => s.app.request('/v1/drawings', { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'image/png', 'X-User-Action': 'tap' }, body: PNG });
 const count = (s: S, table: string, where = '1', ...args: string[]) =>
   (s.db.raw.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`).get(...args) as { n: number }).n;
@@ -100,7 +101,7 @@ test('timing: an unknown email still runs a full password hash', async () => {
   assert.ok(med(unknown) > med(known) * 0.5 && med(unknown) < med(known) * 2, `known ${med(known)} ms, unknown ${med(unknown)} ms`);
 });
 
-test('brute force: 5 misses lock the email with a backoff that doubles; a known and an unknown email lock alike', async () => {
+test('brute force: 5 misses from one address lock that address for 15 minutes; a known and an unknown email lock alike', async () => {
   let t = Date.parse('2026-11-12T10:00:00Z');
   const s = setup({ now: () => t });
   await signUp(s, 'shop@example.com');
@@ -112,14 +113,52 @@ test('brute force: 5 misses lock the email with a backoff that doubles; a known 
   assert.deepEqual(await statuses('shop@example.com', 6), [401, 401, 401, 401, 401, 429]);
   assert.deepEqual(await statuses('ghost@example.com', 6), [401, 401, 401, 401, 401, 429]);
   const locked = await login(s, 'shop@example.com', PW);
-  assert.equal(locked.status, 429, 'the right password waits too');
-  assert.equal(locked.headers.get('retry-after'), '30');
-  t += 31_000;
-  assert.equal((await login(s, 'shop@example.com', 'not the password!')).status, 401);
-  assert.equal((await login(s, 'shop@example.com', PW)).headers.get('retry-after'), '60', 'the next lock is twice as long');
-  t += 61_000;
+  assert.equal(locked.status, 429, 'the right password waits too, from this address');
+  assert.equal(locked.headers.get('retry-after'), '900');
+  t += 15 * 60_000 + 1000;
   assert.equal((await login(s, 'shop@example.com', PW)).status, 200);
-  assert.deepEqual(await statuses('shop@example.com', 1), [401], 'a good sign-in clears the count');
+  assert.deepEqual(await statuses('shop@example.com', 1), [401], 'a good sign-in clears this address');
+});
+
+test('lockout: a stranger at one address cannot lock the owner out at another', async () => {
+  const s = setup();
+  await signUp(s, 'owner@example.com');
+  config.trustProxy = true;
+  try {
+    const from = async (ip: string, password: string) => (await login(s, 'owner@example.com', password, { 'X-Forwarded-For': ip })).status;
+    const stranger: number[] = [];
+    for (let i = 0; i < 10; i++) stranger.push(await from('203.0.113.66', 'not the password!'));
+    assert.deepEqual(stranger, [401, 401, 401, 401, 401, 429, 429, 429, 429, 429]);
+    assert.equal(await from('198.51.100.7', PW), 200, 'the owner signs in from their own address');
+    assert.equal(await from('198.51.100.7', 'one typo, sorry'), 401, 'and a typo is a plain miss, not a lock');
+  } finally {
+    config.trustProxy = false;
+  }
+});
+
+test('lockout: many addresses guessing one email meet a delay that grows, up to 5 minutes', async () => {
+  let t = Date.parse('2026-11-12T10:00:00Z');
+  const s = setup({ now: () => t });
+  await signUp(s, 'target@example.com');
+  config.trustProxy = true;
+  try {
+    const guess = async (i: number) => login(s, 'target@example.com', 'not the password!', { 'X-Forwarded-For': `10.1.${i >> 8}.${i & 255}` });
+    const l = config.auth.lockout;
+    for (let i = 0; i < l.perEmailMax - 1; i++) assert.equal((await guess(i)).status, 401, `guess ${i}`);
+    assert.equal((await guess(100)).status, 401, 'the 20th guess is checked, then sets the delay');
+    const waits: string[] = [];
+    for (let n = 0; n < 12; n++) {
+      const r = await guess(200 + n);
+      assert.equal(r.status, 429, 'a new address still waits');
+      waits.push(r.headers.get('retry-after')!);
+      t += Number(waits.at(-1)) * 1000;
+      assert.equal((await guess(300 + n)).status, 401, 'after the wait, one more guess');
+    }
+    assert.deepEqual(waits.slice(0, 5), ['1', '2', '4', '8', '16'], 'the delay doubles');
+    assert.equal(waits.at(-1), String(l.maxDelayMs / 1000), 'and stops at 5 minutes');
+  } finally {
+    config.trustProxy = false;
+  }
 });
 
 test('brute force: sign-in is limited per client IP across emails', async () => {
@@ -232,7 +271,7 @@ test('delete account: every row of the user goes, their links stop working, othe
   for (const table of ['users']) assert.equal(count(s, table, 'id = ?', goneId), 0);
   for (const table of ['sessions', 'shared_images', 'email_codes', 'devices']) assert.equal(count(s, table, 'user_id = ?', goneId), 0, table);
   assert.equal(count(s, 'access_tokens'), count(s, 'access_tokens', 'session_id IN (SELECT id FROM sessions)'));
-  assert.equal(count(s, 'login_failures'), 0, 'the lockout row of the email goes too');
+  assert.equal(count(s, 'auth_failures'), 0, 'the lockout rows of the email go too');
   assert.equal((await s.app.request(`${goneUrl}.png`)).status, 404);
   assert.equal((await s.app.request(`${staysUrl}.png`)).status, 200);
   assert.equal((await s.call(gone.access_token, 'GET', '/v1/me')).status, 401);
@@ -370,7 +409,7 @@ test('F3: many wrong passwords at once still meet the lock after five', async ()
   try {
     const out = await Promise.all(Array.from({ length: 30 }, (_, i) =>
       Promise.resolve(s.call(null, 'POST', '/v1/auth/email/login', { email: 'race@example.com', password: 'not the password!' }, { 'X-Forwarded-For': `10.0.0.${i}` })).then((r) => r.status)));
-    assert.equal(out.filter((x) => x === 401).length, config.auth.lockAfter, JSON.stringify(out));
+    assert.equal(out.filter((x) => x === 401).length, config.auth.lockout.perEmailMax, JSON.stringify(out));
   } finally {
     config.trustProxy = false;
   }

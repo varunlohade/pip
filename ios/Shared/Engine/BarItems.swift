@@ -57,7 +57,7 @@ enum BarItems {
     static func build(_ s: State) -> [Item] {
         // A dictionary meaning works offline, so it shows even before Full Access or pairing.
         if !s.hasFullAccess { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Allow Full Access in Settings for \(AppConfig.keyboardName)", tone: .secondary)] }
-        if !s.paired { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Open \(AppConfig.displayName) to pair", tone: .secondary)] }
+        if !s.paired { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Open \(AppConfig.displayName) to sign in", tone: .secondary)] }
         if let u = s.undo {
             return [Item(id: "written", title: u.label, tone: .success), Item(id: "undo", title: "Undo", action: .undo)]
         }

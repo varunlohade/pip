@@ -294,6 +294,38 @@ final class SessionEndTests: XCTestCase {
         XCTAssertNil(fresh?.replacementIfAccountChanged(), "the new model is current")
     }
 
+    /// The keyboard on a 401: it drops what it holds in memory and asks the owner to open Pip. It does not wipe the phone.
+    func testTheKeyboardDropsItsMemoryOnA401ButDoesNotWipe() async throws {
+        StatusStub.code = 401
+        LocalWipe.wipeShared()
+        Keychain.set(.accessToken, "pat_person_a")
+        SharedStore.notes = [Note(text: "Person A's note", trigger: ";a")]
+        var wiped = 0
+        let model = KeyboardModel(deps: KeyboardDeps(api: { FakeAPI() }, store: SharedKeyboardStore(), pasteboard: FakePasteboard(),
+                                                     now: Date.init, sleep: { _ in }, wipeProcess: { wiped += 1 }))
+        let host = FakeHost()
+        model.host = host
+        model.keyboardAppeared()
+        for _ in 0..<20 { await Task.yield() }
+        let wipesBefore = wiped
+        XCTAssertTrue(model.paired)
+        model.explainCache["x"] = ExplainResponse(short: "x", body: "", visual_ok: false)
+        let epoch = SharedStore.accountEpoch
+
+        // The live API in the keyboard is APIClient: its 401 posts tokenRejected.
+        _ = try? await APIClient(baseURL: "http://127.0.0.1:9", token: "pat_person_a", session: stubbed).me()
+        for _ in 0..<300 where model.paired { try await Task.sleep(nanoseconds: 10_000_000) }
+
+        XCTAssertFalse(model.paired)
+        XCTAssertTrue(model.notes.isEmpty)
+        XCTAssertTrue(model.explainCache.isEmpty)
+        XCTAssertEqual(model.barItems.first?.title, "Open \(AppConfig.displayName) to sign in")
+        XCTAssertEqual(wiped, wipesBefore, "no wipe from the keyboard")
+        XCTAssertEqual(SharedStore.accountEpoch, epoch, "the shared stores stay; the app wipes them")
+        XCTAssertFalse(SharedStore.notes.isEmpty)
+        Keychain.deleteAll()
+    }
+
     /// Sign in with Apple uses the server's one-time nonce when the server has one.
     func testTheAppleNonceComesFromTheServer() async {
         let nonce = await APIClient.appleNonce(baseURL: "http://127.0.0.1:9", session: stubbed)

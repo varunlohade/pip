@@ -14,6 +14,7 @@ This page lists every place Pip stores data, on the server and on the phone, and
 | 2 | Rebuilds `devices` and `shared_images` with `ON DELETE CASCADE`. Adds the email and password columns. Adds `sessions`, `refresh_tokens`, `access_tokens`, `email_codes` and `login_failures`. |
 | 3 | Adds `used_nonces`, so each Sign in with Apple nonce works once. |
 | 4 | Adds `apple_nonces`, the nonces the server gave out. |
+| 5 | Adds `auth_failures`, password tries per (email, address) and per email. |
 
 Foreign keys are on, and `secure_delete` is on, so SQLite overwrites deleted rows with zeros.
 
@@ -26,13 +27,14 @@ Foreign keys are on, and `secure_delete` is on, so SQLite overwrites deleted row
 | `refresh_tokens` | refresh token | SHA-256 of the token only. Spent tokens stay until they expire, so a reuse is caught. |
 | `access_tokens` | access token | SHA-256 of the token only. Each lasts 15 minutes. |
 | `email_codes` | live code per user and purpose | A keyed hash of the code. For "link", it also holds the new email (hash plus ciphertext) and its scrypt hash until the code is used. |
-| `login_failures` | email hash, or `code:<user id>` | Counts and lock times. It holds no email. |
+| `login_failures` | `code:<user id>` | Wrong emailed codes per user over a day. (Email keys from before migration 5 are no longer read.) |
+| `auth_failures` | email hash, or a keyed hash of (email hash, client address) | Password tries, their window start and lock time. It holds no email and no address. Rows go an hour after their window. |
 | `devices` | legacy device token | SHA-256 of an old `pkd_` token, until it is traded for a session once. |
 | `shared_images` | drawing shared as a link | The PNG, its JPEG preview and the title. These are not encrypted, because anyone with the link may see them. |
 | `used_nonces` | Apple sign-in | A keyed hash of the nonce, kept until the identity token would expire. |
 | `apple_nonces` | `GET /v1/auth/apple/nonce` | A keyed hash of each nonce the server gave out, its expiry (10 minutes) and whether it is used. Kept an hour past expiry. |
 
-Every per-user table points at `users(id)` with `ON DELETE CASCADE`, directly or through `sessions`. `DELETE FROM users WHERE id = ?` removes everything that belongs to the person. The delete route also removes the person's `login_failures` rows.
+Every per-user table points at `users(id)` with `ON DELETE CASCADE`, directly or through `sessions`. `DELETE FROM users WHERE id = ?` removes everything that belongs to the person. The delete route also removes the person's `login_failures` row and the `auth_failures` rows of their email and the deleting address.
 
 ### Keys
 
