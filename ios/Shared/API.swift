@@ -121,17 +121,35 @@ struct APIClient {
         try JSONDecoder().decode(T.self, from: await data(r))
     }
 
+    /// Posted when the server refuses this phone's session on a route outside /v1/auth/. userInfo["epoch"] is the account epoch
+    /// the call started under, so a late answer from before a logout or a new sign-in does nothing.
+    static let tokenRejected = Notification.Name("APIClient.tokenRejected")
+
     /// One call. An expired access token gets one refresh (shared with the keyboard through the Keychain) and one retry.
+    /// A 401 that survives the refresh means the session is dead. A 401 under /v1/auth/ (a wrong password, a refused Apple
+    /// token) does not end the session.
     private func data(_ r: URLRequest) async throws -> Data {
+        let epoch = SharedStore.accountEpoch
+        let rejected = {
+            guard r.url?.path.contains("/v1/auth/") == false else { return }
+            NotificationCenter.default.post(name: Self.tokenRejected, object: nil, userInfo: epoch.map { ["epoch": $0] } ?? [:])
+        }
         var (data, resp) = try await session.data(for: r)
         var code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, Keychain.get(.refreshToken) != nil {
-            let fresh = try await TokenRefresher.refreshed(baseURL: baseURL, replacing: token, session: session)
+            let fresh: String
+            do {
+                fresh = try await TokenRefresher.refreshed(baseURL: baseURL, replacing: token, session: session)
+            } catch APIError.notPaired {
+                rejected()
+                throw APIError.notPaired
+            }
             var again = r
             again.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
             (data, resp) = try await session.data(for: again)
             code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         }
+        if code == 401 { rejected() }
         guard (200..<300).contains(code) else { throw APIError.http(code, String(decoding: data, as: UTF8.self)) }
         return data
     }

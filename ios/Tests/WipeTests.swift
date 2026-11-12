@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class WipeTests: XCTestCase {
     private let site = URL(string: "https://pip.example/v1/me")!
+    static let containerRecord = ".com.apple.mobile_container_manager.metadata.plist"
 
     private func seedEverything() async throws {
         for s in Secret.allCases { XCTAssertEqual(Keychain.set(s, "seed-\(s.rawValue)"), errSecSuccess, "Keychain write \(s)") }
@@ -47,6 +48,13 @@ final class WipeTests: XCTestCase {
 
     func testLogoutEmptiesEveryStore() async throws {
         try await seedEverything()
+        // iOS's own container record must survive every wipe: deleting it broke the keyboard in Muninn.
+        // The simulator writes it; a stand-in is written only when it is missing, and removed again at the end.
+        let record = try XCTUnwrap(SharedStore.container).appendingPathComponent(Self.containerRecord)
+        let recordBefore = FileManager.default.contents(atPath: record.path)
+        if recordBefore == nil { try Data("stand-in".utf8).write(to: record) }
+        defer { if recordBefore == nil { try? FileManager.default.removeItem(at: record) } }
+        let recordBytes = try XCTUnwrap(FileManager.default.contents(atPath: record.path))
         // Every store really holds something, so an empty one afterwards means the wipe did it.
         XCTAssertGreaterThanOrEqual(Keychain.count(), Secret.allCases.count)
         XCTAssertTrue(SharedStore.signedIn)
@@ -74,7 +82,8 @@ final class WipeTests: XCTestCase {
         XCTAssertNotNil(SharedStore.accountEpoch)
         XCTAssertNotEqual(SharedStore.accountEpoch, oldEpoch, "a new epoch tells the keyboard")
         // The empty refresh lock file stays: deleting a file another process holds locked would break the lock.
-        XCTAssertEqual(contents(SharedStore.container).filter { $0 != StoreFile.refreshLock.rawValue }, ["Library"], "App Group files")
+        XCTAssertEqual(contents(SharedStore.container).filter { $0 != StoreFile.refreshLock.rawValue }, [Self.containerRecord, "Library"], "App Group files")
+        XCTAssertEqual(FileManager.default.contents(atPath: record.path), recordBytes, "iOS's container record is untouched")
         if let lock = SharedStore.url(.refreshLock), FileManager.default.fileExists(atPath: lock.path) {
             XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: lock.path)[.size] as? Int, 0, "the lock file holds nothing")
         }
@@ -174,5 +183,126 @@ final class WipeRaceTests: XCTestCase {
         SharedStore.dropSecretsFromAnEarlierInstall()
         XCTAssertEqual(Keychain.get(.refreshToken), "prt_current_person")
         Keychain.deleteAll()
+    }
+}
+
+/// A server that answers every call with `code` (and a nonce on GET /v1/auth/apple/nonce).
+final class StatusStub: URLProtocol {
+    nonisolated(unsafe) static var code = 401
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let nonce = request.url?.path == "/v1/auth/apple/nonce"
+        let resp = HTTPURLResponse(url: request.url!, statusCode: nonce ? 200 : Self.code, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data((nonce ? #"{"nonce":"server-nonce-0123456789","expires_in_s":600}"# : #"{"error":"unauthorized"}"#).utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+/// The lessons the Muninn team found (docs/SECURITY-AUTH.md, "Compared with Muninn"), checked on Pip.
+@MainActor
+final class SessionEndTests: XCTestCase {
+    private var stubbed: URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StatusStub.self]
+        return URLSession(configuration: config)
+    }
+
+    private func signedIn() -> Session {
+        LocalWipe.wipeShared()
+        SharedStore.serverURL = "http://127.0.0.1:9"
+        Keychain.set(.accessToken, "pat_person_a")
+        SharedStore.notes = [Note(text: "Person A's note", trigger: ";a")]
+        return Session()
+    }
+
+    /// A 401 on a signed-in route (the session ended elsewhere) runs the logout wipe and opens sign-in, with a new stack.
+    /// A 401 under /v1/auth/ (a wrong password) keeps the session.
+    func testA401OutsideAuthWipesAndOpensSignIn() async throws {
+        StatusStub.code = 401
+        let session = signedIn()
+        XCTAssertTrue(session.paired)
+        let account = session.account
+        let epoch = SharedStore.accountEpoch
+        let api = APIClient(baseURL: SharedStore.serverURL, token: "pat_person_a", session: stubbed)
+
+        _ = try? await api.linkEmail(email: "a@example.com", password: "wrong password here")
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(session.paired, "a 401 under /v1/auth/ keeps the session")
+        XCTAssertEqual(SharedStore.accountEpoch, epoch)
+
+        _ = try? await api.me()
+        for _ in 0..<300 where session.paired { try await Task.sleep(nanoseconds: 10_000_000) }
+        XCTAssertFalse(session.paired)
+        XCTAssertTrue(session.onboarding)
+        XCTAssertTrue(session.signInNext, "onboarding opens at sign-in, not the intro")
+        XCTAssertGreaterThan(session.account, account, "RootView's .id(session.account) builds a new navigation stack")
+        XCTAssertNil(Keychain.get(.accessToken))
+        XCTAssertFalse(SharedStore.notes.contains { $0.text.contains("Person A") })
+        XCTAssertNotEqual(SharedStore.accountEpoch, epoch, "one wipe, and the keyboard hears of it")
+    }
+
+    /// A late 401 for a call that began before the last wipe does not wipe the next person.
+    func testALate401FromBeforeTheLastWipeDoesNothing() async throws {
+        let session = signedIn()
+        let old = SharedStore.accountEpoch
+        LocalWipe.wipeShared()
+        Keychain.set(.accessToken, "pat_person_b")
+        NotificationCenter.default.post(name: APIClient.tokenRejected, object: nil, userInfo: old.map { ["epoch": $0] } ?? [:])
+        for _ in 0..<20 { await Task.yield() }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertTrue(session.paired)
+        XCTAssertEqual(Keychain.get(.accessToken), "pat_person_b")
+        Keychain.deleteAll()
+    }
+
+    /// Logout also gives a new navigation stack and opens sign-in.
+    func testLogoutResetsTheStackAndOpensSignIn() async {
+        let session = signedIn()
+        let account = session.account
+        _ = await session.leave(.logout)
+        XCTAssertGreaterThan(session.account, account)
+        XCTAssertTrue(session.signInNext)
+        session.finishOnboarding()
+        XCTAssertFalse(session.signInNext)
+    }
+
+    /// The keyboard throws its model away after a wipe and builds a new one; with no wipe it keeps it.
+    func testTheKeyboardRebuildsItsModelAfterAWipe() async {
+        Keychain.set(.accessToken, "pat_person_a")
+        var wiped = 0
+        let deps = KeyboardDeps(api: { FakeAPI() }, store: SharedKeyboardStore(), pasteboard: FakePasteboard(),
+                                now: Date.init, sleep: { _ in }, wipeProcess: { wiped += 1 })
+        let model = KeyboardModel(deps: deps)
+        model.host = FakeHost()
+        model.keyboardAppeared()
+        for _ in 0..<20 { await Task.yield() }
+        let wipesBefore = wiped
+        XCTAssertNil(model.replacementIfAccountChanged(), "no wipe, same model")
+        model.explainCache["x"] = ExplainResponse(short: "x", body: "", visual_ok: false)
+
+        LocalWipe.wipeShared()
+        let fresh = model.replacementIfAccountChanged()
+        XCTAssertNotNil(fresh)
+        XCTAssertFalse(fresh === model)
+        XCTAssertTrue(fresh?.explainCache.isEmpty ?? false)
+        XCTAssertTrue(model.explainCache.isEmpty, "the old model let go of its state too")
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(wiped, wipesBefore + 1, "this process's caches were wiped once")
+        XCTAssertNil(fresh?.replacementIfAccountChanged(), "the new model is current")
+    }
+
+    /// Sign in with Apple uses the server's one-time nonce when the server has one.
+    func testTheAppleNonceComesFromTheServer() async {
+        let nonce = await APIClient.appleNonce(baseURL: "http://127.0.0.1:9", session: stubbed)
+        XCTAssertEqual(nonce, "server-nonce-0123456789")
+        StatusStub.code = 404
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [StatusStub.self]
+        let none = await APIClient.appleNonce(baseURL: "http://127.0.0.1:9/old", session: URLSession(configuration: config))
+        XCTAssertNil(none, "an older server has no nonce route; the phone then makes its own")
+        StatusStub.code = 401
     }
 }

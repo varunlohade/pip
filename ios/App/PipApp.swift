@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @main
@@ -18,19 +19,38 @@ final class Session: ObservableObject {
     @Published var paired = SharedStore.signedIn
     /// True from a fresh start until the last onboarding step. A signed-in relaunch starts false, so onboarding never shows again.
     @Published var onboarding = !SharedStore.signedIn
+    /// After a wipe (logout, delete, a refused session), onboarding opens at the sign-in step, not the intro.
+    @Published var signInNext = false
     @Published var serverURL = SharedStore.serverURL
     @Published var error: String?
     /// The account is saved with Apple. Until then Home offers it.
     @Published var appleLinked = SharedStore.appleLinked
     /// One quiet line after a link, such as "Welcome back".
     @Published var notice: String?
-    /// Goes up when the account behind the app changes, so Home loads again.
+    /// Goes up when the account behind the app changes (sign-in, logout, a recovered account), so Home loads again
+    /// and the navigation stack starts new.
     @Published var account = 0
+    private var rejected: AnyCancellable?
+    private var signingOut = false
 
     init() {
         SharedStore.dropSecretsFromAnEarlierInstall()
         paired = SharedStore.signedIn
         onboarding = !SharedStore.signedIn
+        rejected = NotificationCenter.default.publisher(for: APIClient.tokenRejected)
+            .map { $0.userInfo?["epoch"] as? String }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] epoch in Task { await self?.tokenRejected(epoch: epoch) } }
+    }
+
+    /// The server refused this phone's session (it expired or ended elsewhere): the same wipe as log out, then sign-in.
+    /// An answer to a call from before the last wipe or sign-in, or a second one while the wipe runs, does nothing.
+    func tokenRejected(epoch: String?) async {
+        guard !signingOut, paired, epoch == SharedStore.accountEpoch else { return }
+        signingOut = true
+        await LocalWipe.wipeAll()
+        reset()
+        signingOut = false
     }
 
     /// The server for sign-in. UI tests point a fresh install at the fake server: "-serverURL http://127.0.0.1:8799".
@@ -159,7 +179,7 @@ final class Session: ObservableObject {
         return true
     }
 
-    func finishOnboarding() { onboarding = false }
+    func finishOnboarding() { onboarding = false; signInNext = false }
 
     enum Leave: Equatable { case logout, everywhere, delete(password: String?) }
 
@@ -189,6 +209,7 @@ final class Session: ObservableObject {
         notice = nil
         error = nil
         account += 1
+        signInNext = true
         onboarding = true
         paired = false
     }
@@ -217,8 +238,9 @@ struct RootView: View {
             }
             .background(Theme.Color.bg.ignoresSafeArea())
         }
-        // A new stack on sign-in and logout, so no screen of the last person (such as Account) stays pushed.
-        .id(session.paired)
+        // A new stack whenever the account changes (sign-in, logout, a 401, a recovered account), so no screen of the last
+        // person (such as Account) stays pushed.
+        .id(session.account)
         // Back from Settings: onboarding and Home see the new keyboard state at once.
         .onChange(of: scenePhase) { _, phase in if phase == .active { KeyboardSetup.shared.refresh() } }
         .task { await session.migrateLegacyToken() }

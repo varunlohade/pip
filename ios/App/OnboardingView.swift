@@ -52,6 +52,7 @@ struct OnboardingView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear { if session.signInNext { step = .start } }
         #if DEBUG
         .sheet(isPresented: $showDevPairing) {
             DevPairingSheet { showDevPairing = false; Task { await complete(.start) } }

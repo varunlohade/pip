@@ -16,22 +16,15 @@ enum LocalWipe {
 
     private static func wipeSharedLocked() {
         Keychain.deleteAll()
-        let fm = FileManager.default
         if let root = SharedStore.container {
-            for item in (try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
-                if item.lastPathComponent == "Library" {
-                    // Library/Preferences holds the App Group defaults, cleared below through UserDefaults; everything else goes.
-                    for sub in (try? fm.contentsOfDirectory(at: item, includingPropertiesForKeys: nil)) ?? [] where sub.lastPathComponent != "Preferences" {
-                        try? fm.removeItem(at: sub)
-                    }
-                } else if item.lastPathComponent != StoreFile.refreshLock.rawValue {
-                    // The lock file stays: deleting a file another process holds locked would break the lock.
-                    try? fm.removeItem(at: item)
-                }
-            }
+            // Library/Preferences holds the App Group defaults, cleared below key by key. The lock file stays: deleting a file
+            // another process holds locked would break the lock.
+            empty(root, keep: ["Library", StoreFile.refreshLock.rawValue])
+            empty(root.appendingPathComponent("Library"), keep: ["Preferences"])
         }
         if let d = SharedStore.defaults {
-            d.removePersistentDomain(forName: AppConfig.appGroupID)
+            // Key by key: removePersistentDomain on a shared suite can drop the next writes, and the keyboard reads this suite live.
+            for key in d.dictionaryRepresentation().keys { d.removeObject(forKey: key) }
             for key in StoreKey.allCases { d.removeObject(forKey: key.rawValue) }
             d.synchronize()
         }
@@ -51,10 +44,17 @@ enum LocalWipe {
         await web.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast)
         let fm = FileManager.default
         let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)
-        for dir in [fm.temporaryDirectory] + caches {
-            for item in (try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [] { try? fm.removeItem(at: item) }
-        }
+        for dir in [fm.temporaryDirectory] + caches { empty(dir) }
         if let id = Bundle.main.bundleIdentifier { UserDefaults.standard.removePersistentDomain(forName: id) }
+    }
+
+    /// Every file and folder in `dir`, one by one, except `keep` and iOS's own container record
+    /// (".com.apple.mobile_container_manager.metadata.plist"). Deleting that record broke the keyboard in Muninn.
+    static func empty(_ dir: URL, keep: Set<String> = []) {
+        let fm = FileManager.default
+        for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] where !keep.contains(name) && !name.hasPrefix(".com.apple.") {
+            try? fm.removeItem(at: dir.appendingPathComponent(name))
+        }
     }
 
     /// Logout and account delete on the app side: the shared stores, then this process.

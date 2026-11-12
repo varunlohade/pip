@@ -3,7 +3,12 @@ import CryptoKit
 import SwiftUI
 
 /// The raw nonce for Sign in with Apple: the app sends its SHA-256 to Apple and the raw value to the server.
+/// The server gives a one-time nonce (GET /v1/auth/apple/nonce); when it cannot, the phone makes a random one.
 enum AppleNonce {
+    static func fetch(baseURL: String) async -> String {
+        await APIClient.appleNonce(baseURL: baseURL) ?? random()
+    }
+
     static func random() -> String {
         // SystemRandomNumberGenerator is the system CSPRNG and cannot fail silently.
         var rng = SystemRandomNumberGenerator()
@@ -55,6 +60,8 @@ struct SignInChoices: View {
     let skip: () -> Void
     let signedIn: () -> Void
     @State private var nonce = ""
+    /// The next nonce, fetched ahead: the Apple button's request runs synchronously.
+    @State private var next: String?
     @State private var email = false
     @State private var working = false
 
@@ -62,7 +69,8 @@ struct SignInChoices: View {
         VStack(spacing: Theme.Space.xs) {
             SignInWithAppleButton(.signIn) { request in
                 session.error = nil
-                nonce = AppleNonce.random()
+                nonce = next ?? AppleNonce.random()
+                next = nil
                 request.requestedScopes = []
                 request.nonce = AppleNonce.sha256(nonce)
             } onCompletion: { result in
@@ -89,6 +97,7 @@ struct SignInChoices: View {
                 .accessibilityIdentifier("onboarding.start")
         }
         .disabled(busy || working)
+        .task(id: next == nil) { if next == nil { next = await AppleNonce.fetch(baseURL: session.server) } }
         .sheet(isPresented: $email) {
             NavigationStack { EmailAuthView(start: .signIn) { email = false; signedIn() } }
         }

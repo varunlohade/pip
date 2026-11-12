@@ -8,7 +8,8 @@ final class ClickInputView: UIInputView, UIInputViewAudioFeedback {
 }
 
 final class KeyboardViewController: UIInputViewController, TextHost {
-    private let model = KeyboardModel()
+    private var model = KeyboardModel()
+    private var hosting: UIHostingController<KeyboardView>?
     private var heightConstraint: NSLayoutConstraint?
     private var bag: AnyCancellable?
 
@@ -21,8 +22,8 @@ final class KeyboardViewController: UIInputViewController, TextHost {
     override func viewDidLoad() {
         super.viewDidLoad()
         SharedStore.dropSecretsFromAnEarlierInstall()
-        model.host = self
         let hosting = UIHostingController(rootView: KeyboardView(model: model))
+        self.hosting = hosting
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
         hosting.view.backgroundColor = .clear
         let height = hosting.view.heightAnchor.constraint(equalToConstant: Theme.SystemKeyboard.height)
@@ -37,17 +38,27 @@ final class KeyboardViewController: UIInputViewController, TextHost {
         ])
         hosting.didMove(toParent: self)
         heightConstraint = height
+        attach(model)
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (vc: KeyboardViewController, _) in vc.updateAppearance() }
+    }
+
+    /// Wires a model to this controller and its view.
+    private func attach(_ m: KeyboardModel) {
+        model = m
+        m.host = self
+        hosting?.rootView = KeyboardView(model: m)
         // The visual panel needs more room than the keys; the input view follows the model's height.
         // @Published sends before the property changes, so the height comes from the new value.
-        bag = model.$explainPanel.sink { [weak self] panel in
+        bag = m.$explainPanel.sink { [weak self] panel in
             if case .visual? = panel { self?.heightConstraint?.constant = Theme.SystemKeyboard.visualHeight }
             else { self?.heightConstraint?.constant = Theme.SystemKeyboard.height }
         }
-        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (vc: KeyboardViewController, _) in vc.updateAppearance() }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        // The app wiped the phone since the last appearance: throw the old model away and build a new one.
+        if let fresh = model.replacementIfAccountChanged() { attach(fresh) }
         updateAppearance()
         model.keyboardAppeared()
     }

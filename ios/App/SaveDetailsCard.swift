@@ -8,6 +8,8 @@ struct SaveDetailsCard: View {
     @EnvironmentObject var session: Session
     @Environment(\.colorScheme) private var colorScheme
     @State private var nonce = ""
+    /// The next nonce, fetched ahead: the Apple button's request runs synchronously.
+    @State private var next: String?
     @State private var busy = false
     @State private var error: String?
 
@@ -23,7 +25,8 @@ struct SaveDetailsCard: View {
                 }
                 SignInWithAppleButton(.continue) { request in
                     error = nil
-                    nonce = AppleNonce.random()
+                    nonce = next ?? AppleNonce.random()
+                    next = nil
                     request.requestedScopes = []
                     request.nonce = AppleNonce.sha256(nonce)
                 } onCompletion: { result in
@@ -42,6 +45,7 @@ struct SaveDetailsCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("save.card")
+        .task(id: next == nil) { if next == nil { next = await AppleNonce.fetch(baseURL: SharedStore.serverURL) } }
     }
 
     private func finished(_ result: Result<ASAuthorization, Error>) async {

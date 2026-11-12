@@ -113,6 +113,15 @@ extension APIClient {
         try await post(baseURL: baseURL, "/v1/auth/device", ["device_id": deviceID])
     }
 
+    /// GET /v1/auth/apple/nonce: a one-time nonce from the server, good for 10 minutes. Nil when the server has none.
+    static func appleNonce(baseURL: String, session: URLSession = .shared) async -> String? {
+        struct Out: Decodable { let nonce: String }
+        guard let url = URL(string: baseURL + "/v1/auth/apple/nonce"),
+              let (data, resp) = try? await session.data(for: URLRequest(url: url, timeoutInterval: 20)),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONDecoder().decode(Out.self, from: data).nonce
+    }
+
     static func appleSignIn(baseURL: String, identityToken: String, nonce: String) async throws -> TokenPair {
         try await post(baseURL: baseURL, "/v1/auth/apple", ["identity_token": identityToken, "nonce": nonce])
     }

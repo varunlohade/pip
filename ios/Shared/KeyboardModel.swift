@@ -356,6 +356,15 @@ final class KeyboardModel: ObservableObject {
         forgetAccount()
     }
 
+    /// A new model when the app wiped the phone since this one last looked, else nil. The keyboard swaps it in on appear,
+    /// so nothing of the previous person survives in memory. This model first stops its tasks and wipes this process's caches.
+    /// A keyboard that stays up across a logout still gets `forgetIfAccountChanged` on each text change.
+    func replacementIfAccountChanged() -> KeyboardModel? {
+        guard deps.store.accountEpoch != deps.store.keyboardSeenEpoch else { return nil }
+        forgetIfAccountChanged()
+        return KeyboardModel(deps: deps)
+    }
+
     /// Everything this keyboard holds in memory from the previous person, then this process's caches on disk.
     func forgetAccount() {
         closeExplain()
