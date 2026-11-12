@@ -1,7 +1,8 @@
 # Security
 
 ## What we store
-- Users and their device tokens. We store only a SHA-256 hash of each device token.
+- Users and their sessions. We store only SHA-256 hashes of access and refresh tokens. Full table list: `docs/DATA.md`.
+- Emails as a keyed hash (for lookup) plus AES-GCM ciphertext; passwords as scrypt hashes. Auth design and review: `docs/SECURITY-AUTH.md`.
 - Apple user ids (`sub`): we store only a keyed hash, `HMAC-SHA256(HKDF(DATA_ENCRYPTION_KEY, info = "pip/index/v1"), sub)`. We ask Apple for no name and no email.
 - We do not store typed text. `/v1/suggest` and `/v1/write/*` read it, send it to the models, and drop it.
 
@@ -27,16 +28,16 @@
 - `POST /v1/auth/apple` takes the identity token and the raw nonce. It runs before the device token check.
 - The server checks the RS256 signature against Apple's keys (`https://appleid.apple.com/auth/keys`, cached for a day), then `iss`, `aud` (`APPLE_BUNDLE_ID`, default `com.orseliyas.pip`), `exp`, and that the token's `nonce` is the SHA-256 of the raw nonce.
 - Every failure returns the same `401 {"error":"unauthorized"}`. The reason goes only to the server log. The token never goes to the log.
-- A good token finds or creates the user and returns a new device token. The limit is 10 calls a minute per client IP.
+- A good token finds or creates the user and returns a session (access + refresh token). Each nonce works once. The limit is 10 calls a minute per client IP.
 - `POST /v1/auth/device` makes a new user on every call and never looks up the device id. The limit is 5 an hour per client IP.
 
 ## Per-user access
-- A device token maps to one `user_id`. One user can have several devices.
+- An access token maps to one session and one `user_id`. One user can have several sessions.
 - Every route reads the `user_id` from the token, never from the request body.
 
 ## Threat model
 1. **Stolen DB file.** The DB holds only hashes of tokens and Apple ids.
-2. **Stolen or guessed device token.** Tokens have 256 random bits. The DB has only hashes. Rate limits slow abuse.
+2. **Stolen or guessed token.** Tokens have 256 random bits. The DB has only hashes. Access tokens last 15 minutes; a reused refresh token ends its session.
 3. **Prompt injection in chat text.** The model only picks a chip kind or rewrites text. Writing help runs only with `X-User-Action: tap`, and a rewrite must stay close to the size of its input.
 
 ## Known gaps
