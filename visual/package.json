@@ -1,0 +1,19 @@
+{
+  "name": "pip-visual",
+  "private": true,
+  "description": "The tldraw page the Pip keyboard shows for a visual explanation. Built into ios/Visual, loaded from the bundle, no network.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tldraw": "5.6.0"
+  },
+  "devDependencies": {
+    "@tldraw/assets": "5.6.0",
+    "vite": "8.3.8"
+  }
+}

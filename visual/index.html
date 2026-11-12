@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Pip visual</title>
+<style>
+  html, body, #root { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  .pip-step { position: absolute; left: 8px; top: 8px; right: 8px; z-index: 1000; pointer-events: none;
+    font: 500 13px -apple-system, system-ui, sans-serif; color: #1c1c1e; display: flex; gap: 6px; align-items: baseline; }
+  .pip-step b { flex: none; font-weight: 600; color: #8e8e93; }
+  .pip-step span { background: rgba(255,255,255,.85); border-radius: 8px; padding: 3px 7px; }
+  .pip-pen { position: absolute; z-index: 1001; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+    background: #0a84ff; box-shadow: 0 0 0 4px rgba(10,132,255,.25); pointer-events: none; transition: opacity .3s; }
+  @media (prefers-color-scheme: dark) {
+    .pip-step { color: #f2f2f7; } .pip-step span { background: rgba(28,28,30,.85); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="module" src="./src/main.jsx"></script>
+</body>
+</html>
