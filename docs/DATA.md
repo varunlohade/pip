@@ -13,6 +13,7 @@ This page lists every place Pip stores data, on the server and on the phone, and
 | 1 | The first schema: `users`, `devices`, `shared_images`. Databases from before migrations start at 0 and already hold most of it. |
 | 2 | Rebuilds `devices` and `shared_images` with `ON DELETE CASCADE`. Adds the email and password columns. Adds `sessions`, `refresh_tokens`, `access_tokens`, `email_codes` and `login_failures`. |
 | 3 | Adds `used_nonces`, so each Sign in with Apple nonce works once. |
+| 4 | Adds `apple_nonces`, the nonces the server gave out. |
 
 Foreign keys are on, and `secure_delete` is on, so SQLite overwrites deleted rows with zeros.
 
@@ -29,6 +30,7 @@ Foreign keys are on, and `secure_delete` is on, so SQLite overwrites deleted row
 | `devices` | legacy device token | SHA-256 of an old `pkd_` token, until it is traded for a session once. |
 | `shared_images` | drawing shared as a link | The PNG, its JPEG preview and the title. These are not encrypted, because anyone with the link may see them. |
 | `used_nonces` | Apple sign-in | A keyed hash of the nonce, kept until the identity token would expire. |
+| `apple_nonces` | `GET /v1/auth/apple/nonce` | A keyed hash of each nonce the server gave out, its expiry (10 minutes) and whether it is used. Kept an hour past expiry. |
 
 Every per-user table points at `users(id)` with `ON DELETE CASCADE`, directly or through `sessions`. `DELETE FROM users WHERE id = ?` removes everything that belongs to the person. The delete route also removes the person's `login_failures` rows.
 
@@ -82,8 +84,8 @@ When an access token is rejected, the API client refreshes once and retries. The
 
 The app wipes these, in this order:
 1. Every Keychain item in the shared group.
-2. Every App Group file and folder, plus everything in the group's `Library` except `Preferences`.
-3. Every App Group default.
+2. Every App Group file and folder, one by one, plus everything in the group's `Library` except `Preferences`. iOS's `.com.apple.mobile_container_manager.metadata.plist` and the refresh lock file stay.
+3. Every App Group default, key by key.
 4. A new `account_epoch`.
 5. The app's `URLCache`.
 6. Its cookies, in both the shared and the group stores.
@@ -91,7 +93,7 @@ The app wipes these, in this order:
 8. Its temp folder and its caches.
 9. Its own UserDefaults.
 
-The keyboard runs in its own process with its own sandbox. On its next appearance it compares `account_epoch` with `keyboard_seen_epoch`. If they differ, it drops what it holds in memory:
+The keyboard runs in its own process with its own sandbox. On its next appearance it compares `account_epoch` with `keyboard_seen_epoch`. If they differ, it throws its model away and builds a new one. The old model first drops what it holds in memory:
 - notes;
 - cached answers;
 - the prepared drawing and preview;
@@ -99,5 +101,7 @@ The keyboard runs in its own process with its own sandbox. On its next appearanc
 - writing state.
 
 It then wipes its own URL cache, cookies, web data, temp files, caches and defaults.
+
+The same wipe runs when the server answers 401 on any route outside `/v1/auth/`. Then the app opens the sign-in step with a new navigation stack.
 
 `ios/Tests/WipeTests.swift` seeds every store above, logs out through `Session.leave(.logout)` and checks that each one is empty. `ios/Tests/PersonaTests.swift` passes ten people through one keyboard and checks that no one sees the last person's data.

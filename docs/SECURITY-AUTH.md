@@ -10,7 +10,8 @@
   A device account can add Apple or an email later and keeps its user id, so nothing is lost. An Apple user can add an email and password, and an email user can add Apple.
 - **Sessions.** Each session has a 15-minute access token (`pat_`) and a 30-day refresh token (`prt_`). Each refresh spends the old refresh token and returns a new pair. A spent token that comes back means a copy leaked, so the server deletes the whole session (the family). The server stores only SHA-256 hashes of tokens. The API takes bearer tokens only, so CSRF does not apply. CORS allows no origin by default.
 - **Passwords.**
-  - Hashed with scrypt (N=2^15, r=8, p=1). The cost travels with the hash.
+  - Hashed with scrypt (N=2^16, r=8, p=2, OWASP's setting, 64 MB per hash). The cost travels with the hash, and a hash with older settings is made again at the next good sign-in.
+  - At most 2 hashes run at once. Others wait up to 10 s, then get `503` with `Retry-After: 5`, and a sign-in try that never ran is given back.
   - At least 10 characters, normalized to NFC.
   - Checked against a short common-password list, and must not contain the email's local part.
 - **Emailed codes.**
@@ -26,6 +27,7 @@
   - Per client IP: 20 email-auth calls a minute.
   - Per email (known or unknown): after 5 misses, a 30 s lock that doubles with each miss, up to an hour. A miss is counted before the hash, so parallel guesses meet the lock.
   - Per email: 5 mails an hour.
+- **Sign in with Apple.** `GET /v1/auth/apple/nonce` gives a one-time nonce that lives 10 minutes. The server stores only a keyed hash of it. Sign-in and link spend it.
 - **Logout.**
   - Log out ends this session.
   - Log out everywhere ends every session, legacy device token and live code.
@@ -60,6 +62,22 @@ Checks that passed: token theft and replay (hashes only, rotation drops old acce
 | F4 | Release `DEFAULT_SERVER_URL` is `http://localhost:8787` with local networking allowed. | Low | **Not fixed here.** Pip has no hosted server yet. Before shipping, set an HTTPS URL and fail the build on `http://`. | none |
 | F5 | The nonce ignored the result of `SecRandomCopyBytes`. | Info | `SystemRandomNumberGenerator`. | covered by the sign-in UI test path |
 | F6 | The keyboard's on-disk caches wait until its next use. | Info | Accepted. The API uses POST (which URLCache does not store), and the web views are non-persistent. | `WipeTests.testTheKeyboardForgetsThePreviousPersonOnItsNextAppearance` |
+
+## Compared with Muninn
+
+The Muninn team found these lessons. Each row says what Pip does now and why it differs, if it does.
+
+| Lesson | Pip | Test |
+|---|---|---|
+| The wipe clears the App Group key by key and file by file, and never deletes iOS's `.com.apple.mobile_container_manager.metadata.plist`. | Was a gap: the wipe deleted every hidden file at the container root, including that record, and used `removePersistentDomain`. Now `LocalWipe.empty` skips `.com.apple.*`, and the defaults go key by key. | `WipeTests.testLogoutEmptiesEveryStore` checks the record is untouched |
+| A wipe counter in the App Group makes the keyboard rebuild its model. | Pip writes a new random `account_epoch` (not a counter). It does the same job: the keyboard compares it with the epoch it last saw. Was a gap: the keyboard reset fields in place. Now it builds a new `KeyboardModel` on the next appear. It still forgets in place on each text change, for a keyboard that stays up. | `SessionEndTests.testTheKeyboardRebuildsItsModelAfterAWipe` |
+| Any 401 outside `/v1/auth/` wipes and opens sign-in. | Was a gap: the app only showed "Open Pip to pair". Now `APIClient` posts `tokenRejected` after the refresh fails, and `Session` runs the logout wipe and opens the sign-in step. A late 401 from before the last wipe does nothing. The keyboard does not wipe on a 401, like Muninn. | `testA401OutsideAuthWipesAndOpensSignIn`, `testALate401FromBeforeTheLastWipeDoesNothing` |
+| The navigation stack resets on logout. | Was `.id(session.paired)`, which missed an account switch while signed in (a recovered Apple account). Now `.id(session.account)`, which goes up on every sign-in, logout and 401. After a wipe, onboarding opens at sign-in, not the intro. | `testLogoutResetsTheStackAndOpensSignIn` |
+| Apple nonce: single use, 10-minute life. | Was a gap: the phone made the nonce, so it lived as long as the Apple token. Now the server gives it out. A nonce the server never gave out is refused in production (`APPLE_NONCE_REQUIRED`); in test and dev it still works once. | `auth-hardening.test.ts` "apple nonce" |
+| scrypt settings, and a cap on hashes at once. | Was N=2^15, p=1 with no cap. Now the same as Muninn. Pip keeps NFC, not NFKC, so old hashes still match. | "scrypt" tests |
+| Lockout per (email, IP), counted before the hash. | Pip counts before the hash too, but per email only: 5 misses, then a 30 s lock that doubles up to an hour. That is stricter than Muninn on guessing (Muninn allows 20 an hour per email), so Pip keeps it. The cost: a guesser can lock the owner out for up to an hour. A right password still clears it. | `auth.test.ts` "brute force", F3 |
+| Rate-limit maps evict only stale keys. | Pip already never cleared everything, but only cleaned up when full, by scanning the whole map. Now each new window drops ended windows from the front, and only a full map drops the oldest live one, like Muninn. Pip keeps 100,000 keys per limiter (Muninn 10,000), so a flood must be 10 times bigger to push out a live key. | "limiter" test, F5 |
+| IPv6 keyed by /64. | Was a gap: each IPv6 address had its own bucket. Now `ipKey` keys IPv6 by /64. | "ipKey", "limits" tests |
 
 ## Known gaps
 
