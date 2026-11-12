@@ -139,6 +139,11 @@ test('visual: clamps coordinates and text, caps steps and shapes, drops bad shap
   assert.ok(scene.steps.flatMap((s) => s.shapes).every(inside));
 });
 
+test('explain text keeps powers: 10² stays 10^2, not 102', () => {
+  assert.equal(ExplanationSchema.parse({ short: '10² = 100', body: ['2¹⁰ = 1024'], visual_ok: false }).short, '10^2 = 100');
+  assert.equal(ExplanationSchema.parse({ short: 'x', body: ['2¹⁰ = 1024'], visual_ok: false }).body, '2^10 = 1024');
+});
+
 test('visual: a plot with no axes draws nothing, and a scene with no shapes is rejected', () => {
   assert.throws(() => SceneSchema.parse({ title: 'x', steps: [{ say: 'a', shapes: [{ type: 'plot', fn: 'ln' }] }] }));
   assert.throws(() => SceneSchema.parse({ title: 'x', steps: [] }));

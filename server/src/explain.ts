@@ -25,8 +25,11 @@ export const FUNCTIONS: Record<string, (x: number) => number> = {
   cos: Math.cos,
 };
 
-const text = (max: number) => z.string().transform((s) => clean(s).slice(0, max)).pipe(z.string().min(1));
-const optText = (max: number) => z.preprocess((v) => (typeof v === 'string' && clean(v) ? v : undefined), text(max).optional()).catch(undefined);
+// NFKC in clean() turns 10² into 102, which is wrong maths, so superscript digits become ^2 first.
+const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+export const cleanMath = (s: string) => clean(s.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+/g, (m) => '^' + [...m].map((c) => SUPERSCRIPT.indexOf(c)).join('')));
+const text = (max: number) => z.string().transform((s) => cleanMath(s).slice(0, max)).pipe(z.string().min(1));
+const optText = (max: number) => z.preprocess((v) => (typeof v === 'string' && cleanMath(v) ? v : undefined), text(max).optional()).catch(undefined);
 const num = (min: number, max: number) => z.coerce.number().refine(Number.isFinite).transform((v) => Math.round(Math.min(max, Math.max(min, v))));
 const X = num(0, CANVAS.w);
 const Y = num(0, CANVAS.h);
@@ -38,7 +41,7 @@ const Point = z.tuple([X, Y]);
 export const ExplanationSchema = z.object({
   short: text(LIMITS.short),
   body: z.preprocess((v) => (typeof v === 'string' ? v.split('\n') : v), z.array(z.unknown()))
-    .transform((lines) => lines.filter((l): l is string => typeof l === 'string').map((l) => clean(l).slice(0, LIMITS.line)).filter(Boolean).slice(0, LIMITS.lines))
+    .transform((lines) => lines.filter((l): l is string => typeof l === 'string').map((l) => cleanMath(l).slice(0, LIMITS.line)).filter(Boolean).slice(0, LIMITS.lines))
     .pipe(z.array(z.string()).min(1))
     .transform((lines) => lines.join('\n')),
   visual_ok: z.coerce.boolean().catch(false),

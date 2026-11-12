@@ -33,7 +33,6 @@
         {
           "type": "plot",
           "fn": "log10",
-          "label": "log10(x)",
           "color": "blue"
         }
       ]
