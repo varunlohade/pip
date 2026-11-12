@@ -30,8 +30,6 @@
 	<string>$(DEFAULT_SERVER_URL)</string>
 	<key>DemoServerURL</key>
 	<string>$(DEMO_SERVER_URL)</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
 	<key>KeyboardName</key>
 	<string>$(KEYBOARD_DISPLAY_NAME)</string>
 	<key>NSAppTransportSecurity</key>
