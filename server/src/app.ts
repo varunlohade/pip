@@ -14,6 +14,7 @@ import { clean } from './text.ts';
 import { deviceSignal, deviceTitle, deviceTrigger, lastSentence, nameIn } from './quick.ts';
 import { createAppleVerifier, type AppleVerifier } from './apple.ts';
 import { createAuth } from './auth.ts';
+import { PasswordBusyError } from './password.ts';
 import { clientIp, HttpError, rateLimiter, type Env } from './http.ts';
 import { createDevMailer, type Mailer } from './mailer.ts';
 
@@ -108,6 +109,11 @@ export function createApp(deps: Deps) {
   app.onError((err, c) => {
     if (err instanceof z.ZodError) return c.json({ error: 'invalid request', issues: err.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`) }, 400);
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+    if (err instanceof PasswordBusyError) {
+      log('password_busy', { path: c.req.path });
+      c.header('Retry-After', '5');
+      return c.json({ error: 'busy, try again in a few seconds' }, 503);
+    }
     log('error', { path: c.req.path, err: (err as Error).message });
     return c.json({ error: 'internal error' }, 500);
   });

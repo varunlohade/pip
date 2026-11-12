@@ -32,7 +32,15 @@ export const config = {
     jwksTtlMs: 24 * 60 * 60 * 1000,
     jwksMinRefetchMs: 60_000,
     timeoutMs: 5000,
+    // GET /v1/auth/apple/nonce gives a single-use nonce for this long. When required, a nonce the server never gave out is
+    // refused: with APPLE_NONCE_REQUIRED=1, or in production unless APPLE_NONCE_REQUIRED=0.
+    nonceTtlMs: 10 * 60_000,
+    requireServerNonce: env.APPLE_NONCE_REQUIRED === '1' || (env.NODE_ENV === 'production' && env.APPLE_NONCE_REQUIRED !== '0'),
   },
+
+  // scrypt uses 64 MB per hash. At most this many run at once, so a small server does not run out of memory.
+  // The others wait up to queueTimeoutMs, then get 503 with Retry-After.
+  password: { maxConcurrent: 2, queueTimeoutMs: 10_000 },
 
   auth: {
     // A short access token and a rotating refresh token. Each refresh spends the old refresh token; a spent one coming back

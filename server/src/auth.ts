@@ -7,7 +7,7 @@ import type { CodePurpose, Db, UserRow } from './db.ts';
 import { clientIp, createLimiter, HttpError, rateLimiter, type Env } from './http.ts';
 import { log } from './log.ts';
 import type { Mailer, MailKind } from './mailer.ts';
-import { hashPassword, passwordProblem, PASSWORD_MAX, verifyPassword } from './password.ts';
+import { hashPassword, needsRehash, PasswordBusyError, passwordProblem, PASSWORD_MAX, verifyPassword } from './password.ts';
 import type { AppleVerifier } from './apple.ts';
 
 export type AuthDeps = {
@@ -43,7 +43,8 @@ export function createAuth(d: AuthDeps) {
   const mailLimit = createLimiter(config.rateLimit.mailPerEmail);
   // A real scrypt hash of a random password: an unknown email is checked against it, so it costs the same time as a wrong password.
   let dummy: Promise<string> | undefined;
-  const dummyHash = () => (dummy ??= hashPassword(randomBytes(16).toString('hex')));
+  // A dummy that failed (hashing was busy) is made again next time, not kept as a failure.
+  const dummyHash = () => (dummy ??= hashPassword(randomBytes(16).toString('hex')).catch((e) => { dummy = undefined; throw e; }));
 
   /** A new session: a short access token and the first refresh token of its family. Only their hashes are stored. */
   function issue(userId: string, label: string, sessionId = db.createSession(userId, label)): Tokens {
@@ -106,17 +107,51 @@ export function createAuth(d: AuthDeps) {
     const lock = count >= a.lockAfter ? now() + Math.min(a.lockBaseMs * 2 ** (count - a.lockAfter), a.lockMaxMs) : 0;
     db.setFailures(key, count, lock);
   }
+  function unfailed(key: string) {
+    const f = db.failures(key);
+    if (!f) return;
+    const count = Math.max(f.count - 1, 0);
+    db.setFailures(key, count, count >= config.auth.lockAfter ? f.locked_until : 0);
+  }
   const locked = (c: Context<Env>, ms: number) => {
     c.header('Retry-After', String(Math.ceil(ms / 1000)));
     return c.json({ error: 'too many tries. wait a while, then try again' }, 429);
   };
 
-  /** Checks an Apple identity token, then spends its nonce: a captured token and nonce work once. */
+  /**
+   * Checks an Apple identity token, then spends its nonce: a captured token and nonce work once.
+   * A nonce from GET /v1/auth/apple/nonce works once within 10 minutes. One the server never gave out passes only when
+   * config.apple.requireServerNonce is off (test and dev).
+   */
   async function apple(body: unknown): Promise<string> {
     const b = AppleBody.parse(body);
     const { sub, exp } = await d.apple(b.identity_token, b.nonce);
-    if (!db.useNonce(cipher.lookupHash('apple-nonce', b.nonce), exp ?? now() + 600_000)) throw new Error('nonce replay');
+    const hash = cipher.lookupHash('apple-nonce', b.nonce);
+    const issued = db.useAppleNonce(hash);
+    if (issued === 'spent' || (issued === 'unknown' && config.apple.requireServerNonce)) throw new Error(`nonce ${issued}`);
+    if (!db.useNonce(hash, exp ?? now() + config.apple.nonceTtlMs)) throw new Error('nonce replay');
     return sub;
+  }
+
+  /** One try is counted against `key` before the hash; a hash that never ran (the queue was full) gives it back. */
+  async function checkPassword(key: string, password: string, stored: string | Promise<string>): Promise<boolean> {
+    failed(key);
+    try {
+      return await verifyPassword(password, await stored);
+    } catch (e) {
+      if (e instanceof PasswordBusyError) unfailed(key);
+      throw e;
+    }
+  }
+
+  /** After a right password, a hash made with older scrypt settings is made again. When hashing is busy it waits for the next login. */
+  async function rehash(userId: string, password: string, stored: string) {
+    if (!needsRehash(stored)) return;
+    try {
+      db.setPassword(userId, await hashPassword(password));
+    } catch (e) {
+      if (!(e instanceof PasswordBusyError)) throw e;
+    }
   }
 
   const anonymous = (u: UserRow) => !u.email_hash && !u.apple_sub_hash;
@@ -124,6 +159,14 @@ export function createAuth(d: AuthDeps) {
   /** Routes that need no token. They sit before the token check. */
   function publicRoutes(app: Hono<Env>) {
     const ip = rateLimiter('emailAuth', clientIp);
+
+    // A single-use nonce. The app sends SHA-256(nonce) to Apple and the raw nonce back to us within 10 minutes.
+    // Only a keyed hash of it is stored.
+    app.get('/v1/auth/apple/nonce', rateLimiter('auth', clientIp), (c) => {
+      const nonce = randomBytes(32).toString('base64url');
+      db.addAppleNonce(cipher.lookupHash('apple-nonce', nonce), now() + config.apple.nonceTtlMs);
+      return c.json({ nonce, expires_in_s: config.apple.nonceTtlMs / 1000 });
+    });
 
     // "Skip for now": a device account. Every call makes a new user; device_id is never looked up.
     app.post('/v1/auth/device', rateLimiter('deviceAuth', clientIp), async (c) => {
@@ -202,15 +245,15 @@ export function createAuth(d: AuthDeps) {
       const wait = lockedFor(key);
       if (wait) return locked(c, wait);
       // The miss is counted before the slow hash, so many guesses at once still meet the lock after the fifth.
-      failed(key);
       const u = db.userByEmailHash(key);
-      const ok = await verifyPassword(password, u?.password_hash ?? (await dummyHash()));
+      const ok = await checkPassword(key, password, u?.password_hash ?? dummyHash());
       // An account still waiting for its code answers like a wrong password, so sign-in never tells a new email from a known one.
       if (!u || !u.password_hash || !ok || !u.email_verified_at) {
         log('email_login_failed', {});
         return c.json(WRONG, 401);
       }
       db.clearFailures(key);
+      await rehash(u.id, password, u.password_hash);
       log('email_login', { user_id: u.id });
       return c.json(issue(u.id, 'email'));
     });
@@ -353,8 +396,7 @@ export function createAuth(d: AuthDeps) {
         const key = u.email_hash!;
         const wait = lockedFor(key);
         if (wait) return locked(c, wait);
-        failed(key);
-        if (!b.data.password || !(await verifyPassword(b.data.password, u.password_hash))) return c.json({ error: 'wrong password' }, 403);
+        if (!b.data.password || !(await checkPassword(key, b.data.password, u.password_hash))) return c.json({ error: 'wrong password' }, 403);
       }
       if (u.email_hash) db.clearFailures(u.email_hash);
       db.clearFailures(`code:${userId}`);

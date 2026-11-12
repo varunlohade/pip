@@ -28,6 +28,7 @@
 - `POST /v1/auth/apple` takes the identity token and the raw nonce. It runs before the device token check.
 - The server checks the RS256 signature against Apple's keys (`https://appleid.apple.com/auth/keys`, cached for a day), then `iss`, `aud` (`APPLE_BUNDLE_ID`, default `com.orseliyas.pip`), `exp`, and that the token's `nonce` is the SHA-256 of the raw nonce.
 - Every failure returns the same `401 {"error":"unauthorized"}`. The reason goes only to the server log. The token never goes to the log.
+- `GET /v1/auth/apple/nonce` gives a random 256-bit nonce that works once within 10 minutes. The server stores only a keyed hash. A nonce it never gave out is refused when `APPLE_NONCE_REQUIRED=1`, or with `NODE_ENV=production` unless `APPLE_NONCE_REQUIRED=0`.
 - A good token finds or creates the user and returns a session (access + refresh token). Each nonce works once. The limit is 10 calls a minute per client IP.
 - `POST /v1/auth/device` makes a new user on every call and never looks up the device id. The limit is 5 an hour per client IP.
 
@@ -41,7 +42,8 @@
 3. **Prompt injection in chat text.** The model only picks a chip kind or rewrites text. Writing help runs only with `X-User-Action: tap`, and a rewrite must stay close to the size of its input.
 
 ## Known gaps
-- The rate limiter lives in memory, so it resets on restart and does not span instances.
+- The rate limiter lives in memory, so it resets on restart and does not span instances. It keys IPv6 clients by /64. It drops ended windows first and the oldest live one only when it holds 100,000 keys; it never clears all.
+- Passwords: scrypt N=2^16, r=8, p=2 (64 MB per hash). At most 2 hashes run at once; others wait up to 10 s, then get 503.
 - There is no key rotation yet. The `v1:` prefix leaves room for it.
 - CORS allows no origins by default. Set `CORS_ORIGINS` for a web client.
 - The server trusts `X-Forwarded-For` only with `TRUST_PROXY=1`, and then only the right-most hop. Behind Cloudflare, set `CLIENT_IP_HEADER=cf-connecting-ip`, because there the right-most hop is the Cloudflare edge.

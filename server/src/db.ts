@@ -75,6 +75,10 @@ CREATE TABLE login_failures (key TEXT PRIMARY KEY, count INTEGER NOT NULL, locke
   (db) => {
     db.exec('CREATE TABLE used_nonces (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);');
   },
+  // 4: Sign in with Apple nonces the server gave out (GET /v1/auth/apple/nonce): a hash, single use, 10 minutes.
+  (db) => {
+    db.exec('CREATE TABLE apple_nonces (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0);');
+  },
 ];
 
 function migrate(db: DatabaseSync) {
@@ -272,6 +276,16 @@ export function openDb(path: string, o: { now?: () => number } = {}) {
     /** True the first time a nonce hash is seen; false for a replay. Kept until the token would expire anyway. */
     useNonce(hash: string, expiresAt: number): boolean {
       return q('INSERT OR IGNORE INTO used_nonces (hash, expires_at) VALUES (?, ?)').run(hash, expiresAt).changes > 0;
+    },
+    addAppleNonce(hash: string, expiresAt: number) {
+      // Used and expired rows stay an hour more, so a replay soon after reads 'spent', not 'unknown'.
+      q('DELETE FROM apple_nonces WHERE expires_at <= ?').run(now() - 3_600_000);
+      q('INSERT INTO apple_nonces (hash, expires_at) VALUES (?, ?)').run(hash, expiresAt);
+    },
+    /** 'ok' uses the nonce up. 'spent' for a used or expired one, 'unknown' when the server never gave it out. */
+    useAppleNonce(hash: string): 'ok' | 'spent' | 'unknown' {
+      if (q('UPDATE apple_nonces SET used = 1 WHERE hash = ? AND used = 0 AND expires_at > ?').run(hash, now()).changes > 0) return 'ok';
+      return q('SELECT 1 FROM apple_nonces WHERE hash = ?').get(hash) ? 'spent' : 'unknown';
     },
 
     // ---- emailed codes
