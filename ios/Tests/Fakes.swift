@@ -10,10 +10,29 @@ final class FakeHost: TextHost {
     var returnKeyType: UIReturnKeyType = .default
     var autocapitalization: UITextAutocapitalizationType = .sentences
     var enablesReturnKeyAutomatically = false
+    var keyboardType: UIKeyboardType = .default
+    var textContentType: UITextContentType?
+    var autocorrection: UITextAutocorrectionType = .default
+    /// The text after the cursor. The trackpad moves characters between `text` and `after`.
+    var after = ""
+    private(set) var cursorMoves: [Int] = []
 
     var contextBeforeInput: String? { text }
+    var contextAfterInput: String? { after }
     func insert(_ s: String) { text += s }
     func deleteBackward() { if !text.isEmpty { text.removeLast() } }
+    func adjustCursor(by offset: Int) {
+        cursorMoves.append(offset)
+        if offset < 0 {
+            let u = Array(text.utf16), n = min(-offset, u.count)
+            after = String(decoding: u.suffix(n), as: UTF16.self) + after
+            text = String(decoding: u.dropLast(n), as: UTF16.self)
+        } else {
+            let u = Array(after.utf16), n = min(offset, u.count)
+            text += String(decoding: u.prefix(n), as: UTF16.self)
+            after = String(decoding: u.dropFirst(n), as: UTF16.self)
+        }
+    }
     func nextKeyboard() {}
     func playClick() {}
 }
@@ -100,7 +119,18 @@ final class FakeStore: KeyboardStore {
     private(set) var caught: [Caught] = []
     func recordCaught(_ c: Caught) { if !caught.contains(where: { $0.id == c.id }) { caught.append(c) } }
     func removeCaught(id: String) { caught.removeAll { $0.id == id } }
+    var keyHaptics = true
     var currencyRates: Calc.Rates?
+}
+
+/// Records every key haptic instead of playing it.
+@MainActor
+final class HapticSpy: KeyHaptics {
+    private(set) var taps: [HapticStrength] = []
+    private(set) var prepared = 0
+    nonisolated init() {}
+    func prepare() { prepared += 1 }
+    func tap(_ strength: HapticStrength) { taps.append(strength) }
 }
 
 /// The phone's calendar and reminders, in memory. `granted` is what the app was allowed.
@@ -197,11 +227,12 @@ final class FakeSpeaker: Speaker {
 @MainActor
 extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
-                     clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker()) -> KeyboardDeps {
+                     clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker(),
+                     haptics: HapticSpy = HapticSpy()) -> KeyboardDeps {
         KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
                      sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
-                     wipeProcess: { store.processWipes += 1 })
+                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics })
     }
 }
 

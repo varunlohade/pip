@@ -142,6 +142,16 @@ final class CalcModelTests: XCTestCase {
         XCTAssertTrue(store.learned.isEmpty)
     }
 
+    /// After a space the word slots guess the next word, but a calc chip still owns the bar.
+    func testCalcChipShowsAfterASpaceOverWordSlots() async {
+        set("split 120 4 ways ")
+        for _ in 0..<500 where model.words.slots.isEmpty { try? await Task.sleep(for: .milliseconds(2)) }
+        XCTAssertFalse(model.words.slots.isEmpty, "next-word guesses are ready")
+        XCTAssertEqual(model.explainItem?.title, "$30.00 each")
+        XCTAssertEqual(model.barItems.first?.id, "explain")
+        XCTAssertFalse(model.showsWordSlots)
+    }
+
     func testMathTapKeepsTheWorking() {
         set("12*7")
         model.perform(.explain)

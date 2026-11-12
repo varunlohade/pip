@@ -115,11 +115,13 @@ final class FixModelTests: XCTestCase {
         model = nil
     }
 
-    /// Types and lets the fingers settle, so a new Fix chip may show.
+    /// Types, waits for the off-thread check (30 ms of real time), then lets the fingers settle on the fake clock.
     private func typeAndSettle(_ text: String) async {
+        let waits = { self.clock.sleeps.filter { $0 == ChipTiming.settle || $0 == ChipTiming.settleMidWord }.count }
+        let before = waits()
         host.text = text
         model.textChanged()
-        for _ in 0..<50 { await Task.yield() }
+        for _ in 0..<150 where waits() == before { try? await Task.sleep(for: .milliseconds(2)) }
         clock.advance(ChipTiming.settleMidWord.seconds)
         for _ in 0..<50 { await Task.yield() }
     }

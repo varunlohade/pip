@@ -108,36 +108,54 @@ final class ChipTimingTests: XCTestCase {
 
     // MARK: G5: Fix waits for the settle and never blinks
 
+    /// Fix waits on the fake clock only after its check ran off the main thread (30 ms of real time).
+    private func fixWaits() -> Int { clock.sleeps.filter { $0 == ChipTiming.settle || $0 == ChipTiming.settleMidWord }.count }
+    private func waitForFixCheck(_ before: Int) async {
+        for _ in 0..<500 where fixWaits() == before { try? await Task.sleep(for: .milliseconds(2)) }
+        XCTAssertGreaterThan(fixWaits(), before, "the Fix check never ran")
+    }
+    private func waitReal(_ what: String, _ cond: () -> Bool) async {
+        for _ in 0..<500 where !cond() { try? await Task.sleep(for: .milliseconds(2)) }
+        XCTAssertTrue(cond(), "timed out waiting for \(what)")
+    }
+
     func testFixWaitsForTheFingersToSettleAndDoesNotBlink() async {
         var toggles = 0
         var shown = false
         let sub = model.$fixPlan.sink { p in if (p != nil) != shown { shown = p != nil; toggles += 1 } }
         defer { sub.cancel() }
-        await type("can u send teh bill ")  // keys 150 ms apart; the clock is now 150 ms past the last key
+        await type("can u send teh bill ")
         XCTAssertNil(model.fixPlan, "nothing mid-burst")
-        await advance(0.2)
-        XCTAssertNil(model.fixPlan, "350 ms after the last key: not yet")
+        let before = fixWaits()
+        await waitForFixCheck(before)
+        await advance(0.35)
+        XCTAssertNil(model.fixPlan, "350 ms into the settle: not yet")
         await advance(0.1)
         await until("fix chip") { model.fixPlan != nil }
         await type("by friday please ok")
+        try? await Task.sleep(for: .milliseconds(100))
         XCTAssertNotNil(model.fixPlan)
         XCTAssertEqual(toggles, 1, "Fix showed once and stayed")
     }
 
     func testFixMidWordWaitsOneSecond() async {
+        let before = fixWaits()
         set("can u send teh bi")
+        await waitForFixCheck(before)
         await advance(0.5)
         XCTAssertNil(model.fixPlan, "half a word: 0.4 s is not enough")
         await advance(0.55)
         await until("fix chip") { model.fixPlan != nil }
     }
 
-    func testFixLeavesAtOnceWhenTheTextIsClean() async {
+    func testFixLeavesAsSoonAsTheTextIsClean() async {
+        let before = fixWaits()
         set("can u send teh bill ")
+        await waitForFixCheck(before)
         await advance(0.4)
         await until("fix chip") { model.fixPlan != nil }
         set("Can you send the bill? ")
-        XCTAssertNil(model.fixPlan)
+        await waitReal("fix gone, with no settle wait") { model.fixPlan == nil }
     }
 
     // MARK: G6: ✕, cooldowns, copied text

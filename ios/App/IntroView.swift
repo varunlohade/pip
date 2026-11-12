@@ -37,6 +37,7 @@ final class DemoStore: KeyboardStore {
     func recordLearned(_ l: Learned) {}
     func recordCaught(_ c: Caught) {}
     func removeCaught(id: String) {}
+    let keyHaptics = false
     var currencyRates: Calc.Rates?
 }
 

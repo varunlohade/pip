@@ -4,7 +4,8 @@ import UIKit
 // A replica of the iOS 26 system keyboard: measured geometry, light/dark palettes, multi-touch keys,
 // callout balloons, shift and caps lock, 123 and #+= layouts.
 
-enum KeyLayout: Equatable { case letters, numbers, symbols }
+/// `digits` is the pad for number, phone and code fields.
+enum KeyLayout: Equatable { case letters, numbers, symbols, digits }
 
 enum KeyKind: Equatable {
     case char(String)
@@ -28,8 +29,9 @@ enum KeyboardGeometry {
 
     static func rowTop(_ row: Int, _ s: M.Sizes) -> CGFloat { M.barHeight + CGFloat(row) * (s.keyHeight + s.rowGap) }
 
-    static func keys(layout: KeyLayout, width w: CGFloat, globe: Bool, currency: String) -> [KeyCap] {
+    static func keys(layout: KeyLayout, width w: CGFloat, globe: Bool, currency: String, field: FieldKind = .text) -> [KeyCap] {
         let s = M.sizes(for: w)
+        if layout == .digits { return digitPad(width: w, globe: globe, field: field) }
         func rowTop(_ r: Int) -> CGFloat { Self.rowTop(r, s) }
         let keyW = (w - 2 * M.sideInset - 9 * M.keyGap) / 10
         let pitch = keyW + M.keyGap
@@ -45,6 +47,7 @@ enum KeyboardGeometry {
         case .letters: rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"].map { $0.map(String.init) }
         case .numbers: rows = [Array("1234567890").map(String.init), ["-", "/", ":", ";", "(", ")", currency, "&", "@", "\""], [".", ",", "?", "!", "'"]]
         case .symbols: rows = [["[", "]", "{", "}", "#", "%", "^", "*", "+", "="], ["_", "\\", "|", "~", "<", ">", "€", "£", "¥", "•"], [".", ",", "?", "!", "'"]]
+        case .digits: rows = []
         }
         row(rows[0], 0, startX: M.sideInset)
         row(rows[1], 1, startX: layout == .letters ? M.sideInset + pitch / 2 : M.sideInset)
@@ -55,7 +58,7 @@ enum KeyboardGeometry {
         case .letters:
             out.append(KeyCap(id: "shift", kind: .shift, frame: r3, a11y: "shift"))
             row(rows[2], 2, startX: M.sideInset + 1.5 * pitch)
-        case .numbers, .symbols:
+        case .numbers, .symbols, .digits:
             out.append(KeyCap(id: "mode.alt", kind: .mode(layout == .numbers ? .symbols : .numbers), frame: r3,
                               a11y: layout == .numbers ? "more symbols" : "numbers"))
             let start = M.sideInset + 1.5 * pitch
@@ -74,9 +77,47 @@ enum KeyboardGeometry {
             x += s.modeKey + M.keyGap
         }
         let retX = w - M.sideInset - s.returnKey
-        out.append(KeyCap(id: "space", kind: .space, frame: CGRect(x: x, y: y4, width: retX - M.keyGap - x, height: s.keyHeight), a11y: "space"))
+        // Email and link fields: two keys between space and return ("@ ." or ". /").
+        var spaceEnd = retX - M.keyGap
+        for c in field.spaceKeys.reversed() {
+            spaceEnd -= keyW
+            out.append(KeyCap(id: "k.3.\(c)", kind: .char(c), frame: CGRect(x: spaceEnd, y: y4, width: keyW, height: s.keyHeight), a11y: c))
+            spaceEnd -= M.keyGap
+        }
+        out.append(KeyCap(id: "space", kind: .space, frame: CGRect(x: x, y: y4, width: spaceEnd - x, height: s.keyHeight), a11y: "space"))
         out.append(KeyCap(id: "return", kind: .ret, frame: CGRect(x: retX, y: y4, width: s.returnKey, height: s.keyHeight), a11y: "return"))
         return out
+    }
+
+    /// Number, phone and code fields: 1-9 in three rows, then the pad's extra key, 0 and delete.
+    /// The extra key is "." for decimals, "+" for phones, else the globe when iOS draws none.
+    static func digitPad(width w: CGFloat, globe: Bool, field: FieldKind) -> [KeyCap] {
+        let s = M.sizes(for: w)
+        let keyW = (w - 2 * M.sideInset - 2 * M.keyGap) / 3
+        var out: [KeyCap] = []
+        func frame(_ r: Int, _ c: Int) -> CGRect {
+            CGRect(x: M.sideInset + CGFloat(c) * (keyW + M.keyGap), y: rowTop(r, s), width: keyW, height: s.keyHeight)
+        }
+        for (i, d) in "123456789".enumerated() {
+            out.append(KeyCap(id: "k.\(i / 3).\(d)", kind: .char(String(d)), frame: frame(i / 3, i % 3), a11y: String(d)))
+        }
+        switch field {
+        case .digits(.decimal): out.append(KeyCap(id: "k.3..", kind: .char("."), frame: frame(3, 0), a11y: "point"))
+        case .digits(.phone): out.append(KeyCap(id: "k.3.+", kind: .char("+"), frame: frame(3, 0), a11y: "plus"))
+        default: if globe { out.append(KeyCap(id: "globe", kind: .globe, frame: frame(3, 0), a11y: "next keyboard")) }
+        }
+        out.append(KeyCap(id: "k.3.0", kind: .char("0"), frame: frame(3, 1), a11y: "0"))
+        out.append(KeyCap(id: "delete", kind: .delete, frame: frame(3, 2), a11y: "delete"))
+        return out
+    }
+
+    /// The letter keys of the letters layout, for the touch decoder.
+    static func touchKeys(_ keys: [KeyCap]) -> [TouchKey] {
+        keys.compactMap { k in
+            guard case .char(let c) = k.kind, c.count == 1, let ch = c.first, LanguageModel.index(ch) != nil,
+                  let row = Int(k.id.split(separator: ".").dropFirst().first ?? "") else { return nil }
+            return TouchKey(letter: ch, frame: k.frame, row: row)
+        }
     }
 
     /// The key under a touch: its frame grown by half the gaps, else the nearest key.
@@ -133,7 +174,7 @@ struct SystemKeysView: View {
             let p = model.isDark ? M.dark : M.light
             let keys = KeyboardGeometry.keys(layout: model.layout, width: geo.size.width,
                                              globe: model.host?.needsGlobeKey ?? false,
-                                             currency: Locale.current.currencySymbol ?? "$")
+                                             currency: Locale.current.currencySymbol ?? "$", field: model.field)
             ZStack(alignment: .topLeading) {
                 ForEach(keys) { key in
                     KeyCapView(key: key, model: model, palette: p,
@@ -154,8 +195,12 @@ struct SystemKeysView: View {
                         .accessibilityHidden(true)
                 }
                 TouchSurface(
-                    began: { id, pt in if let k = KeyboardGeometry.key(at: pt.offsetBy(M.barHeight - 6), in: keys) { model.touchBegan(id, k) } },
-                    moved: { id, pt in if let k = KeyboardGeometry.key(at: pt.offsetBy(M.barHeight - 6), in: keys) { model.touchMoved(id, k) } },
+                    began: { id, pt in
+                        let p = pt.offsetBy(M.barHeight - 6)
+                        model.keyboardWidth = geo.size.width
+                        if let k = model.key(for: id, at: p, in: keys) { model.touchBegan(id, k, at: p) }
+                    },
+                    moved: { id, pt in let p = pt.offsetBy(M.barHeight - 6); if let k = model.key(for: id, at: p, in: keys) { model.touchMoved(id, k, at: p) } },
                     ended: { id, _ in model.touchEnded(id) },
                     cancelled: { id in model.touchCancelled(id) }
                 )
@@ -180,10 +225,14 @@ struct KeyCapView: View {
     typealias M = Theme.SystemKeyboard
 
     var body: some View {
-        let isReturnAccent = key.kind == .ret && model.returnStyle.accent
+        let returnOff = key.kind == .ret && !model.returnEnabled
+        let isReturnAccent = key.kind == .ret && model.returnStyle.accent && !returnOff
         RoundedRectangle(cornerRadius: M.cornerRadius, style: .continuous)
             .fill(isReturnAccent ? palette.accent : pressed && !isChar ? palette.keyPressed : palette.key)
-            .overlay { label.foregroundStyle(isReturnAccent ? .white : palette.label) }
+            .overlay {
+                label.foregroundStyle(isReturnAccent ? .white : returnOff ? palette.secondaryLabel : palette.label)
+                    .opacity(model.trackpad ? 0 : 1)
+            }
             .opacity(hidden ? 0 : 1)
             .accessibilityElement()
             .accessibilityLabel(key.a11y)
@@ -212,6 +261,38 @@ struct KeyCapView: View {
         case .globe:
             Image(systemName: "globe").font(M.icon)
         }
+    }
+}
+
+/// The accents over a held letter, inside the keyboard. The picked one is filled with the accent colour.
+struct AccentPopupView: View {
+    let popup: AccentPopup
+    @ObservedObject var model: KeyboardModel
+    let palette: Theme.SystemKeyboard.Palette
+    typealias M = Theme.SystemKeyboard
+
+    var body: some View {
+        let first = popup.cells.first ?? .zero
+        let box = popup.cells.reduce(first) { $0.union($1) }.insetBy(dx: -4, dy: -4)
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 11, style: .continuous).fill(palette.key)
+                .shadow(color: .black.opacity(model.isDark ? 0.5 : 0.25), radius: 3, y: 1)
+                .frame(width: box.width, height: box.height)
+                .offset(x: box.minX, y: box.minY)
+            ForEach(Array(popup.options.enumerated()), id: \.offset) { i, option in
+                let cell = popup.cells[i]
+                let on = i == popup.selected
+                Text(model.display(option)).font(M.letter)
+                    .foregroundStyle(on ? .white : palette.label)
+                    .frame(width: cell.width, height: cell.height)
+                    .background(on ? palette.accent : .clear, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .offset(x: cell.minX, y: cell.minY)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityElement()
+        .accessibilityLabel(popup.options[popup.selected])
+        .accessibilityIdentifier("accents")
     }
 }
 
