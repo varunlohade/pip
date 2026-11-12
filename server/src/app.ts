@@ -6,7 +6,8 @@ import { z } from 'zod';
 import { config, TONES } from './config.ts';
 import { randomToken, sha256, type Cipher } from './crypto.ts';
 import { randomBytes } from 'node:crypto';
-import type { Db } from './db.ts';
+import type { Db, Preview, SharedImage } from './db.ts';
+import { isPng, jpegSize, pngSize } from './image.ts';
 import type { Ai, DeviceAction } from './ai.ts';
 import { log } from './log.ts';
 import { clean } from './text.ts';
@@ -98,6 +99,41 @@ const VisualBody = z.object({ topic: ExplainText }).strict();
 const AppleAuthBody = z.object({ identity_token: z.string().min(20).max(4096), nonce: z.string().min(16).max(128) }).strict();
 const DeviceAuthBody = z.object({ device_id: z.string().uuid() }).strict();
 
+const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+
+const PAGE_STYLE = 'body{margin:0;background:#f4f8fc;font:16px -apple-system,system-ui,sans-serif;color:#1c2b3a}' +
+  'main{max-width:960px;margin:0 auto;padding:16px}img{display:block;width:100%;height:auto;border-radius:16px;background:#fff}' +
+  'h1{font-size:18px;font-weight:600;margin:4px 0 12px}p{color:#5b6b7b;margin:12px 0 0;font-size:14px}';
+
+/** The share page: Open Graph and Twitter tags so iMessage, WhatsApp, Telegram and Slack show the picture, and the drawing full width. */
+function sharePage(base: string, id: string, img: SharedImage): string {
+  const title = img.title ?? 'A drawing from Pip';
+  const page = `${base}/d/${id}`;
+  const full = pngSize(img.png);
+  const og = img.preview
+    ? { url: `${page}.jpg`, type: 'image/jpeg', width: img.preview.width, height: img.preview.height }
+    : { url: `${page}.png`, type: 'image/png', width: full?.width, height: full?.height };
+  const meta = (attr: 'property' | 'name', key: string, value: string | number | undefined) =>
+    value === undefined ? '' : `<meta ${attr}="${key}" content="${esc(String(value))}">`;
+  return '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    `<title>${esc(title)}</title>` +
+    meta('property', 'og:type', 'website') + meta('property', 'og:site_name', 'Pip') +
+    meta('property', 'og:title', title) + meta('property', 'og:description', 'Made with Pip') +
+    meta('property', 'og:url', page) + meta('property', 'og:image', og.url) + meta('property', 'og:image:type', og.type) +
+    meta('property', 'og:image:width', og.width) + meta('property', 'og:image:height', og.height) +
+    meta('property', 'og:image:alt', title) +
+    meta('name', 'twitter:card', 'summary_large_image') + meta('name', 'twitter:title', title) +
+    meta('name', 'twitter:description', 'Made with Pip') + meta('name', 'twitter:image', og.url) +
+    `<meta name="robots" content="noindex"><style>${PAGE_STYLE}</style></head><body><main>` +
+    `<h1>${esc(title)}</h1><img src="${esc(page)}.png" alt="${esc(title)}"${full ? ` width="${full.width}" height="${full.height}"` : ''}>` +
+    '<p>Made with Pip</p></main></body></html>';
+}
+
+const gonePage = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
+  `<title>This drawing has expired</title><meta name="robots" content="noindex"><style>${PAGE_STYLE}</style></head>` +
+  '<body><main><h1>This drawing has expired</h1><p>Pip keeps shared drawings for 30 days.</p></main></body></html>';
+
 export function createApp(deps: Deps) {
   const { db, cipher, ai } = deps;
   const now = deps.now ?? Date.now;
@@ -113,12 +149,14 @@ export function createApp(deps: Deps) {
     return schema.parse(raw);
   };
 
-  app.use('*', secureHeaders());
+  // A shared drawing's images may be loaded from any origin (chat apps show the preview); everything else stays same-origin.
+  const secure = secureHeaders(), secureShared = secureHeaders({ crossOriginResourcePolicy: 'cross-origin' });
+  app.use('*', (c, next) => (/^\/d\/[^/]+\.(png|jpg)$/.test(c.req.path) ? secureShared(c, next) : secure(c, next)));
   app.use('*', cors({ origin: (origin) => (config.corsOrigins.includes(origin) ? origin : null), allowMethods: ['GET', 'POST', 'PUT', 'DELETE'] }));
   const smallBody = bodyLimit({ maxSize: config.bodyLimitBytes, onError: (c) => c.json({ error: 'body too large' }, 413) });
-  // Every /v1 body is small JSON, except a drawing PNG sent to share as a link, which gets its own cap.
+  // Every /v1 body is small JSON, except a drawing (PNG plus its JPEG preview) sent to share as a link, which gets its own cap.
   app.use('/v1/*', (c, next) => (c.req.path === '/v1/drawings' ? next() : smallBody(c, next)));
-  app.use('/v1/drawings', bodyLimit({ maxSize: config.sharedImage.maxBytes, onError: (c) => c.json({ error: 'image too large' }, 413) }));
+  app.use('/v1/drawings', bodyLimit({ maxSize: config.sharedImage.maxBytes + config.sharedImage.preview.maxBytes + 16 * 1024, onError: (c) => c.json({ error: 'image too large' }, 413) }));
 
   app.onError((err, c) => {
     if (err instanceof z.ZodError) return c.json({ error: 'invalid request', issues: err.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`) }, 400);
@@ -129,14 +167,31 @@ export function createApp(deps: Deps) {
 
   app.get('/health', (c) => c.json({ ok: true }));
 
-  // ---- a shared drawing. No token: whoever has the link sees the image and nothing else. An unknown or expired id is a plain 404.
+  // ---- a shared drawing. No token: whoever has the link sees the drawing and nothing else.
+  // /d/<id> is a small page whose Open Graph tags make chats show the picture; /d/<id>.png is the drawing, /d/<id>.jpg the preview.
+  // An unknown id is a plain 404; an expired one is 410 with no image.
   app.get('/d/:file', rateLimiter('shareView', clientIp), (c) => {
-    const m = /^([A-Za-z0-9_-]{22})\.png$/.exec(c.req.param('file'));
-    const png = m ? db.sharedImage(m[1], now()) : undefined;
-    if (!png) return c.text('not found', 404);
-    return c.body(new Uint8Array(png), 200, {
-      'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=86400',
+    const m = /^([A-Za-z0-9_-]{22})(\.png|\.jpg)?$/.exec(c.req.param('file'));
+    const at = now();
+    const img = m ? db.sharedImage(m[1], at) : undefined;
+    c.header('X-Robots-Tag', 'noindex, nofollow');
+    if (!m || !img || (m[2] === '.jpg' && img !== 'gone' && !img.preview)) return c.text('not found', 404);
+    if (img === 'gone') {
+      c.header('Cache-Control', 'public, max-age=86400');
+      c.header('Content-Security-Policy', "default-src 'none'");
+      return m[2] ? c.text('this drawing has expired', 410) : c.html(gonePage, 410);
+    }
+    // Never cached past the link's own end, so an expired link is not served from a cache.
+    const left = Math.max(0, Math.floor((img.expiresAt - at) / 1000));
+    if (!m[2]) {
+      c.header('Cache-Control', `public, max-age=${Math.min(3600, left)}`);
+      c.header('Content-Security-Policy', "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+      return c.html(sharePage(config.publicUrl || new URL(c.req.url).origin, m[1], img));
+    }
+    const [bytes, type] = m[2] === '.png' ? [img.png, 'image/png'] : [img.preview!.jpeg, 'image/jpeg'];
+    return c.body(new Uint8Array(bytes), 200, {
+      'Content-Type': type,
+      'Cache-Control': `public, max-age=${Math.min(86400, left)}`,
       'Content-Security-Policy': "default-src 'none'",
       'X-Content-Type-Options': 'nosniff',
     });
@@ -298,22 +353,46 @@ export function createApp(deps: Deps) {
     return writing(c, 'tone', draft.length + client.length, () => ai.toneCheck(draft, client), (out) => (out.tone === 'ok' ? 1 : 2));
   });
 
-  // ---- "Send as link": the keyboard uploads a drawing PNG and types the short link into the chat.
-  const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  // ---- "Send as link": the keyboard uploads a drawing and types the short link into the chat.
+  // multipart/form-data with `image` (the PNG), `preview` (a JPEG for link previews) and an optional `title`;
+  // a bare image/png body (older builds) is still taken, with no preview.
   app.post('/v1/drawings', rateLimiter('shareUpload', byUser), async (c) => {
-    if (c.req.header('content-type') !== 'image/png') return c.json({ error: 'send a PNG image' }, 400);
-    const png = new Uint8Array(await c.req.arrayBuffer());
-    if (png.length < PNG_MAGIC.length || PNG_MAGIC.some((b, i) => png[i] !== b)) return c.json({ error: 'send a PNG image' }, 400);
-    if (png.length > config.sharedImage.maxBytes) return c.json({ error: 'image too large' }, 413);
+    const lim = config.sharedImage;
+    let png: Uint8Array, previewBytes: Uint8Array | undefined, title: string | undefined;
+    const type = c.req.header('content-type') ?? '';
+    if (type === 'image/png') {
+      png = new Uint8Array(await c.req.arrayBuffer());
+    } else if (type.startsWith('multipart/form-data')) {
+      const form = await c.req.parseBody().catch(() => undefined);
+      const image = form?.image, preview = form?.preview;
+      if (!(image instanceof File) || !(preview instanceof File)) return c.json({ error: 'send image and preview files' }, 400);
+      png = new Uint8Array(await image.arrayBuffer());
+      previewBytes = new Uint8Array(await preview.arrayBuffer());
+      title = typeof form?.title === 'string' ? clean(form.title).slice(0, lim.maxTitleChars) || undefined : undefined;
+    } else {
+      return c.json({ error: 'send a PNG image' }, 400);
+    }
+    if (!isPng(png)) return c.json({ error: 'send a PNG image' }, 400);
+    if (png.length > lim.maxBytes) return c.json({ error: 'image too large' }, 413);
+    let preview: Preview | undefined;
+    if (previewBytes) {
+      if (previewBytes.length > lim.preview.maxBytes) return c.json({ error: 'preview too large' }, 413);
+      const size = jpegSize(previewBytes);
+      if (!size) return c.json({ error: 'preview must be a JPEG' }, 400);
+      if (size.width < lim.preview.minWidth || size.width > lim.preview.maxSide || size.height > lim.preview.maxSide) {
+        return c.json({ error: `preview must be ${lim.preview.minWidth} to ${lim.preview.maxSide} px wide` }, 400);
+      }
+      preview = { jpeg: previewBytes, ...size };
+    }
     const at = now();
-    db.purgeSharedImages(at);
+    db.purgeSharedImages(at, lim.keepGoneMs);
     // 128 random bits: the link cannot be guessed, and ids say nothing about the user or the time.
     const id = randomBytes(16).toString('base64url');
-    const expiresAt = at + config.sharedImage.ttlMs;
-    db.addSharedImage(id, c.get('userId'), png, at, expiresAt);
-    log('share_image', { user_id: c.get('userId'), bytes: png.length });
+    const expiresAt = at + lim.ttlMs;
+    db.addSharedImage({ id, userId: c.get('userId'), png, createdAt: at, expiresAt, preview, title });
+    log('share_image', { user_id: c.get('userId'), bytes: png.length, preview_bytes: preview?.jpeg.length ?? 0 });
     const base = config.publicUrl || new URL(c.req.url).origin;
-    return c.json({ url: `${base}/d/${id}.png`, expires_at: new Date(expiresAt).toISOString() });
+    return c.json({ url: `${base}/d/${id}`, image_url: `${base}/d/${id}.png`, expires_at: new Date(expiresAt).toISOString() });
   });
 
   // ---- explain: the phone sends only text its own regex read as an explain request, so plain chat never reaches here.

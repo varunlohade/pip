@@ -40,8 +40,17 @@ final class ExplainShots: XCTestCase {
         messages.terminate()
         messages.launch()
         let chat = messages.cells.firstMatch
-        XCTAssertTrue(chat.waitForExistence(timeout: 6), "no conversation: \(messages.debugDescription.suffix(3000))")
-        chat.tap()
+        if chat.waitForExistence(timeout: 6) {
+            chat.tap()
+        } else {
+            // A new simulator has no chats: start one to a made-up number.
+            let compose = messages.descendants(matching: .any).matching(NSPredicate(format: "label IN {'Compose', 'New Message'}")).firstMatch
+            XCTAssertTrue(compose.waitForExistence(timeout: 4), "no conversation and no Compose: \(messages.debugDescription.suffix(3000))")
+            compose.tap()
+            let to = messages.textFields.firstMatch
+            XCTAssertTrue(to.waitForExistence(timeout: 4), "no To field")
+            paste("555-0100", into: to)
+        }
         // The message box: Messages calls it messageBodyField, with "iMessage" or "Text Message" as its placeholder.
         let body = messages.descendants(matching: .any).matching(NSPredicate(
             format: "identifier == 'messageBodyField' OR placeholderValue IN {'iMessage', 'Text Message', 'Message'} OR label IN {'iMessage', 'Text Message', 'Message'}")).firstMatch
@@ -101,36 +110,42 @@ final class ExplainShots: XCTestCase {
         Thread.sleep(forTimeInterval: 0.5)
         shot("05-visual-mid-drawing")
 
-        let copy = element(messages, "visual.send.image")
-        let export = element(messages, "visual.export")
+        let send = element(messages, "visual.send")
         let done = Date().addingTimeInterval(20)
         while title.label.contains("step"), Date() < done { Thread.sleep(forTimeInterval: 0.2) }
         XCTAssertFalse(title.label.contains("step"), "drawing did not finish: \(title.label)")
         Thread.sleep(forTimeInterval: 0.5)
         shot("06-visual-finished")
+        // The upload started when the drawing finished; give it a moment so Send types the link at once.
+        Thread.sleep(forTimeInterval: 1.5)
 
-        export.tap()
-        XCTAssertTrue(copy.waitForExistence(timeout: 3))
-        shot("06b-export-choices")
-        copy.tap()
+        // One tap: the caption and the short link go into the message, and the image is copied as a fallback.
+        send.tap()
         let note = element(messages, "visual.note")
-        let copied = NSPredicate(format: "label BEGINSWITH %@", "Copied")
-        let until = Date().addingTimeInterval(8)
-        while !(note.exists && copied.evaluate(with: note)), Date() < until { Thread.sleep(forTimeInterval: 0.2) }
-        XCTAssertTrue(note.exists && copied.evaluate(with: note), "no Copied note: \(note.exists ? note.label : "none")")
-        shot("07-export-copied")
-        // hasImages does not show the paste prompt; reading the image would, so the test does not read it.
-        XCTAssertTrue(UIPasteboard.general.hasImages, "no image on the pasteboard")
-
-        export.tap()
-        XCTAssertTrue(element(messages, "visual.send.link").waitForExistence(timeout: 3))
-        element(messages, "visual.send.link").tap()
         let linked = NSPredicate(format: "label BEGINSWITH %@", "Link added")
         let linkBy = Date().addingTimeInterval(8)
         while !(note.exists && linked.evaluate(with: note)), Date() < linkBy { Thread.sleep(forTimeInterval: 0.2) }
         XCTAssertTrue(note.exists && linked.evaluate(with: note), "no Link added note: \(note.exists ? note.label : "none")")
-        XCTAssertTrue((field.value as? String ?? "").contains("/d/"), "no link in the field: \(field.value ?? "")")
-        shot("08-send-link")
+        let typed = field.value as? String ?? ""
+        XCTAssertTrue(typed.contains("log function, explained: http"), "no caption and link in the field: \(typed)")
+        XCTAssertTrue(typed.contains("/d/"), "no link in the field: \(typed)")
+        XCTAssertEqual(element(messages, "visual.hint").label, "Image also copied")
+        // hasImages does not show the paste prompt; reading the image would, so the test does not read it.
+        XCTAssertTrue(UIPasteboard.general.hasImages, "no image on the pasteboard")
+        shot("07-send-link-inserted")
+
+        // Send as image waits in the small menu.
+        element(messages, "visual.more").tap()
+        let copy = element(messages, "visual.send.image")
+        XCTAssertTrue(copy.waitForExistence(timeout: 3))
+        shot("08-send-menu")
+        copy.tap()
+        let copied = NSPredicate(format: "label BEGINSWITH %@", "Copied")
+        let until = Date().addingTimeInterval(8)
+        while !(note.exists && copied.evaluate(with: note)), Date() < until { Thread.sleep(forTimeInterval: 0.2) }
+        XCTAssertTrue(note.exists && copied.evaluate(with: note), "no Copied note: \(note.exists ? note.label : "none")")
+        shot("08b-send-as-image-copied")
+        XCTAssertTrue(UIPasteboard.general.hasImages, "no image on the pasteboard")
     }
 
     /// The three drawing scenes in a Messages chat: log (mid-drawing and finished), a bar chart and a pie chart.

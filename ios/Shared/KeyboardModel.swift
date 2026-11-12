@@ -142,6 +142,10 @@ final class KeyboardModel: ObservableObject {
     weak var visualPage: VisualPage?
     /// Keeps the voice and the drawing in step while "Play with voice" is on.
     var narration: NarrationSync?
+    /// The drawing's upload, started when it finished drawing, so Send can type the link at once.
+    var shareUpload: (png: Data, task: Task<String, Error>)?
+    /// The link of a finished upload, for the PNG it was made from.
+    var sharedLink: (png: Data, url: String)?
 
     weak var host: TextHost?
     /// False in the intro scenes, which script the bar themselves. Then typing sends nothing.

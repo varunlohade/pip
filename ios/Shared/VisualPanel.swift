@@ -27,11 +27,17 @@ struct VisualPanelView: View {
             .ringCard(radius: 20)
             .overlay(alignment: .bottom) {
                 if let note = state.note {
-                    Text(note).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
-                        .padding(.horizontal, Theme.Space.s).padding(.vertical, 6)
-                        .background(Theme.Color.navy.opacity(0.85), in: Capsule())
-                        .padding(.bottom, Theme.Space.xs)
-                        .accessibilityIdentifier("visual.note")
+                    VStack(spacing: 1) {
+                        Text(note).font(.system(size: 13, weight: .medium)).foregroundStyle(.white)
+                            .accessibilityIdentifier("visual.note")
+                        if let hint = state.hint {
+                            Text(hint).font(.system(size: 11)).foregroundStyle(.white.opacity(0.7))
+                                .accessibilityIdentifier("visual.hint")
+                        }
+                    }
+                    .padding(.horizontal, Theme.Space.s).padding(.vertical, 6)
+                    .background(Theme.Color.navy.opacity(0.85), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.bottom, Theme.Space.xs)
                 }
             }
             stepLine
@@ -116,27 +122,33 @@ struct VisualPanelView: View {
         }
     }
 
-    /// Send (frosted) and Insert (the glowing sky pill). Send opens the two ways to send.
+    /// Send (frosted, one tap: caption and link into the message), the small menu with Send as image, and Insert (the sky pill).
     @ViewBuilder private var buttons: some View {
         HStack(spacing: 10) {
             if state.exporting {
                 Button("Send as image") { model.sendVisual(.image) }.buttonStyle(FrostPill(height: 46, font: .system(size: 15, weight: .semibold)))
                     .accessibilityIdentifier("visual.send.image")
-                Button("Send as link") { model.sendVisual(.link) }.buttonStyle(FrostPill(height: 46, font: .system(size: 15, weight: .semibold)))
-                    .accessibilityIdentifier("visual.send.link")
                 Button { model.toggleExport() } label: { Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)) }
                     .buttonStyle(FrostPill(height: 46, fullWidth: false))
                     .accessibilityLabel("Back")
                     .accessibilityIdentifier("visual.export.back")
             } else {
-                Button("Send", action: model.toggleExport).buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
-                    .disabled(!drawn || state.sending != nil).opacity(drawn ? 1 : 0.5)
-                    .accessibilityIdentifier("visual.export")
+                Button("Send") { model.sendVisual(.link) }.buttonStyle(FrostPill(height: 46, font: .system(size: 16, weight: .semibold)))
+                    .disabled(!drawn || busy).opacity(drawn ? 1 : 0.5)
+                    .accessibilityIdentifier("visual.send")
+                Button(action: model.toggleExport) { Image(systemName: "ellipsis").font(.system(size: 15, weight: .semibold)) }
+                    .buttonStyle(FrostPill(height: 46, fullWidth: false))
+                    .disabled(!drawn || busy).opacity(drawn ? 1 : 0.5)
+                    .accessibilityLabel("More ways to send")
+                    .accessibilityIdentifier("visual.more")
                 Button("Insert", action: model.insertExplain).buttonStyle(SkyPill(height: 46, font: .system(size: 16, weight: .semibold)))
                     .accessibilityIdentifier("visual.insert")
             }
         }
     }
+
+    /// A send the owner tapped is running. The upload that starts by itself does not block Send.
+    private var busy: Bool { state.sending == .link || state.sending == .image }
 
     private var drawn: Bool {
         switch state.status {

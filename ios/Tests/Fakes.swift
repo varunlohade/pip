@@ -46,9 +46,19 @@ final class FakeAPI: KeyboardAPI {
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { calls.append("tone"); return toneReply }
     func explain(_ text: String) async throws -> ExplainResponse { calls.append("explain"); explained.append(text); return explainReply }
     func explainVisual(_ topic: String) async throws -> Data { calls.append("visual"); explained.append(topic); return visualReply }
-    var shareReply = "http://localhost/d/AAAAAAAAAAAAAAAAAAAAAA.png"
-    private(set) var shared: [Data] = []
-    func shareDrawing(_ png: Data) async throws -> String { calls.append("share"); shared.append(png); return shareReply }
+    var shareReply = "http://localhost/d/AAAAAAAAAAAAAAAAAAAAAA"
+    var shareFails = false
+    /// When true, each upload waits until releaseShares(), so a test can tap Send while it runs.
+    var holdShares = false
+    private(set) var shared: [(png: Data, preview: Data?, title: String)] = []
+    private var heldShares: [CheckedContinuation<Void, Never>] = []
+    func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String {
+        calls.append("share"); shared.append((png, preview, title))
+        if holdShares { await withCheckedContinuation { heldShares.append($0) } }
+        if shareFails { throw APIError.message("upload failed") }
+        return shareReply
+    }
+    func releaseShares() { let h = heldShares; heldShares = []; h.forEach { $0.resume() } }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.

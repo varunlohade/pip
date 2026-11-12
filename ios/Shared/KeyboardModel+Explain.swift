@@ -45,18 +45,20 @@ struct VisualState: Equatable {
     var tool: Tool = .hand
     /// What the step being drawn says, shown under the canvas.
     var say: String?
-    /// Export was tapped: the row offers Send as image and Send as link.
+    /// The small menu next to Send is open: it offers Send as image.
     var exporting = false
     /// "Play with voice" is on: each step's line is spoken while it draws.
     var voice = false
 
     enum Tool: String, Equatable { case hand, draw, eraser }
-    /// A short line after a send, such as "Copied. Tap the message box and Paste, then send."
+    /// A short line after a send, such as "Link added. Tap send."
     var note: String?
-    /// Which send asked the page for its PNG.
+    /// A quieter second line under the note, such as "Image also copied".
+    var hint: String?
+    /// Which send asked the page for its PNG. `prefetch` is the upload that starts by itself when the drawing finishes.
     var sending: Send?
 
-    enum Send: Equatable { case image, link }
+    enum Send: Equatable { case image, link, prefetch }
 }
 
 enum ExplainPanel: Equatable {
@@ -214,6 +216,8 @@ extension KeyboardModel {
     private func openVisual(subject: String, summary: String, scene: Data?, ask topic: String) {
         explainPanel = .visual(VisualState(subject: subject, summary: summary, scene: scene))
         visualTask?.cancel()
+        shareUpload = nil
+        sharedLink = nil
         if let scene { visualPage?.play(scene); return }
         visualTask = Task { [weak self] in
             do {
@@ -244,6 +248,7 @@ extension KeyboardModel {
         updateVisual { if case .drawing(_, let m) = $0.status { $0.status = .done(steps: m) } else { $0.status = .done(steps: 1) } }
         // The last line may still be speaking; it ends on its own, and the button goes back to "Play with voice".
         if narration != nil { narration = nil; visualPage?.setVoice(false); updateVisual { $0.voice = false } }
+        prefetchShare()
     }
 
     /// "Play with voice": only this tap ever starts sound. It replays the drawing with each step's line spoken in time;
@@ -267,9 +272,12 @@ extension KeyboardModel {
         updateVisual { $0.voice = false; $0.note = nil }
     }
     /// Before the drawing shows, the panel says it failed; after, a failed export is only a note, and the drawing stays.
+    /// A failed upload-ahead export says nothing; Send exports again.
     func visualFailed(_ message: String) {
         updateVisual { v in
-            if case .loading = v.status { v.status = .failed("Could not draw that. Try again.") } else { v.note = "That did not work. Try again." }
+            if case .loading = v.status { v.status = .failed("Could not draw that. Try again.") }
+            else if v.sending != .prefetch { v.note = "That did not work. Try again."; v.hint = nil }
+            v.sending = nil
         }
     }
 
@@ -295,47 +303,106 @@ extension KeyboardModel {
         visualPage?.redo()
     }
 
+    /// The small menu next to Send: it opens and closes "Send as image".
     func toggleExport() {
         host?.playClick()
-        updateVisual { $0.exporting.toggle(); $0.note = nil }
+        updateVisual { $0.exporting.toggle(); $0.note = nil; $0.hint = nil }
     }
 
     static let needsFullAccessToSend = "Turn on Full Access to send drawings"
     static let pasteHint = "Copied. Tap the message box and Paste, then send."
+    static let linkAdded = "Link added. Tap send."
+    static let imageAlsoCopied = "Image also copied"
+    static let sendingNote = "Sending\u{2026}"
+    /// How long Send waits for an upload still running before it falls back to the copied image.
+    static let shareWait: Duration = .seconds(5)
 
-    /// Send as image or as link. A keyboard cannot attach a file, so the image goes to the pasteboard
-    /// and the link goes into the message. Both need Full Access (pasteboard, App Group, network).
+    /// The line typed before the link, such as "y = log(x), explained:".
+    static func shareCaption(_ subject: String) -> String { "\(subject), explained:" }
+
+    /// Send (one tap): the caption and the short link go into the message, and the PNG goes to the pasteboard as a fallback.
+    /// The link opens a page whose preview shows the picture in the chat. Send as image (in the small menu) only copies the PNG.
+    /// A keyboard cannot attach a file. Both need Full Access (pasteboard, App Group, network).
     func sendVisual(_ kind: VisualState.Send) {
         host?.playClick()
-        guard hasFullAccess else { updateVisual { $0.note = Self.needsFullAccessToSend }; return }
-        updateVisual { $0.sending = kind; $0.exporting = false; $0.note = kind == .image ? "Making the image\u{2026}" : "Making the link\u{2026}" }
+        guard hasFullAccess else { updateVisual { $0.note = Self.needsFullAccessToSend; $0.hint = nil }; return }
+        updateVisual { $0.sending = kind; $0.exporting = false; $0.note = kind == .image ? "Making the image\u{2026}" : nil; $0.hint = nil }
         visualPage?.exportPNG()
     }
 
-    /// The page's PNG for the send that asked for it. Every send also keeps the drawing in "your drawings".
-    func visualExported(_ png: Data) {
-        guard case .visual(let v) = explainPanel, let kind = v.sending else { return }
-        try? deps.store.saveDrawing(png, title: v.subject, scene: v.scene)
-        switch kind {
-        case .image:
-            deps.pasteboard.setPNG(png)
-            updateVisual { $0.sending = nil; $0.note = Self.pasteHint }
-        case .link:
-            visualTask?.cancel()
-            visualTask = Task { [weak self] in
-                do {
-                    guard let api = self?.deps.api() else { return }
-                    let url = try await api.shareDrawing(png)
-                    guard let self, !Task.isCancelled else { return }
-                    let before = self.host?.contextBeforeInput ?? ""
-                    self.host?.insert((before.isEmpty || before.last?.isWhitespace == true ? "" : " ") + url)
-                    self.updateVisual { $0.sending = nil; $0.note = "Link added. Tap send." }
-                } catch {
-                    guard let self, !Task.isCancelled else { return }
-                    self.updateVisual { $0.sending = nil; $0.note = "Could not make a link. Try Send as image." }
-                }
+    /// As soon as the drawing finishes, its PNG goes up, so Send can type the link with no wait.
+    private func prefetchShare() {
+        guard hasFullAccess, paired, case .visual(let v) = explainPanel, v.sending == nil else { return }
+        updateVisual { $0.sending = .prefetch }
+        visualPage?.exportPNG()
+    }
+
+    /// The upload for this PNG: the one already running or done for the same bytes, else a new one.
+    /// Send exports again, so a drawing changed with the pen after it finished gets its own upload.
+    @discardableResult
+    private func upload(_ png: Data, title: String) -> Task<String, Error> {
+        if let u = shareUpload, u.png == png { return u.task }
+        let api = deps.api()
+        let task = Task { [weak self] () throws -> String in
+            do {
+                let url = try await api.shareDrawing(png, preview: LinkPreview.jpeg(png), title: title)
+                if self?.shareUpload?.png == png { self?.sharedLink = (png, url) }
+                return url
+            } catch {
+                // A failed upload is not kept, so the next Send tries again.
+                if self?.shareUpload?.png == png { self?.shareUpload = nil }
+                throw error
             }
         }
+        shareUpload = (png, task)
+        return task
+    }
+
+    /// The page's PNG for the export that asked for it. Every send also keeps the drawing in "your drawings".
+    func visualExported(_ png: Data) {
+        guard case .visual(let v) = explainPanel, let kind = v.sending else { return }
+        if kind == .prefetch {
+            updateVisual { $0.sending = nil }
+            upload(png, title: v.subject)
+            return
+        }
+        try? deps.store.saveDrawing(png, title: v.subject, scene: v.scene)
+        deps.pasteboard.setPNG(png)
+        if kind == .image {
+            updateVisual { $0.sending = nil; $0.note = Self.pasteHint; $0.hint = nil }
+            return
+        }
+        if let done = sharedLink, done.png == png { insertShareLink(done.url, subject: v.subject); return }
+        let task = upload(png, title: v.subject)
+        updateVisual { $0.note = Self.sendingNote }
+        // Whichever comes first: the link, or five seconds, after which the copied image is the way to send.
+        // Awaiting an upload cannot be cancelled, so the two waits are separate tasks and the first one ends the send.
+        Task { [weak self] in
+            let url = try? await task.value
+            guard let self, url == nil || self.sharedLink?.png == png else { return }
+            self.finishShare(url, subject: v.subject)
+        }
+        visualTask?.cancel()
+        let sleep = deps.sleep
+        visualTask = Task { [weak self] in
+            try? await sleep(Self.shareWait)
+            guard let self, !Task.isCancelled else { return }
+            self.finishShare(nil, subject: v.subject)
+        }
+    }
+
+    /// Ends a Send still waiting: the caption and link on success, else the copied-image hint.
+    private func finishShare(_ url: String?, subject: String) {
+        guard case .visual(let v) = explainPanel, v.sending == .link else { return }
+        if let url { insertShareLink(url, subject: subject) }
+        else { updateVisual { $0.sending = nil; $0.note = Self.pasteHint; $0.hint = nil } }
+    }
+
+    private func insertShareLink(_ url: String, subject: String) {
+        let before = host?.contextBeforeInput ?? ""
+        host?.insert((before.isEmpty || before.last?.isWhitespace == true ? "" : " ") + Self.shareCaption(subject) + " " + url)
+        updateVisual { $0.sending = nil; $0.note = Self.linkAdded; $0.hint = Self.imageAlsoCopied }
+        updateAutoShift()
     }
 
     private func updateVisual(_ change: (inout VisualState) -> Void) {

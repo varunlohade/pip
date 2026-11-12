@@ -14,7 +14,7 @@ struct DemoAPI: KeyboardAPI {
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { ToneResponse(tone: "ok", calm: nil) }
     func explain(_ text: String) async throws -> ExplainResponse { throw APIError.message("no explain in the intro") }
     func explainVisual(_ topic: String) async throws -> Data { throw APIError.message("no explain in the intro") }
-    func shareDrawing(_ png: Data) async throws -> String { throw APIError.message("no sharing in the intro") }
+    func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String { throw APIError.message("no sharing in the intro") }
 }
 
 /// The intro's device storage: kept in memory, gone when the intro ends.

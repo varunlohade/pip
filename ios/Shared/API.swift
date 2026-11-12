@@ -176,11 +176,30 @@ struct APIClient {
         return data
     }
 
-    /// "Send as link": uploads the drawing PNG and returns the short link the keyboard types into the chat.
-    func shareDrawing(_ png: Data) async throws -> String {
+    /// "Send": uploads the drawing PNG, its JPEG link preview and its title, and returns the short link the keyboard types into
+    /// the chat. The link opens a page whose Open Graph tags make the chat show the picture. With no preview, only the PNG goes up.
+    func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String {
         var r = try request("POST", "/v1/drawings", tap: true)
-        r.setValue("image/png", forHTTPHeaderField: "Content-Type")
-        r.httpBody = png
+        if let preview {
+            let boundary = "pip-\(UUID().uuidString)"
+            r.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            var body = Data()
+            func part(_ name: String, file: String? = nil, type: String? = nil, _ data: Data) {
+                body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"".utf8))
+                if let file, let type { body.append(Data("; filename=\"\(file)\"\r\nContent-Type: \(type)".utf8)) }
+                body.append(Data("\r\n\r\n".utf8))
+                body.append(data)
+                body.append(Data("\r\n".utf8))
+            }
+            part("image", file: "drawing.png", type: "image/png", png)
+            part("preview", file: "preview.jpg", type: "image/jpeg", preview)
+            part("title", Data(title.utf8))
+            body.append(Data("--\(boundary)--\r\n".utf8))
+            r.httpBody = body
+        } else {
+            r.setValue("image/png", forHTTPHeaderField: "Content-Type")
+            r.httpBody = png
+        }
         struct Out: Decodable { let url: String }
         return try await send(r, as: Out.self).url
     }

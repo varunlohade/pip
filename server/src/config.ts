@@ -16,7 +16,12 @@ export const config = {
   maxWriteChars: 1500,
   maxExplainChars: 200,
   // "Send as link": a drawing PNG kept for 30 days at an unguessable URL. PUBLIC_URL is the address people open; else the request's own origin.
-  sharedImage: { maxBytes: 1024 * 1024, ttlMs: 30 * 86_400_000 },
+  // The phone also sends a small JPEG for chat link previews (WhatsApp drops big ones). An expired link answers 410 for a year, then 404.
+  sharedImage: {
+    maxBytes: 1024 * 1024, ttlMs: 30 * 86_400_000, keepGoneMs: 365 * 86_400_000,
+    preview: { maxBytes: 300 * 1024, minWidth: 600, maxSide: 4096 },
+    maxTitleChars: 80,
+  },
   publicUrl: (env.PUBLIC_URL ?? '').replace(/\/+$/, ''),
 
   apple: {
