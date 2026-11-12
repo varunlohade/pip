@@ -1,0 +1,17 @@
+{
+  "name": "pip-visual-excalidraw",
+  "private": true,
+  "description": "Excalidraw version of the Pip drawing page (preview, behind a flag). Built into ios/VisualExcalidraw, loaded from the bundle, no network.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@excalidraw/excalidraw": "0.18.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.8"
+  }
+}
