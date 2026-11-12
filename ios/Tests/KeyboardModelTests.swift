@@ -100,4 +100,29 @@ final class KeyboardModelTests: XCTestCase {
         for _ in 0..<50 { await Task.yield() }
         XCTAssertFalse(model.smart.contains { $0.id == "smart.event" }, "the text moved on, so the chip is not shown")
     }
+
+    func testAMemoryWarningMidLoadNeverStartsASecondLanguageLoad() async throws {
+        // Start from no model and no load running.
+        KeyboardModel.loadLanguage()
+        for _ in 0..<1000 where KeyboardModel.language == nil { try await Task.sleep(for: .milliseconds(10)) }
+        model.releaseCaches()
+        XCTAssertNil(KeyboardModel.language)
+
+        let loads = LoadCounter()
+        let gate = DispatchSemaphore(value: 0)
+        KeyboardModel.loadLanguage { loads.add(); gate.wait(); return LanguageModel.bundled() }
+        model.releaseCaches()  // a memory warning while the model loads
+        KeyboardModel.loadLanguage { loads.add(); return LanguageModel.bundled() }  // the keyboard appears again
+        gate.signal()
+        for _ in 0..<1000 where KeyboardModel.language == nil { try await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertNotNil(KeyboardModel.language, "the running load still lands, since the keyboard asked again")
+        XCTAssertEqual(loads.count, 1, "one load, not two")
+    }
+}
+
+private final class LoadCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var n = 0
+    func add() { lock.withLock { n += 1 } }
+    var count: Int { lock.withLock { n } }
 }

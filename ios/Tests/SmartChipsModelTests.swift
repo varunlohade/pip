@@ -60,6 +60,17 @@ final class SmartChipsModelTests: XCTestCase {
         XCTAssertNotNil(item("smart.reminder"), "the chip comes back after Undo")
     }
 
+    func testRelativeReminderStillAddsWhenTheClockMovesBeforeTheTap() async throws {
+        await typeAndPause("remind me in 20 min to call Ana ")
+        await until("reminder chip") { item("smart.reminder") != nil }
+        let action = try XCTUnwrap(item("smart.reminder")?.action)
+        clock.advance(5)
+        model.perform(action)
+        XCTAssertEqual(writer.reminders.values.map(\.title), ["Call Ana"])
+        XCTAssertEqual(writer.reminders.values.first?.due, clock.now.addingTimeInterval(20 * 60), "the time counts from the tap")
+        XCTAssertNil(item("smart.reminder"), "the tapped chip goes")
+    }
+
     func testEventAddsOnceAndTheAddedLineGoesAfterTheUndoWindow() async {
         await typeAndPause("dinner with Ana at 8")
         await until("event chip") { item("smart.event") != nil }
@@ -116,6 +127,17 @@ final class SmartChipsModelTests: XCTestCase {
         for _ in 0..<20 { await Task.yield() }
         XCTAssertEqual(api.calls, ["suggest"], "the same sentence never goes twice")
         XCTAssertNotNil(item("smart.reminder"), "the server's chip stays while the sentence goes on")
+    }
+
+    func testAnEmailFieldNeverSendsTextToSuggest() async {
+        host.keyboardType = .emailAddress
+        model.refreshAccess()
+        host.text = "can we sort out Ana's thing"
+        model.textChanged()
+        for _ in 0..<20 { await Task.yield() }
+        clock.advance(SuggestPolicy.debounce.seconds)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(api.calls, [], "an email field never asks the server")
     }
 
     func testEmptyFieldShowsReadyChipsFromTheSnapshot() async {

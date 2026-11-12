@@ -5,52 +5,60 @@ final class SuggestPolicyTests: XCTestCase {
     func testActionishSentenceAsksOnceThenAgainWhenItGrowsTwoWords() {
         var p = SuggestPolicy()
         let text = "can we do Ana's thing Friday"
-        XCTAssertEqual(p.maybe(text, clear: false), text)
+        XCTAssertEqual(p.maybe(text, clear: false, field: .text), text)
         p.markAsked(text)
-        XCTAssertNil(p.maybe(text, clear: false), "a sentence version goes once")
-        XCTAssertNil(p.maybe(text + " after", clear: false), "one more word is not enough")
-        XCTAssertEqual(p.maybe(text + " after work", clear: false), text + " after work", "two more words ask again, with the whole sentence")
+        XCTAssertNil(p.maybe(text, clear: false, field: .text), "a sentence version goes once")
+        XCTAssertNil(p.maybe(text + " after", clear: false, field: .text), "one more word is not enough")
+        XCTAssertEqual(p.maybe(text + " after work", clear: false, field: .text), text + " after work", "two more words ask again, with the whole sentence")
         p.markAsked(text + " after work")
-        XCTAssertNil(p.maybe(text + " after work", clear: false))
-        XCTAssertEqual(p.maybe("can we do Ana's thing Monday", clear: false), "can we do Ana's thing Monday", "an edited sentence is a new version")
+        XCTAssertNil(p.maybe(text + " after work", clear: false, field: .text))
+        XCTAssertEqual(p.maybe("can we do Ana's thing Monday", clear: false, field: .text), "can we do Ana's thing Monday", "an edited sentence is a new version")
     }
 
     func testShortSentencesNeverAsk() {
-        XCTAssertNil(SuggestPolicy().maybe("call Ana 5", clear: false), "under 12 characters")
-        XCTAssertNil(SuggestPolicy().maybe("appointment tomorrow?", clear: false), "under 3 words")
-        XCTAssertEqual(SuggestPolicy().maybe("call Ana at 5pm", clear: false), "call Ana at 5pm")
+        XCTAssertNil(SuggestPolicy().maybe("call Ana 5", clear: false, field: .text), "under 12 characters")
+        XCTAssertNil(SuggestPolicy().maybe("appointment tomorrow?", clear: false, field: .text), "under 3 words")
+        XCTAssertEqual(SuggestPolicy().maybe("call Ana at 5pm", clear: false, field: .text), "call Ana at 5pm")
     }
 
     func testAClearPhoneMatchAsksNothing() {
-        XCTAssertNil(SuggestPolicy().maybe("lunch with Ana tomorrow at 1", clear: true))
+        XCTAssertNil(SuggestPolicy().maybe("lunch with Ana tomorrow at 1", clear: true, field: .text))
+    }
+
+    func testOnlyAPlainTextFieldAsks() {
+        let text = "can we do Ana's thing Friday"
+        for field: FieldKind in [.email, .url, .numbers, .digits(.number), .digits(.decimal), .digits(.phone)] {
+            XCTAssertNil(SuggestPolicy().maybe(text, clear: false, field: field), "\(field) never asks")
+        }
+        XCTAssertEqual(SuggestPolicy().maybe(text, clear: false, field: .text), text)
     }
 
     func testEmptyAsksNothing() {
-        XCTAssertNil(SuggestPolicy().maybe("", clear: false))
+        XCTAssertNil(SuggestPolicy().maybe("", clear: false, field: .text))
     }
 
     func testPlainChatAsksNothing() {
         for text in ["ok", "see you", "haha that is so true"] {
-            XCTAssertNil(SuggestPolicy().maybe(text, clear: false), text)
+            XCTAssertNil(SuggestPolicy().maybe(text, clear: false, field: .text), text)
         }
     }
 
     func testShortcutPrefixNeverAsks() {
         for text in [";omw see you at 5", ";fix call Sam at 5 tomorrow"] {
-            XCTAssertNil(SuggestPolicy().maybe(text, clear: false), text)
+            XCTAssertNil(SuggestPolicy().maybe(text, clear: false, field: .text), text)
         }
     }
 
     func testCardNumberAsksNothing() {
-        XCTAssertNil(SuggestPolicy().maybe("my card is 4242 4242 4242 4242 thanks", clear: false))
-        XCTAssertNil(SuggestPolicy().maybe("card 4242-4242-4242-4242 for the trip", clear: false))
-        XCTAssertNil(SuggestPolicy().maybe("card 4242424242424242 for the trip", clear: false))
+        XCTAssertNil(SuggestPolicy().maybe("my card is 4242 4242 4242 4242 thanks", clear: false, field: .text))
+        XCTAssertNil(SuggestPolicy().maybe("card 4242-4242-4242-4242 for the trip", clear: false, field: .text))
+        XCTAssertNil(SuggestPolicy().maybe("card 4242424242424242 for the trip", clear: false, field: .text))
     }
 
     func testSecretsAskNothing() {
-        XCTAssertNil(SuggestPolicy().maybe("the code is 482913", clear: false))
-        XCTAssertNil(SuggestPolicy().maybe("use key sk_live_abcdefghijklmnop1234 please", clear: false))
-        XCTAssertNil(SuggestPolicy().maybe("token is aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3f ok", clear: false))
+        XCTAssertNil(SuggestPolicy().maybe("the code is 482913", clear: false, field: .text))
+        XCTAssertNil(SuggestPolicy().maybe("use key sk_live_abcdefghijklmnop1234 please", clear: false, field: .text))
+        XCTAssertNil(SuggestPolicy().maybe("token is aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3f ok", clear: false, field: .text))
     }
 
     func testAServerChipFollowsItsSentenceWhileItIsTypedOn() {

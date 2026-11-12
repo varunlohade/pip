@@ -103,7 +103,7 @@ extension KeyboardModel {
             explainTask?.cancel()
             explainPending = nil
             if ask.needsRates { refreshRates() }
-            let offer = Calc.answer(ask, trigger: trigger, now: deps.now(), zone: .current, rates: deps.store.currencyRates).map(ExplainOffer.calc)
+            let offer = Calc.answer(ask, trigger: trigger, now: deps.now(), zone: .current, rates: currencyRates).map(ExplainOffer.calc)
             if explainOffer != offer { explainOffer = offer }
             return true
         }
@@ -155,11 +155,19 @@ extension KeyboardModel {
         }
     }
 
+    /// The last rates, from memory after the first read.
+    private var currencyRates: Calc.Rates? {
+        if let kept = ratesKept { return kept }
+        let r = deps.store.currencyRates
+        ratesKept = .some(r)
+        return r
+    }
+
     /// Currency rates at most once an hour from /v1/rates; the last ones stay on the phone for offline use.
     /// A failed read waits a few minutes before the next try.
     private func refreshRates() {
         let now = deps.now()
-        if let r = deps.store.currencyRates, now.timeIntervalSince(r.fetched_at) < 3600 { return }
+        if let r = currencyRates, now.timeIntervalSince(r.fetched_at) < 3600 { return }
         guard paired, hasFullAccess, ratesTask == nil, ratesAskedAt.map({ now.timeIntervalSince($0) > 300 }) ?? true else { return }
         ratesAskedAt = now
         let api = deps.api()
@@ -169,6 +177,7 @@ extension KeyboardModel {
             self.ratesTask = nil
             guard let r, !Task.isCancelled else { return }
             self.deps.store.currencyRates = r
+            self.ratesKept = r
             // The chip waited for the rates; it shows while the field still asks.
             if Calc.read(self.typed)?.ask.needsRates == true { self.updateExplain(self.typed) }
         }

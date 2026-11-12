@@ -87,6 +87,8 @@ export const config = {
   rateLimit: {
     suggest: { limit: 60, windowMs: 60_000 },
     write: { limit: 30, windowMs: 60_000 },
+    // One rewrite starts a model call per version, so it has its own, smaller limit on top of write.
+    rewrite: { limit: 10, windowMs: 60_000 },
     // Explain and draw are paid calls a person asks for, so a few a minute and a cap per day.
     explain: { limit: 10, windowMs: 60_000 },
     explainDaily: { limit: 100, windowMs: 86_400_000 },

@@ -201,6 +201,8 @@ final class KeyboardModel: ObservableObject {
     var ratesTask: Task<Void, Never>?
     /// When the keyboard last asked for currency rates, so a currency ask reads them at most every few minutes.
     var ratesAskedAt: Date?
+    /// The currency rates, read from the store once and then kept here, so no key decodes rates.json.
+    var ratesKept: Calc.Rates??
     /// The drawing page in the visual panel, while it is on screen.
     weak var visualPage: VisualPage?
     /// Keeps the voice and the drawing in step while "Play with voice" is on.
@@ -219,7 +221,8 @@ final class KeyboardModel: ObservableObject {
     private var suggest = SuggestPolicy()
     private var actions: [ActionShortcut] = ActionShortcut.defaults
     private var writeTask: Task<Void, Never>?
-    private var rewriteTasks: [Task<Void, Never>] = []
+    /// Rewrite calls still running. A batch leaves once its stream ends or it times out.
+    private(set) var rewriteBatches: [TaskBatch] = []
     /// A version with no answer by then shows Retry. The whole list gives up at the timeout.
     static let rewriteStall: Duration = .seconds(4)
     static let rewriteTimeout: Duration = .seconds(8)
@@ -324,7 +327,10 @@ final class KeyboardModel: ObservableObject {
 
     /// The English model for the touch decoder and completions, loaded once off the main thread.
     private(set) static var language: LanguageModel?
-    private static var loadingLanguage = false
+    /// The load running now. A memory warning does not clear it, so a second load never starts beside it.
+    private static var languageLoad: UUID?
+    /// The load whose model is kept. A memory warning clears it; the next appear asks for the running load again.
+    private static var languageWanted: UUID?
     private var adaptation = TouchAdaptation()
     /// What the decoder made of each finger now down.
     private var tapInfo: [ObjectIdentifier: (result: TouchDecoder.Result, point: CGPoint)] = [:]
@@ -333,15 +339,18 @@ final class KeyboardModel: ObservableObject {
     /// The last decoded tap. It teaches the adaptation once the next key is not delete.
     private var unlearned: (point: CGPoint, key: TouchKey)?
 
-    static func loadLanguage() {
-        guard language == nil, !loadingLanguage else { return }
-        loadingLanguage = true
+    static func loadLanguage(_ make: @escaping @Sendable () -> LanguageModel? = { LanguageModel.bundled() }) {
+        guard language == nil else { return }
+        if let running = languageLoad { languageWanted = running; return }
+        let token = UUID()
+        languageLoad = token
+        languageWanted = token
         Task.detached(priority: .utility) {
-            let model = LanguageModel.bundled()
+            let model = make()
             await MainActor.run {
-                // A memory warning during the load cleared the flag: drop this model too.
-                if loadingLanguage { KeyboardModel.language = model }
-                loadingLanguage = false
+                // A memory warning during the load, with no appear after it: drop this model too.
+                if languageWanted == token { KeyboardModel.language = model }
+                languageLoad = nil
             }
         }
     }
@@ -350,7 +359,7 @@ final class KeyboardModel: ObservableObject {
     /// until keyboardAppeared loads the language model again.
     func releaseCaches() {
         Self.language = nil
-        Self.loadingLanguage = false
+        Self.languageWanted = nil
     }
 
     /// The key a touch means: the key under it or, for a letter tapped near its edge, the likeliest letter there.
@@ -938,7 +947,7 @@ final class KeyboardModel: ObservableObject {
         bar = .idle
         // Typing ends the copied-text offer.
         if !text.isEmpty, copiedAvailable { endCopied() }
-        if !quiet, !explaining, let sentence = suggest.maybe(text, clear: clear) { requestSuggest(sentence, typed: text) }
+        if !quiet, !explaining, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
     }
 
     // MARK: chip life: ✕, cooldowns, typed past
@@ -1254,6 +1263,7 @@ final class KeyboardModel: ObservableObject {
             } catch {}
             guard let self, !Task.isCancelled else { return }
             batch.cancel()
+            self.rewriteBatches.removeAll { $0 === batch }
             self.settleRewrites(asked, original: d.original)
         }
         let stall = Task { [weak self] in
@@ -1265,10 +1275,11 @@ final class KeyboardModel: ObservableObject {
             try? await sleep(Self.rewriteTimeout)
             guard let self, !Task.isCancelled else { return }
             batch.cancel()
+            self.rewriteBatches.removeAll { $0 === batch }
             self.settleRewrites(asked, original: d.original)
         }
         batch.tasks = [stream, stall, timeout]
-        rewriteTasks += batch.tasks
+        rewriteBatches.append(batch)
     }
 
     /// Retry on one row, or on the whole panel when nothing came back.
@@ -1301,8 +1312,8 @@ final class KeyboardModel: ObservableObject {
     }
 
     private func cancelRewrites() {
-        rewriteTasks.forEach { $0.cancel() }
-        rewriteTasks = []
+        rewriteBatches.forEach { $0.cancel() }
+        rewriteBatches = []
     }
 
     /// Tap on a version: it replaces the paragraph that was read, if the field still holds it.
@@ -1438,12 +1449,15 @@ final class KeyboardModel: ObservableObject {
     /// One tap adds it: the chip is the confirm. The bar then shows what was added, with Undo for a few seconds.
     func tapSmart(_ chip: SmartChip) {
         // The tap reads the text again: a chip the text no longer holds does nothing and goes.
+        // It matches by kind and trigger, and takes the date read now: "in 20 min" counts from the tap.
         let text = typed
-        guard smartChips(text, found: SmartDetect.detect(text, now: deps.now())).contains(chip) else {
+        guard let fresh = smartChips(text, found: SmartDetect.detect(text, now: deps.now())).first(where: { $0.sameReading(as: chip) }) else {
             smart.removeAll { $0 == chip }
             return
         }
         guard deps.writer.access(chip.place, hasFullAccess: hasFullAccess) == .ready else { return }
+        let shown = chip
+        let chip = fresh
         host?.playClick()
         let item: SmartAdded.Item
         do {
@@ -1461,7 +1475,7 @@ final class KeyboardModel: ObservableObject {
             return
         }
         smartDone.insert(chip)
-        smart.removeAll { $0 == chip }
+        smart.removeAll { $0 == shown || $0 == chip }
         if let c = Self.caught(chip, seen: deps.now()) { deps.store.removeCaught(id: c.id) }
         added = SmartAdded(chip: chip, label: chip.doneLabel(now: deps.now()), item: item)
         addedTask?.cancel()
@@ -1512,7 +1526,7 @@ final class KeyboardModel: ObservableObject {
 
 /// Tasks that stop together: the stream, its stall timer and its timeout.
 @MainActor
-private final class TaskBatch {
+final class TaskBatch {
     var tasks: [Task<Void, Never>] = []
     func cancel() { tasks.forEach { $0.cancel() } }
 }

@@ -31,8 +31,10 @@ final class ChipTimingTests: XCTestCase {
         model = nil
     }
 
+    /// Waits on the condition itself, up to a few real seconds, so a slow machine does not fail it.
     private func until(_ what: String, _ cond: () -> Bool) async {
-        for _ in 0..<500 where !cond() { await Task.yield() }
+        let deadline = ContinuousClock.now + .seconds(5)
+        while !cond(), ContinuousClock.now < deadline { await Task.yield() }
         XCTAssertTrue(cond(), "timed out waiting for \(what)")
     }
 
@@ -347,6 +349,25 @@ final class ChipTimingTests: XCTestCase {
         await until("one version") { status(.friendly) != .writing }
         model.useRewrite(.friendly)
         XCTAssertEqual(host.text, "Hey! Could you pay by Friday?")
+    }
+
+    func testFinishedRewriteBatchesAreDropped() async {
+        set("pay me by friday")
+        model.toggleWrite()
+        XCTAssertEqual(model.rewriteBatches.count, 1)
+        for t in RefineTone.allCases { api.send(t, "\(t.title): pay by Friday.") }
+        api.endRewrite()
+        await until("first call done") { model.rewriteBatches.isEmpty }
+        for _ in 0..<3 {
+            model.retryRewrite(.fix)
+            XCTAssertEqual(model.rewriteBatches.count, 1)
+            api.send(.fix, "Pay me by Friday.")
+            api.endRewrite()
+            await until("retry done") { model.rewriteBatches.isEmpty }
+        }
+        model.retryRewrite(.fix)
+        await advance(8.1)
+        await until("timed-out call dropped") { model.rewriteBatches.isEmpty }
     }
 
     func testRewriteThatNeverAnswersFailsAt8sWithRetry() async {

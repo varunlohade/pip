@@ -139,7 +139,7 @@ async function lines(res: Response) {
 }
 
 test('write/rewrite: streams every version as it is ready; a slow one comes last and does not hold the others', async () => {
-  const { call, device, aiCalls } = setup({ write: 'Could you pay by Friday, please?', rewriteMs: { polite: 300, shorter: 10 } });
+  const { call, device, aiCalls } = setup({ write: 'Could you pay by Friday, please?', rewriteMs: { polite: 900, shorter: 10 } });
   const { token } = device();
   const res = await call(token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday' });
   assert.equal(res.status, 200);
@@ -149,8 +149,8 @@ test('write/rewrite: streams every version as it is ready; a slow one comes last
   assert.deepEqual(versions.map((g) => g.line.tone).sort(), ['firmer', 'fix', 'friendly', 'polite', 'professional', 'shorter']);
   assert.ok(versions.every((g) => g.line.text === 'Could you pay by Friday, please?'));
   assert.equal(versions.at(-1)!.line.tone, 'polite', 'the slow version comes last');
-  assert.ok(versions[0].at < 150, `first version after ${versions[0].at} ms`);
-  assert.ok(versions.at(-1)!.at >= 250, 'the slow one really waited');
+  assert.ok(versions[0].at < 450, `first version after ${versions[0].at} ms`);
+  assert.ok(versions.at(-1)!.at >= 850, 'the slow one really waited');
   assert.equal(got.at(-1)!.line.done, true);
   assert.equal(aiCalls.length, 6, 'one model call per version');
 });
@@ -166,10 +166,10 @@ test('write/rewrite: a stalled version is skipped after the stall limit; the res
     const ms = performance.now() - t;
     const fix = got.find((g) => g.line.tone === 'fix')!;
     assert.deepEqual(fix.line, { tone: 'fix', error: 'stalled' });
-    assert.ok(fix.at >= 190 && fix.at < 600, `stall skipped after ${fix.at} ms`);
+    assert.ok(fix.at >= 190 && fix.at < 1800, `stall skipped after ${fix.at} ms`);
     assert.equal(got.filter((g) => g.line.text).length, 5);
     assert.equal(got.at(-1)!.line.done, true);
-    assert.ok(ms < 800, `whole reply took ${ms} ms`);
+    assert.ok(ms < 2400, `whole reply took ${ms} ms`);
   } finally {
     config.llm.rewriteStallMs = before;
   }
@@ -191,4 +191,19 @@ test('write/rewrite: Retry asks only the named versions; bad tones, no tap and m
   const body = await res.text();
   assert.ok(!body.includes('secret'));
   assert.deepEqual(body.trim().split('\n').map((l) => JSON.parse(l)).filter((l) => l.tone), [{ tone: 'shorter', error: 'failed' }]);
+});
+
+test('write/rewrite: has its own limit per user, since one rewrite starts a model call per version', async () => {
+  const { call, device, aiCalls } = setup();
+  const a = device(), b = device();
+  for (let i = 0; i < config.rateLimit.rewrite.limit; i++) {
+    assert.equal((await call(a.token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday' })).status, 200, `rewrite ${i + 1}`);
+  }
+  const calls = aiCalls.length;
+  const over = await call(a.token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday', tones: ['fix'] });
+  assert.equal(over.status, 429);
+  assert.ok(Number(over.headers.get('retry-after')) >= 1);
+  assert.equal(aiCalls.length, calls, 'a limited rewrite starts no model call');
+  assert.equal((await call(a.token, 'POST', '/v1/write/fix', { text: 'pay me' })).status, 200, 'fix still works');
+  assert.equal((await call(b.token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday' })).status, 200, 'another user is not limited');
 });

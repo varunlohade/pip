@@ -167,6 +167,7 @@ export function createApp(deps: Deps) {
   const byUser = (c: Context<Env>) => c.get('userId');
   app.use('/v1/suggest', rateLimiter('suggest', byUser));
   app.use('/v1/write/*', rateLimiter('write', byUser));
+  app.use('/v1/write/rewrite', rateLimiter('rewrite', byUser));
   // One pattern covers /v1/explain and /v1/explain/visual, so both share the same buckets.
   app.use('/v1/explain/*', rateLimiter('explain', byUser), rateLimiter('explainDaily', byUser));
   app.use('/v1/*', rateLimiter('other', byUser));

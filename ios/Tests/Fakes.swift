@@ -120,7 +120,13 @@ final class FakeStore: KeyboardStore {
     func recordCaught(_ c: Caught) { if !caught.contains(where: { $0.id == c.id }) { caught.append(c) } }
     func removeCaught(id: String) { caught.removeAll { $0.id == id } }
     var keyHaptics = true
-    var currencyRates: Calc.Rates?
+    /// How many times something read the rates file.
+    private(set) var ratesReads = 0
+    private var rates: Calc.Rates?
+    var currencyRates: Calc.Rates? {
+        get { ratesReads += 1; return rates }
+        set { rates = newValue }
+    }
 }
 
 /// Records every key haptic instead of playing it.

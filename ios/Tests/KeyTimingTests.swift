@@ -45,7 +45,12 @@ final class KeyTimingTests: XCTestCase {
         let sorted = ms.sorted()
         let p50 = sorted[sorted.count / 2], p95 = sorted[Int(Double(sorted.count - 1) * 0.95)], worst = sorted.last!
         print(String(format: "PIP_TIMING per_key_ms p50=%.2f p95=%.2f max=%.2f keys=%d", p50, p95, worst, ms.count))
+        #if DEBUG
+        // Debug builds run unoptimized, often beside other tests: twice the release budget.
+        XCTAssertLessThan(p95, 16)
+        #else
         XCTAssertLessThan(p95, 8)
+        #endif
         model.keyboardDisappeared()
     }
 }

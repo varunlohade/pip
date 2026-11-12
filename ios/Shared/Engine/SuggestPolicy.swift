@@ -21,9 +21,10 @@ struct SuggestPolicy {
 
     /// Text with action-ish signals but no clear on-device match ("can we do Ana's thing Friday"):
     /// the last sentence goes to the server after the pause. Nil for plain chat, a short sentence, a clear match, a secret,
-    /// or a sentence already sent that has not grown by `regrowWords`.
-    func maybe(_ typed: String, clear: Bool) -> String? {
-        guard !clear, !typed.isEmpty, !typed.hasPrefix(Self.shortcutPrefix), SecretScan.scan(typed) == .clean else { return nil }
+    /// or a sentence already sent that has not grown by `regrowWords`. Only a plain text field ever asks:
+    /// never an email, link, number or code field.
+    func maybe(_ typed: String, clear: Bool, field: FieldKind) -> String? {
+        guard field == .text, !clear, !typed.isEmpty, !typed.hasPrefix(Self.shortcutPrefix), SecretScan.scan(typed) == .clean else { return nil }
         let sentence = SmartDetect.lastSentence(typed)
         let words = Self.words(sentence)
         guard sentence.count >= Self.minChars, words.count >= Self.minWords, SmartDetect.maybe(sentence) else { return nil }

@@ -30,6 +30,9 @@ struct SmartChip: Equatable, Hashable {
         }
     }
 
+    /// The same chip read again later: same kind, same trigger words, though a relative time ("in 20 min") moved on.
+    func sameReading(as other: SmartChip) -> Bool { id == other.id && trigger == other.trigger }
+
     /// "Add to calendar · Tue 3:00 PM", "Remind me 5:00 PM", "Save note".
     func label(now: Date, calendar cal: Calendar = .current) -> String {
         switch action {

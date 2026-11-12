@@ -180,6 +180,15 @@ final class CalcModelTests: XCTestCase {
         XCTAssertEqual(api.calls, ["rates"])
     }
 
+    func testRatesAreReadOnceThenKeptInMemory() {
+        store.currencyRates = api.ratesReply
+        set("100 usd to inr")
+        set("100 usd to eur")
+        set("50 usd to eur")
+        XCTAssertEqual(model.explainItem?.title, "\u{20AC}45.12")
+        XCTAssertEqual(store.ratesReads, 1, "one read, then memory")
+    }
+
     func testCurrencyOfflineUsesTheLastRates() async {
         store.currencyRates = api.ratesReply
         api.ratesFail = true

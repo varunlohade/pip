@@ -92,24 +92,24 @@ final class SmartDetectTests: XCTestCase {
     }
 
     func testAClearDeviceMatchSkipsTheServer() {
-        XCTAssertNil(SuggestPolicy().maybe("remind me in 20 min to check oven", clear: true))
-        XCTAssertNil(SuggestPolicy().maybe("need to buy shampoo for Ana", clear: true))
-        XCTAssertEqual(SuggestPolicy().maybe("need to buy shampoo for Ana", clear: false), "need to buy shampoo for Ana")
+        XCTAssertNil(SuggestPolicy().maybe("remind me in 20 min to check oven", clear: true, field: .text))
+        XCTAssertNil(SuggestPolicy().maybe("need to buy shampoo for Ana", clear: true, field: .text))
+        XCTAssertEqual(SuggestPolicy().maybe("need to buy shampoo for Ana", clear: false, field: .text), "need to buy shampoo for Ana")
     }
 
     func testMaybeAsksOncePerSentenceAndNeverForPlainChat() {
         var policy = SuggestPolicy()
-        XCTAssertNil(policy.maybe("lol ok see you", clear: false))
-        XCTAssertNil(policy.maybe("haha that is so funny", clear: false))
-        XCTAssertNil(policy.maybe("call supplier at 5 today", clear: true), "a clear match needs no server")
-        let s = policy.maybe("Great. can we move Ana's thing", clear: false)
+        XCTAssertNil(policy.maybe("lol ok see you", clear: false, field: .text))
+        XCTAssertNil(policy.maybe("haha that is so funny", clear: false, field: .text))
+        XCTAssertNil(policy.maybe("call supplier at 5 today", clear: true, field: .text), "a clear match needs no server")
+        let s = policy.maybe("Great. can we move Ana's thing", clear: false, field: .text)
         XCTAssertEqual(s, "can we move Ana's thing")
         policy.markAsked(s!)
-        XCTAssertNil(policy.maybe("Great. can we move Ana's thing", clear: false), "same sentence: never twice")
-        XCTAssertNil(policy.maybe("Great. can we move Ana's thing to", clear: false), "one more word: not yet")
-        XCTAssertEqual(policy.maybe("Great. can we move Ana's thing to next week", clear: false), "can we move Ana's thing to next week",
+        XCTAssertNil(policy.maybe("Great. can we move Ana's thing", clear: false, field: .text), "same sentence: never twice")
+        XCTAssertNil(policy.maybe("Great. can we move Ana's thing to", clear: false, field: .text), "one more word: not yet")
+        XCTAssertEqual(policy.maybe("Great. can we move Ana's thing to next week", clear: false, field: .text), "can we move Ana's thing to next week",
                        "grown by two words or more: asked again")
-        XCTAssertNotNil(policy.maybe("Great. can we move Ana's thing to next week. Also ping Bo about the deck", clear: false))
+        XCTAssertNotNil(policy.maybe("Great. can we move Ana's thing to next week. Also ping Bo about the deck", clear: false, field: .text))
     }
 }
 
