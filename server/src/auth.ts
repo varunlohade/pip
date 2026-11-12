@@ -53,12 +53,16 @@ export function createAuth(d: AuthDeps) {
     return { access_token: access, refresh_token: refresh, expires_in: Math.floor(config.auth.accessTtlMs / 1000) };
   }
 
-  /** Mail goes out without waiting, so how long a reply takes never says whether an email was sent. */
-  function mail(emailHashKey: string, to: string, kind: MailKind, code?: string) {
+  /**
+   * Mail goes out without waiting, so how long a reply takes never says whether an email was sent.
+   * Over the per-email limit nothing is sent and no new code is made, so asking again cannot buy fresh guesses.
+   */
+  function mail(emailHashKey: string, to: string, kind: MailKind, makeCode?: () => string) {
     if (mailLimit.hit(emailHashKey)) {
       log('mail_limited', { kind });
       return;
     }
+    const code = makeCode?.();
     mailer.send({ to, kind, code }).catch((e) => log('mail_failed', { kind, err: (e as Error).name }));
   }
 
@@ -68,16 +72,26 @@ export function createAuth(d: AuthDeps) {
     return code;
   }
 
-  /** True once for a right, live code; the code is then gone. A wrong one counts a try; the fifth wrong try ends it. */
+  /**
+   * The row once for a right, live code; the code is then gone. A wrong one counts a try; the fifth wrong try ends it.
+   * Wrong tries also count per user across every code, so new codes do not buy new guesses: 10 a day, then no code works.
+   */
   function useCode(userId: string, purpose: CodePurpose, code: string): ReturnType<Db['code']> {
+    const capKey = `code:${userId}`;
+    const cap = db.failures(capKey);
+    const capCount = cap && now() - cap.last_at < config.auth.failureWindowMs ? cap.count : 0;
+    if (capCount >= config.auth.codeDailyMisses) return undefined;
     const row = db.code(userId, purpose);
+    const got = Buffer.from(codeHash(userId, purpose, code));
     if (!row || row.expires_at <= now() || row.attempts >= config.auth.codeMaxAttempts) return undefined;
-    const want = Buffer.from(row.code_hash), got = Buffer.from(codeHash(userId, purpose, code));
+    const want = Buffer.from(row.code_hash);
     if (want.length !== got.length || !timingSafeEqual(want, got)) {
       db.codeAttempt(userId, purpose);
+      db.setFailures(capKey, capCount + 1, 0);
       return undefined;
     }
     db.deleteCode(userId, purpose);
+    db.clearFailures(capKey);
     return row;
   }
 
@@ -96,6 +110,14 @@ export function createAuth(d: AuthDeps) {
     c.header('Retry-After', String(Math.ceil(ms / 1000)));
     return c.json({ error: 'too many tries. wait a while, then try again' }, 429);
   };
+
+  /** Checks an Apple identity token, then spends its nonce: a captured token and nonce work once. */
+  async function apple(body: unknown): Promise<string> {
+    const b = AppleBody.parse(body);
+    const { sub, exp } = await d.apple(b.identity_token, b.nonce);
+    if (!db.useNonce(cipher.lookupHash('apple-nonce', b.nonce), exp ?? now() + 600_000)) throw new Error('nonce replay');
+    return sub;
+  }
 
   const anonymous = (u: UserRow) => !u.email_hash && !u.apple_sub_hash;
 
@@ -125,8 +147,7 @@ export function createAuth(d: AuthDeps) {
     app.post('/v1/auth/apple', rateLimiter('auth', clientIp), async (c) => {
       let sub: string;
       try {
-        const b = AppleBody.parse(await c.req.json());
-        sub = (await d.apple(b.identity_token, b.nonce)).sub;
+        sub = await apple(await c.req.json());
       } catch (e) {
         log('apple_auth_rejected', { reason: e instanceof z.ZodError ? 'bad body' : (e as Error).message });
         return c.json({ error: 'unauthorized' }, 401);
@@ -138,8 +159,8 @@ export function createAuth(d: AuthDeps) {
     });
 
     // Sign-up always answers "check your email", whether or not the email has an account, so it cannot be used to test emails.
-    // A new email gets a code. A verified one gets a note that it already has an account. An unverified one gets a new code
-    // and the newest password, since nobody has proved they own it yet.
+    // A new email gets a code. A verified one gets a note that it already has an account. An unverified one gets a new code.
+    // The password that counts is the one sent with the code to /verify: only the email's owner has the code.
     app.post('/v1/auth/email/signup', ip, async (c) => {
       const { email, password } = EmailPassword.parse(await json(c));
       const problem = passwordProblem(password, email);
@@ -150,22 +171,26 @@ export function createAuth(d: AuthDeps) {
       if (!u) {
         const userId = db.createEmailUser(key, (id) => cipher.encrypt(id, email), hash);
         d.onNewUser?.(userId);
-        mail(key, email, 'verify', newCode(userId, 'verify'));
+        mail(key, email, 'verify', () => newCode(userId, 'verify'));
         log('email_signup', { user_id: userId });
       } else if (u.email_verified_at) {
         mail(key, email, 'exists');
       } else {
-        db.setPassword(u.id, hash);
-        mail(key, email, 'verify', newCode(u.id, 'verify'));
+        // Nobody has proved they own this email yet, so its password is not touched here: /verify sets it.
+        mail(key, email, 'verify', () => newCode(u.id, 'verify'));
       }
       return c.json(CHECK_EMAIL, 202);
     });
 
     app.post('/v1/auth/email/verify', ip, async (c) => {
-      const b = z.object({ email: Email, code: Code }).strict().safeParse(await json(c));
+      const b = z.object({ email: Email, code: Code, password: Password }).strict().safeParse(await json(c));
       if (!b.success) return c.json(BAD_CODE, 400);
+      const problem = passwordProblem(b.data.password, b.data.email);
+      if (problem) return c.json({ error: problem }, 400);
+      const hash = await hashPassword(b.data.password);
       const u = db.userByEmailHash(emailKey(b.data.email));
-      if (!u || !useCode(u.id, 'verify', b.data.code)) return c.json(BAD_CODE, 400);
+      if (!u || u.email_verified_at || !useCode(u.id, 'verify', b.data.code)) return c.json(BAD_CODE, 400);
+      db.setPassword(u.id, hash);
       db.markVerified(u.id);
       log('email_verified', { user_id: u.id });
       return c.json(issue(u.id, 'email'));
@@ -176,19 +201,16 @@ export function createAuth(d: AuthDeps) {
       const key = emailKey(email);
       const wait = lockedFor(key);
       if (wait) return locked(c, wait);
+      // The miss is counted before the slow hash, so many guesses at once still meet the lock after the fifth.
+      failed(key);
       const u = db.userByEmailHash(key);
       const ok = await verifyPassword(password, u?.password_hash ?? (await dummyHash()));
-      if (!u || !u.password_hash || !ok) {
-        failed(key);
+      // An account still waiting for its code answers like a wrong password, so sign-in never tells a new email from a known one.
+      if (!u || !u.password_hash || !ok || !u.email_verified_at) {
         log('email_login_failed', {});
         return c.json(WRONG, 401);
       }
       db.clearFailures(key);
-      if (!u.email_verified_at) {
-        // Only someone with the right password learns the account waits for its code.
-        mail(key, email, 'verify', newCode(u.id, 'verify'));
-        return c.json({ error: 'confirm your email first. we sent a new code', status: 'verify_email' }, 403);
-      }
       log('email_login', { user_id: u.id });
       return c.json(issue(u.id, 'email'));
     });
@@ -197,7 +219,8 @@ export function createAuth(d: AuthDeps) {
       const { email } = z.object({ email: Email }).strict().parse(await json(c));
       const key = emailKey(email);
       const u = db.userByEmailHash(key);
-      if (u?.password_hash) mail(key, email, 'reset', newCode(u.id, 'reset'));
+      if (u?.password_hash) mail(key, email, 'reset', () => newCode(u.id, 'reset'));
+      else codeHash('none', 'reset', '000000');
       return c.json(CHECK_EMAIL, 202);
     });
 
@@ -247,8 +270,7 @@ export function createAuth(d: AuthDeps) {
       const userId = c.get('userId');
       let sub: string;
       try {
-        const b = AppleBody.parse(await c.req.json());
-        sub = (await d.apple(b.identity_token, b.nonce)).sub;
+        sub = await apple(await c.req.json());
       } catch (e) {
         log('apple_link_rejected', { user_id: userId, reason: e instanceof z.ZodError ? 'bad body' : (e as Error).message });
         return c.json({ error: 'unauthorized' }, 401);
@@ -279,7 +301,7 @@ export function createAuth(d: AuthDeps) {
       if (db.userByEmailHash(key)) {
         mail(key, email, 'exists');
       } else {
-        mail(key, email, 'link', newCode(userId, 'link', { emailHash: key, emailEnc: cipher.encrypt(userId, email), passwordHash: hash }));
+        mail(key, email, 'link', () => newCode(userId, 'link', { emailHash: key, emailEnc: cipher.encrypt(userId, email), passwordHash: hash }));
       }
       return c.json(CHECK_EMAIL, 202);
     });
@@ -320,10 +342,22 @@ export function createAuth(d: AuthDeps) {
     });
 
     // Deletes the user and, by cascade, every row that belongs to them: sessions, tokens, codes, device tokens, drawings.
-    app.delete('/v1/account', (c) => {
+    // An account with a password must send it, so a stolen access token alone cannot delete the account.
+    // Others send { confirm: true }. A wrong password counts toward the sign-in lockout.
+    app.delete('/v1/account', async (c) => {
       const userId = c.get('userId');
-      const u = db.user(userId);
-      if (u?.email_hash) db.clearFailures(u.email_hash);
+      const u = db.user(userId)!;
+      const b = z.object({ password: Password.optional(), confirm: z.literal(true).optional() }).strict().safeParse(await c.req.json().catch(() => null));
+      if (!b.success || (!u.password_hash && !b.data.confirm)) return c.json({ error: 'confirm to delete your account' }, 400);
+      if (u.password_hash) {
+        const key = u.email_hash!;
+        const wait = lockedFor(key);
+        if (wait) return locked(c, wait);
+        failed(key);
+        if (!b.data.password || !(await verifyPassword(b.data.password, u.password_hash))) return c.json({ error: 'wrong password' }, 403);
+      }
+      if (u.email_hash) db.clearFailures(u.email_hash);
+      db.clearFailures(`code:${userId}`);
       db.deleteUser(userId);
       log('account_deleted', { user_id: userId });
       return c.json({ deleted: true });

@@ -12,13 +12,24 @@ export class HttpError extends Error {
   }
 }
 
+const MAX_KEYS = 100_000;
+
 export function createLimiter({ limit, windowMs }: { limit: number; windowMs: number }) {
   const hits = new Map<string, { n: number; reset: number }>();
   const entry = (key: string) => {
     const now = Date.now();
     let h = hits.get(key);
     if (!h || h.reset <= now) {
-      if (hits.size > 10_000) hits.clear();
+      // Full: first drop windows that ended. Only if that is not enough, drop the oldest windows (they end first).
+      // Never clear everything, or one client with many keys would reset everyone's limit.
+      if (!h && hits.size >= MAX_KEYS) {
+        for (const [k, v] of hits) if (v.reset <= now) hits.delete(k);
+        for (const k of hits.keys()) {
+          if (hits.size < MAX_KEYS) break;
+          hits.delete(k);
+        }
+      }
+      hits.delete(key);
       h = { n: 0, reset: now + windowMs };
       hits.set(key, h);
     }

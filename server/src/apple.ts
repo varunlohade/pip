@@ -3,7 +3,7 @@ import { config } from './config.ts';
 import { sha256 } from './crypto.ts';
 
 export type AppleJwk = { kty: string; kid: string; n: string; e: string; alg?: string; use?: string };
-export type AppleVerifier = (identityToken: string, rawNonce: string) => Promise<{ sub: string }>;
+export type AppleVerifier = (identityToken: string, rawNonce: string) => Promise<{ sub: string; exp?: number }>;
 
 const part = (s: string) => JSON.parse(Buffer.from(s, 'base64url').toString('utf8')) as Record<string, unknown>;
 const same = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -52,8 +52,9 @@ export function createAppleVerifier(o: { audience?: string; fetchKeys?: () => Pr
     const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
     if (!aud.includes(audience)) throw new Error('bad aud');
     if (typeof claims.exp !== 'number' || claims.exp * 1000 <= now()) throw new Error('expired');
+    if (typeof claims.iat === 'number' && claims.iat * 1000 > now() + 60_000) throw new Error('issued in the future');
     if (typeof claims.nonce !== 'string' || !same(claims.nonce, sha256(rawNonce))) throw new Error('bad nonce');
     if (typeof claims.sub !== 'string' || !claims.sub) throw new Error('no sub');
-    return { sub: claims.sub };
+    return { sub: claims.sub, exp: claims.exp * 1000 };
   };
 }

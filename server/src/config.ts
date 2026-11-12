@@ -42,6 +42,8 @@ export const config = {
     // Emailed 6-digit codes: 15 minutes, 5 wrong tries, then a new code is needed.
     codeTtlMs: 15 * 60_000,
     codeMaxAttempts: 5,
+    // Wrong codes per user per day, across all codes. Then no code works until the day ends.
+    codeDailyMisses: 10,
     // Password sign-in per email: after 5 misses, a lock of 30 s that doubles with each miss, up to an hour.
     // The count resets a day after the last miss.
     lockAfter: 5,

@@ -71,6 +71,10 @@ CREATE TABLE email_codes (
 -- Failed password sign-ins per email hash, for known and unknown emails alike, so a lockout says nothing about an account.
 CREATE TABLE login_failures (key TEXT PRIMARY KEY, count INTEGER NOT NULL, locked_until INTEGER NOT NULL, last_at INTEGER NOT NULL);`);
   },
+  // 3: Apple nonces already used, so a captured identity token and nonce work once.
+  (db) => {
+    db.exec('CREATE TABLE used_nonces (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL);');
+  },
 ];
 
 function migrate(db: DatabaseSync) {
@@ -112,6 +116,8 @@ export function openDb(path: string, o: { now?: () => number } = {}) {
   const db = new DatabaseSync(path);
   migrate(db);
   db.exec('PRAGMA foreign_keys = ON');
+  // Deleted rows are overwritten with zeros, so a deleted account does not linger in free pages.
+  db.exec('PRAGMA secure_delete = ON');
   const now = o.now ?? Date.now;
   const q = (sql: string) => db.prepare(sql);
   const tx = <T>(fn: () => T): T => {
@@ -245,9 +251,10 @@ export function openDb(path: string, o: { now?: () => number } = {}) {
     deleteSession(sessionId: string) {
       q('DELETE FROM sessions WHERE id = ?').run(sessionId);
     },
-    /** "Log out everywhere": every session and every legacy device token of the user. */
+    /** "Log out everywhere": every session, every legacy device token and every live emailed code of the user. */
     deleteAllSessions(userId: string): number {
       q('DELETE FROM devices WHERE user_id = ?').run(userId);
+      q('DELETE FROM email_codes WHERE user_id = ?').run(userId);
       return Number(q('DELETE FROM sessions WHERE user_id = ?').run(userId).changes);
     },
     sessionCount(userId: string): number {
@@ -260,6 +267,11 @@ export function openDb(path: string, o: { now?: () => number } = {}) {
       q('DELETE FROM refresh_tokens WHERE expires_at <= ?').run(at);
       q('DELETE FROM sessions WHERE NOT EXISTS (SELECT 1 FROM refresh_tokens r WHERE r.session_id = sessions.id)').run();
       q('DELETE FROM email_codes WHERE expires_at <= ?').run(at);
+      q('DELETE FROM used_nonces WHERE expires_at <= ?').run(at);
+    },
+    /** True the first time a nonce hash is seen; false for a replay. Kept until the token would expire anyway. */
+    useNonce(hash: string, expiresAt: number): boolean {
+      return q('INSERT OR IGNORE INTO used_nonces (hash, expires_at) VALUES (?, ?)').run(hash, expiresAt).changes > 0;
     },
 
     // ---- emailed codes
