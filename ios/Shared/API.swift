@@ -85,7 +85,7 @@ func plainLine(_ error: Error) -> String {
 }
 
 /// The server's own short `error` text, as a sentence.
-private func serverWords(_ body: String) -> String? {
+func serverWords(_ body: String) -> String? {
     struct Body: Decodable { let error: String }
     guard let e = try? JSONDecoder().decode(Body.self, from: Data(body.utf8)).error, !e.isEmpty, e.count <= 80 else { return nil }
     return e.prefix(1).uppercased() + e.dropFirst()

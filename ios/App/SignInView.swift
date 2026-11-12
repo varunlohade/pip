@@ -162,7 +162,8 @@ struct EmailAuthView: View {
                 }
                 if showsPassword {
                     SecureField("", text: $password, prompt: Text(step == .signIn ? "Password" : "Password, 10 or more characters").foregroundStyle(Theme.Color.text3))
-                        .textContentType(step == .signIn ? .password : .newPassword)
+                        // No .newPassword: without an associated domain, iOS's strong-password fill only gets in the way.
+                        .textContentType(step == .signIn ? .password : nil)
                         .modifier(FieldStyle()).accessibilityIdentifier("password.field")
                 }
                 if let error {

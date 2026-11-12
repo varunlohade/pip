@@ -51,7 +51,7 @@ final class Session: ObservableObject {
     nonisolated static func line(_ e: Error) -> String {
         switch e {
         case APIError.http(429, _): return "Too many tries. Wait a while, then try again."
-        case APIError.http(let code, _) where (400..<500).contains(code): return plainLine(e)
+        case APIError.http(let code, let body) where (400..<500).contains(code): return serverWords(body) ?? "That did not work. Try again."
         case is APIError: return "That did not work. Try again."
         default: return "Cannot reach \(AppConfig.displayName). Check your connection and try again."
         }
@@ -211,6 +211,8 @@ struct RootView: View {
             }
             .background(Theme.Color.bg.ignoresSafeArea())
         }
+        // A new stack on sign-in and logout, so no screen of the last person (such as Account) stays pushed.
+        .id(session.paired)
         // Back from Settings: onboarding and Home see the new keyboard state at once.
         .onChange(of: scenePhase) { _, phase in if phase == .active { KeyboardSetup.shared.refresh() } }
         .task { await session.migrateLegacyToken() }
