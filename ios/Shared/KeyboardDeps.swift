@@ -11,6 +11,7 @@ protocol KeyboardAPI {
     func explain(_ text: String) async throws -> ExplainResponse
     func explainVisual(_ topic: String) async throws -> Data
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String
+    func rates() async throws -> Calc.Rates
 }
 
 extension APIClient: KeyboardAPI {}
@@ -36,6 +37,8 @@ protocol KeyboardStore: AnyObject {
     func removeCaught(id: String)
     /// A light tap on each key press, set in the app. On by default; the keyboard plays it only with Full Access.
     var keyHaptics: Bool { get }
+    /// The last currency rates the server sent. Nil until the first currency ask.
+    var currencyRates: Calc.Rates? { get set }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -67,6 +70,10 @@ final class SharedKeyboardStore: KeyboardStore {
     }
     func removeCaught(id: String) { SharedStore.caught = SharedStore.caught.filter { $0.id != id } }
     var keyHaptics: Bool { SharedStore.keyHaptics }
+    var currencyRates: Calc.Rates? {
+        get { SharedStore.currencyRates }
+        set { SharedStore.currencyRates = newValue }
+    }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.

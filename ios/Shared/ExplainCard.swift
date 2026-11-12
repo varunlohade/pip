@@ -46,7 +46,7 @@ struct ExplainCardView: View {
         switch offer {
         case .meaning(let m): ["\u{201C}\(m.example)\u{201D}"]
         case .answer(_, let r): r.body.components(separatedBy: "\n").filter { !$0.isEmpty }
-        case .chart: []
+        case .chart, .calc: []
         }
     }
 

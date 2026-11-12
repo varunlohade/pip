@@ -15,6 +15,7 @@ struct DemoAPI: KeyboardAPI {
     func explain(_ text: String) async throws -> ExplainResponse { throw APIError.message("no explain in the intro") }
     func explainVisual(_ topic: String) async throws -> Data { throw APIError.message("no explain in the intro") }
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String { throw APIError.message("no sharing in the intro") }
+    func rates() async throws -> Calc.Rates { throw APIError.message("no rates in the intro") }
 }
 
 /// The intro's device storage: kept in memory, gone when the intro ends.
@@ -32,6 +33,7 @@ final class DemoStore: KeyboardStore {
     func recordCaught(_ c: Caught) {}
     func removeCaught(id: String) {}
     let keyHaptics = false
+    var currencyRates: Calc.Rates?
 }
 
 /// The intro's calendar: it says yes and keeps nothing, so a scene never touches the real calendar.

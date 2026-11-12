@@ -165,6 +165,9 @@ final class KeyboardModel: ObservableObject {
     /// The question the server is answering now, so one pause sends it once.
     var explainPending: String?
     var explainCache: [String: ExplainResponse] = [:]
+    var ratesTask: Task<Void, Never>?
+    /// When the keyboard last asked for currency rates, so a currency ask reads them at most every few minutes.
+    var ratesAskedAt: Date?
     /// The drawing page in the visual panel, while it is on screen.
     weak var visualPage: VisualPage?
     /// Keeps the voice and the drawing in step while "Play with voice" is on.
@@ -608,6 +611,14 @@ final class KeyboardModel: ObservableObject {
             guard let self, !Task.isCancelled, (self.host?.contextBeforeInput ?? "") == input.before else { return }
             if self.words != row { self.words = row }
         }
+    }
+
+    /// The three word slots own the bar while a word is half typed, and after a space when no chip shows.
+    /// An answer chip (a sum, a meaning) always wins over them. The tool icons step aside for the slots.
+    var showsWordSlots: Bool {
+        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, undo == nil else { return false }
+        if case .idle = bar {} else { return false }
+        return words.midWord || barItems.isEmpty
     }
 
     /// A tap on a word slot: it replaces the word being typed (or follows the space), then a space.

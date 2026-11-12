@@ -17,6 +17,7 @@ import { createAuth } from './auth.ts';
 import { PasswordBusyError } from './password.ts';
 import { clientIp, HttpError, rateLimiter, type Env } from './http.ts';
 import { createDevMailer, type Mailer } from './mailer.ts';
+import { createRates, type Rates } from './rates.ts';
 
 export type Deps = {
   db: Db; cipher: Cipher; ai: Ai; now?: () => number;
@@ -27,6 +28,8 @@ export type Deps = {
   emailEnabled?: boolean;
   /** Runs once for each new user (device, Apple or email). */
   onNewUser?: (userId: string) => void;
+  /** Currency rates for the keyboard's conversions. The default reads the keyless public source, cached for an hour. */
+  rates?: Rates;
 };
 export type { Env };
 export type Chip = { kind: string; label: string; payload: Record<string, unknown>; needs_confirm: boolean; trigger?: string };
@@ -87,6 +90,7 @@ const gonePage = '<!doctype html><html lang="en"><head><meta charset="utf-8"><me
 export function createApp(deps: Deps) {
   const { db, cipher, ai } = deps;
   const now = deps.now ?? Date.now;
+  const rates = deps.rates ?? createRates({ now });
   const app = new Hono<Env>();
 
   const body = async <T extends z.ZodTypeAny>(c: Context<Env>, schema: T): Promise<z.infer<T>> => {
@@ -309,6 +313,15 @@ export function createApp(deps: Deps) {
   app.post('/v1/explain/visual', async (c) => {
     const { topic } = await body(c, VisualBody);
     return explaining(c, 'visual', topic.length, () => ai.visual(topic));
+  });
+
+  // ---- rates: the phone keeps the last answer, so currency sums work offline.
+  app.get('/v1/rates', async (c) => {
+    try {
+      return c.json(await rates.get());
+    } catch {
+      return c.json({ error: 'rates are not available right now' }, 502);
+    }
   });
 
   return app;

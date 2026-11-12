@@ -137,13 +137,16 @@ struct SuggestionBar: View {
                         Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.Color.skyOnText)
                     }
                     Text(item.title).font(.system(size: 16.5, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                    if let d = item.detail {
+                        Text(d).font(.system(size: 12)).foregroundStyle(Theme.Color.skyOnText).lineLimit(1)
+                    }
                 }
                 .padding(.horizontal, 15).frame(height: 36)
                 .background(SkyFill())
             }
             .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel([item.trigger, item.title].compactMap { $0 }.joined(separator: ": "))
+            .accessibilityLabel([item.trigger, item.title, item.detail].compactMap { $0 }.joined(separator: ": "))
             .accessibilityIdentifier("chip.explain")
             if model.explainOfferHasMore {
                 Button { model.openExplainCard() } label: {
@@ -166,13 +169,7 @@ struct SuggestionBar: View {
         }
     }
 
-    /// The three word slots own the bar while a word is half typed, and after a space when no chip shows.
-    /// The tool icons step aside for them.
-    private var showsWords: Bool {
-        guard !model.words.slots.isEmpty, !model.notesOpen, !model.writeOpen, model.explainPanel == nil, model.undo == nil else { return false }
-        if case .idle = model.bar {} else { return false }
-        return model.words.midWord || model.barItems.isEmpty
-    }
+    private var showsWords: Bool { model.showsWordSlots }
 
     private var wordRow: some View {
         HStack(spacing: 0) {

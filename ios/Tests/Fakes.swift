@@ -77,6 +77,13 @@ final class FakeAPI: KeyboardAPI {
         if shareFails { throw APIError.message("upload failed") }
         return shareReply
     }
+    var ratesReply = Calc.Rates(base: "USD", date: "2026-11-12", fetched_at: Date(timeIntervalSince1970: 1_799_999_400), rates: ["USD": 1, "INR": 94.04, "EUR": 0.90245])
+    var ratesFail = false
+    func rates() async throws -> Calc.Rates {
+        calls.append("rates")
+        if ratesFail { throw APIError.message("no rates") }
+        return ratesReply
+    }
     func releaseShares() { let h = heldShares; heldShares = []; h.forEach { $0.resume() } }
 }
 
@@ -100,6 +107,7 @@ final class FakeStore: KeyboardStore {
     func recordCaught(_ c: Caught) { if !caught.contains(where: { $0.id == c.id }) { caught.append(c) } }
     func removeCaught(id: String) { caught.removeAll { $0.id == id } }
     var keyHaptics = true
+    var currencyRates: Calc.Rates?
 }
 
 /// Records every key haptic instead of playing it.

@@ -214,6 +214,21 @@ struct APIClient {
         return try await send(r, as: Out.self).url
     }
 
+    /// Currency rates for one US dollar. The server reads them at most once an hour; the keyboard keeps the last ones.
+    func rates() async throws -> Calc.Rates {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .custom { dec in
+            let s = try dec.singleValueContainer().decode(String.self)
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            guard let date = f.date(from: s) ?? ISO8601DateFormatter().date(from: s) else {
+                throw DecodingError.dataCorrupted(.init(codingPath: dec.codingPath, debugDescription: "date"))
+            }
+            return date
+        }
+        return try d.decode(Calc.Rates.self, from: await data(request("GET", "/v1/rates")))
+    }
+
     /// Checks the token: the Debug pairing sheet calls it before it saves a pasted token.
     func me() async throws {
         struct Me: Decodable { let ok: Bool }
