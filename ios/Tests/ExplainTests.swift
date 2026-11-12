@@ -75,11 +75,9 @@ final class ExplainDetectTests: XCTestCase {
             ("how do solar panels work", "solar panels"),
             ("How does the human heart work", "human heart"),
             ("how does an electric motor work", "electric motor"),
-            ("why is the sky blue", "why is the sky blue"),
-            ("Why is the sky blue?", "why is the sky blue"),
-            ("why do cats purr", "why do cats purr"),
-            ("why are leaves green?", "why are leaves green"),
-            ("why does ice float", "why does ice float"),
+            ("explain why the sky is blue", "why the sky is blue"),
+            ("Explain why is the sky blue?", "why is the sky blue"),
+            ("eli5 why do cats purr", "why do cats purr"),
             ("eli5 the water cycle", "water cycle"),
             ("ELI5 how vaccines work", "vaccines"),
             ("eli5: supply and demand", "supply and demand"),
@@ -114,6 +112,17 @@ final class ExplainDetectTests: XCTestCase {
             "can you explain to mom", "explain the", "explain it to me later", "explain what you mean", "explain the thing you said",
             "why is he so mad", "why are you like this", "why do i bother", "why is it always me", "how does it work",
             "eli5 this", "explain to him", "what's the deal", "what is the score",
+        ] {
+            XCTAssertNil(Explain.detect(text), text)
+        }
+    }
+
+    /// Explain is for "what is", "explain" and "meaning of" asks. An everyday why-question is chat.
+    func testEverydayWhyQuestionsAreNotExplainAsks() {
+        for text in [
+            "why is the bus late", "Why is the bus so late?", "why is the sky blue", "why do cats purr", "why are leaves green?",
+            "why does ice float", "why is my phone so slow", "why are the trains delayed again", "why does it always rain on sunday",
+            "why do we have a meeting at 5", "so why is the bus late", "hey why are you late",
         ] {
             XCTAssertNil(Explain.detect(text), text)
         }
@@ -317,10 +326,11 @@ final class ExplainModelTests: XCTestCase {
     }
 
     func testTypingOnBeforeThePauseSendsNothing() async {
+        let asks = { self.clock.sleeps.filter { $0 == KeyboardModel.explainDebounce }.count }
         set("explain lo")
-        await until("debounce sleep") { clock.sleeps.count == 1 }
+        await until("debounce sleep") { asks() == 1 }
         set("explain log function")
-        await until("second sleep") { clock.sleeps.count == 2 }
+        await until("second sleep") { asks() == 2 }
         clock.advance(KeyboardModel.explainDebounce.seconds)
         await until("explain answer") { model.explainOffer != nil }
         XCTAssertEqual(api.explained, ["explain log function"])
@@ -338,7 +348,7 @@ final class ExplainModelTests: XCTestCase {
     func testASecretIsNeverSent() async {
         set("explain 4242 4242 4242 4242")
         for _ in 0..<50 { await Task.yield() }
-        XCTAssertEqual(clock.sleeps, [])
+        XCTAssertFalse(clock.sleeps.contains(KeyboardModel.explainDebounce), "no ask is even scheduled: \(clock.sleeps)")
         XCTAssertEqual(api.calls, [])
     }
 

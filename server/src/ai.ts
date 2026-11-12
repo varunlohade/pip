@@ -7,9 +7,9 @@ import { EXPLAIN_SYSTEM, ExplanationSchema, SceneSchema, VISUAL_SYSTEM, type Exp
 export type Ai = {
   /** A typed sentence: which on-phone action fits it, if any. One jev question. */
   deviceAction(text: string): Promise<{ kind: DeviceAction; confidence: number }>;
-  /** Same text with spelling and grammar fixed. */
-  fix(text: string): Promise<string>;
-  refine(text: string, tone: Tone): Promise<string>;
+  /** Same text with spelling and grammar fixed. `signal` stops the model calls (a stalled rewrite). */
+  fix(text: string, signal?: AbortSignal): Promise<string>;
+  refine(text: string, tone: Tone, signal?: AbortSignal): Promise<string>;
   /** draft: what the person wrote. client: a message they copied from the other person in the chat. At least one is not empty. */
   toneCheck(draft: string, client: string): Promise<ToneCheck>;
   /** A question such as "explain log function": a one-line answer and a few short lines. */
@@ -140,11 +140,11 @@ export function createAi(env: { typesafeKey: string; openrouterKey: string }): A
   }
 
   // Writing help: one hedged call, and a result counts only once it passes its schema.
-  function write<T>(purpose: string, system: string, text: string, schema: { parse(v: unknown): T }): Promise<T> {
+  function write<T>(purpose: string, system: string, text: string, schema: { parse(v: unknown): T }, outer?: AbortSignal): Promise<T> {
     const messages = [{ role: 'system', content: system }, { role: 'user', content: text }];
     const maxTokens = Math.ceil(text.length / 2) + 120;
     const attempt = (m: Model) => async (signal: AbortSignal) =>
-      schema.parse(parseModelJson(await chatOnce(m, messages, maxTokens, purpose, signal, config.llm.writeTimeoutMs)));
+      schema.parse(parseModelJson(await chatOnce(m, messages, maxTokens, purpose, outer ? AbortSignal.any([signal, outer]) : signal, config.llm.writeTimeoutMs)));
     return hedge(attempt(config.llm.primary), attempt(config.llm.fallback), config.llm.writeHedgeMs);
   }
 
@@ -171,16 +171,16 @@ export function createAi(env: { typesafeKey: string; openrouterKey: string }): A
   }
 
   return {
-    async fix(text) {
+    async fix(text, signal) {
       return (await write('fix', WRITER +
         'Fix spelling, grammar, capital letters and punctuation only. Do not change the meaning, the tone or the choice of words. ' +
-        'Reply with one JSON object only: {"text": string}.', text, rewriteSchema(text))).text;
+        'Reply with one JSON object only: {"text": string}.', text, rewriteSchema(text), signal)).text;
     },
 
-    async refine(text, tone) {
+    async refine(text, tone, signal) {
       return (await write('refine', WRITER +
         `Rewrite the text so it is ${REFINE[tone]}. Keep the meaning. Fix spelling and grammar. ` +
-        'Reply with one JSON object only: {"text": string}.', text, rewriteSchema(text))).text;
+        'Reply with one JSON object only: {"text": string}.', text, rewriteSchema(text), signal)).text;
     },
 
     // jev picks the label; the LLM writes only when there is something to calm.

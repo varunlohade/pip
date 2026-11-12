@@ -105,7 +105,10 @@ final class SmartDetectTests: XCTestCase {
         let s = policy.maybe("Great. can we move Ana's thing", clear: false)
         XCTAssertEqual(s, "can we move Ana's thing")
         policy.markAsked(s!)
-        XCTAssertNil(policy.maybe("Great. can we move Ana's thing to next week", clear: false), "same sentence: never twice")
+        XCTAssertNil(policy.maybe("Great. can we move Ana's thing", clear: false), "same sentence: never twice")
+        XCTAssertNil(policy.maybe("Great. can we move Ana's thing to", clear: false), "one more word: not yet")
+        XCTAssertEqual(policy.maybe("Great. can we move Ana's thing to next week", clear: false), "can we move Ana's thing to next week",
+                       "grown by two words or more: asked again")
         XCTAssertNotNil(policy.maybe("Great. can we move Ana's thing to next week. Also ping Bo about the deck", clear: false))
     }
 }

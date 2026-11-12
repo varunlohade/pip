@@ -90,7 +90,7 @@ enum SmartDetect {
     /// Only this kind of text may go to the server, once per sentence; plain chat never does.
     static func maybe(_ text: String) -> Bool {
         let s = lastSentence(text)
-        guard s.split(whereSeparator: \.isWhitespace).count >= 4, SecretScan.scan(s) == .clean else { return false }
+        guard s.split(whereSeparator: \.isWhitespace).count >= SuggestPolicy.minWords, SecretScan.scan(s) == .clean else { return false }
         let words = s.split(whereSeparator: \.isWhitespace)
         let name = words.dropFirst().contains { w in w.first?.isUppercase == true && w.count > 1 && w.dropFirst().contains(where: \.isLowercase) }
         return has(s, taskWords) || has(s, meetingWords) || s.contains(where: \.isNumber) || name || s.hasSuffix("?")

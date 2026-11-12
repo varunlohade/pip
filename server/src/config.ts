@@ -2,6 +2,9 @@ const env = process.env;
 
 export const TONES = ['polite', 'professional', 'friendly', 'shorter', 'firmer'] as const;
 export type Tone = (typeof TONES)[number];
+/** The versions the rewrite list streams: every tone, then the grammar fix. */
+export const REWRITES = [...TONES, 'fix'] as const;
+export type Rewrite = (typeof REWRITES)[number];
 
 export const config = {
   port: Number(env.PORT ?? 8787),
@@ -73,6 +76,8 @@ export const config = {
     // Rewrites are longer than extraction, so they get more time before the backup model starts.
     writeTimeoutMs: 6000,
     writeHedgeMs: 1500,
+    // The streamed rewrite list: a version with no answer by then is skipped, and the phone offers Retry for it.
+    rewriteStallMs: 4000,
     // A drawn scene is a few thousand tokens of JSON.
     explainTimeoutMs: 15_000,
     primary: { model: 'meta-llama/llama-3.3-70b-instruct', provider: { order: ['groq'], allow_fallbacks: true } },

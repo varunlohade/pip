@@ -3,7 +3,8 @@ import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { secureHeaders } from 'hono/secure-headers';
 import { z } from 'zod';
-import { config, TONES } from './config.ts';
+import { config, REWRITES, TONES, type Rewrite } from './config.ts';
+import { stream } from 'hono/streaming';
 import type { Cipher } from './crypto.ts';
 import { randomBytes } from 'node:crypto';
 import type { Db, Preview, SharedImage } from './db.ts';
@@ -44,6 +45,8 @@ const SuggestBody = z.object({
 const WriteText = CleanText(config.maxWriteChars);
 const FixBody = z.object({ text: WriteText }).strict();
 const RefineBody = z.object({ text: WriteText, tone: z.enum(TONES) }).strict();
+// The rewrite list: every version by default, or the ones the phone retries.
+const RewriteBody = z.object({ text: WriteText, tones: z.array(z.enum(REWRITES)).min(1).max(REWRITES.length).optional() }).strict();
 const OptionalWriteText = z.string().transform(clean).pipe(z.string().max(config.maxWriteChars)).optional();
 const ToneBody = z.object({ text: OptionalWriteText, context: OptionalWriteText }).strict()
   .refine((b) => b.text || b.context, { message: 'text or context is required' });
@@ -243,6 +246,43 @@ export function createApp(deps: Deps) {
   app.post('/v1/write/refine', async (c) => {
     const { text, tone } = await body(c, RefineBody);
     return writing(c, `refine_${tone}`, text.length, async () => ({ text: await ai.refine(text, tone) }));
+  });
+  // All versions at once, one JSON line each (NDJSON) the moment it is ready, then {"done":true}.
+  // A version with no answer after rewriteStallMs is skipped as {"tone","error":"stalled"}; the phone offers Retry for it.
+  app.post('/v1/write/rewrite', async (c) => {
+    const { text, tones } = await body(c, RewriteBody);
+    const wanted = [...new Set(tones ?? REWRITES)];
+    const userId = c.get('userId');
+    const t0 = performance.now();
+    c.header('Content-Type', 'application/x-ndjson; charset=utf-8');
+    c.header('Cache-Control', 'no-store');
+    return stream(c, async (s) => {
+      const gone = new AbortController();
+      s.onAbort(() => gone.abort());
+      const one = async (tone: Rewrite) => {
+        const stop = new AbortController();
+        const signal = AbortSignal.any([stop.signal, gone.signal]);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const stalled = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => { stop.abort(); reject(new Error('stalled')); }, config.llm.rewriteStallMs);
+        });
+        const t = performance.now();
+        let line: { tone: Rewrite; text?: string; error?: 'stalled' | 'failed' };
+        try {
+          line = { tone, text: await Promise.race([tone === 'fix' ? ai.fix(text, signal) : ai.refine(text, tone, signal), stalled]) };
+        } catch (e) {
+          line = { tone, error: stop.signal.aborted ? 'stalled' : 'failed' };
+          // A model error can quote the text, so only its type is logged.
+          if (!stop.signal.aborted) log('write_error', { err: (e as Error).name });
+        } finally {
+          clearTimeout(timer);
+        }
+        log('write', { user_id: userId, kind: `rewrite_${tone}`, chars: text.length, ms: Math.round(performance.now() - t), ok: !line.error, paid_calls: 1 });
+        if (!gone.signal.aborted) await s.write(JSON.stringify(line) + '\n');
+      };
+      await Promise.all(wanted.map(one));
+      if (!gone.signal.aborted) await s.write(JSON.stringify({ done: true, ms: Math.round(performance.now() - t0) }) + '\n');
+    });
   });
   app.post('/v1/write/tone', async (c) => {
     const b = await body(c, ToneBody);

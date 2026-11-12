@@ -14,7 +14,7 @@ import { createRates } from '../src/rates.ts';
 
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown } = {}) {
+export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>> } = {}) {
   const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
@@ -23,6 +23,15 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     const w = opts.write;
     if (w instanceof Error) throw w;
     return w ?? text;
+  };
+  // rewriteMs: how long the model takes for one version ('fix' or a tone). Infinity stalls until the call is aborted.
+  const slow = (version: string, signal?: AbortSignal) => {
+    const ms = opts.rewriteMs?.[version];
+    if (ms === undefined) return;
+    return new Promise<void>((resolve, reject) => {
+      const t = Number.isFinite(ms) ? setTimeout(resolve, ms) : undefined;
+      signal?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('aborted')); });
+    });
   };
   const model = (v: unknown, fallback: unknown) => {
     if (v instanceof Error) throw v;
@@ -35,8 +44,8 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
       if (d instanceof Error) throw d;
       return { kind: 'none', confidence: 0.92, ...d };
     },
-    async fix(...args) { aiCalls.push({ fn: 'fix', args }); return rewrite(args[0]); },
-    async refine(...args) { aiCalls.push({ fn: 'refine', args }); return rewrite(args[0]); },
+    async fix(text, signal) { aiCalls.push({ fn: 'fix', args: [text] }); await slow('fix', signal); return rewrite(text); },
+    async refine(text, tone, signal) { aiCalls.push({ fn: 'refine', args: [text, tone] }); await slow(tone, signal); return rewrite(text); },
     async toneCheck(...args) { aiCalls.push({ fn: 'toneCheck', args }); return opts.tone ?? { tone: 'ok', calm: null }; },
     // explain and visual take the model's raw JSON (an Error to fail) and pass it through the real schemas, as createAi does.
     async explain(...args) { aiCalls.push({ fn: 'explain', args }); return ExplanationSchema.parse(model(opts.explain, logExplain)); },

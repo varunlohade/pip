@@ -69,7 +69,7 @@ final class KeyboardModelTests: XCTestCase {
         type("i can do teh job")
         for _ in 0..<50 { await Task.yield() }
         XCTAssertEqual(api.calls, [])
-        XCTAssertEqual(clock.sleeps, [])
+        XCTAssertFalse(clock.sleeps.contains(SuggestPolicy.debounce), "no server ask is even scheduled: \(clock.sleeps)")
     }
 
     func testNoCapitalAfterTheShortcutPrefix() {

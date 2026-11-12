@@ -59,6 +59,7 @@ struct SuggestionBar: View {
                 Spacer(minLength: 4)
                 barButton("keyboard", id: "explain.close", label: "Keyboard", action: model.closeExplain)
             } else if !model.notesOpen, !model.writeOpen, let explain = items.first, explain.id == "explain" {
+                dismissButton
                 explainRow(explain)
                 Spacer(minLength: 0)
             } else if model.notesOpen {
@@ -71,6 +72,7 @@ struct SuggestionBar: View {
                 Text("Rewrite").font(M.prediction.weight(.medium)).foregroundStyle(palette.label).padding(.leading, Theme.Space.s)
                 Spacer()
             } else {
+                if showsFix || items.contains(where: BarItems.dismissible) { dismissButton }
                 HStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
                         if i > 0 { Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight) }
@@ -167,6 +169,19 @@ struct SuggestionBar: View {
         guard model.fixable, model.explainPanel == nil, model.explainOffer == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
         if case .idle = model.bar { return true }
         return false
+    }
+
+    /// ✕ at the leading edge: every chip goes, and none comes back for 10 s. 32 pt to tap, 8 pt clear of the chip.
+    private var dismissButton: some View {
+        Button(action: model.dismissChips) {
+            Image(systemName: "xmark").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.secondaryLabel)
+                .frame(width: 32, height: 32).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 8)
+        .accessibilityLabel("Hide suggestions")
+        .accessibilityIdentifier("chip.dismiss")
+        .transition(.opacity)
     }
 
     private func barButton(_ systemImage: String, id: String, label: String, action: @escaping () -> Void) -> some View {
@@ -272,7 +287,8 @@ struct NotesPanel: View {
     }
 }
 
-/// Rewrite, in place of the keys: five one-tap rewrites and a grammar fix. The result shows first; a tap puts it in the message.
+/// Rewrite, in place of the keys: every version in one list, each row filling in as it arrives.
+/// Tap a row to replace the text, hold it to copy. A row that took too long offers Retry.
 struct WritePanelView: View {
     @ObservedObject var model: KeyboardModel
     let palette: Theme.SystemKeyboard.Palette
@@ -281,9 +297,10 @@ struct WritePanelView: View {
     var body: some View {
         Group {
             switch model.writePanel {
-            case .menu: menu
-            case .busy(let text): note(text)
-            case .message(let text): VStack(spacing: M.rowGap) { note(text); wide("Back", id: "write.back", action: model.backToWriteMenu) }
+            case .menu: note("Type a message first. Then tap Rewrite.")
+            case .versions(let list): versions(list)
+            case .failed(let text):
+                VStack(spacing: M.rowGap) { note(text); wide("Retry", id: "write.retry", accent: true) { model.retryRewrite() } }
             case .preview(let p): preview(p)
             }
         }
@@ -292,23 +309,54 @@ struct WritePanelView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var menu: some View {
-        VStack(spacing: M.rowGap) {
-            if model.canWrite {
-                HStack(spacing: M.keyGap) { option(.polite); option(.shorter) }
-                HStack(spacing: M.keyGap) { option(.professional); option(.friendly) }
-                HStack(spacing: M.keyGap) {
-                    option(.firmer)
-                    wide("Fix grammar", id: "write.grammar", action: model.fixGrammar)
+    private func versions(_ list: RewriteList) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\u{201C}\(list.text)\u{201D}").font(M.predictionSmall).foregroundStyle(palette.secondaryLabel)
+                .lineLimit(1).truncationMode(.middle)
+                .padding(.horizontal, Theme.Space.xs)
+                .accessibilityIdentifier("write.quote")
+            ScrollView {
+                VStack(spacing: M.keyGap) {
+                    ForEach(list.rows) { row in versionRow(row, copied: list.copied == row.tone) }
                 }
-            } else {
-                note("Type a message first. Then pick how to rewrite it.")
             }
         }
     }
 
-    private func option(_ tone: RefineTone) -> some View {
-        wide(tone.title, id: "write.\(tone.rawValue)") { model.refine(tone) }
+    @ViewBuilder
+    private func versionRow(_ row: RewriteRow, copied: Bool) -> some View {
+        let card = RoundedRectangle(cornerRadius: M.cornerRadius, style: .continuous)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(row.tone.title).font(M.predictionSmall.weight(.semibold)).foregroundStyle(palette.secondaryLabel)
+                Spacer()
+                if copied { Text("Copied").font(M.predictionSmall.weight(.semibold)).foregroundStyle(palette.accent) }
+            }
+            switch row.status {
+            case .ready(let text):
+                Text(text).font(M.mode).foregroundStyle(palette.label).multilineTextAlignment(.leading).lineLimit(3)
+            case .writing:
+                Text("Writing\u{2026}").font(M.mode).foregroundStyle(palette.secondaryLabel)
+            case .stalled:
+                HStack {
+                    Text("Took too long").font(M.mode).foregroundStyle(palette.secondaryLabel)
+                    Spacer()
+                    Button("Retry") { model.retryRewrite(row.tone) }
+                        .font(M.mode.weight(.medium)).foregroundStyle(palette.accent).buttonStyle(.plain)
+                        .accessibilityIdentifier("write.retry.\(row.id)")
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Space.s).padding(.vertical, Theme.Space.xs)
+        .background(palette.key, in: card)
+        .contentShape(card)
+        .onTapGesture { model.useRewrite(row.tone) }
+        .onLongPressGesture(minimumDuration: 0.4) { model.copyRewrite(row.tone) }
+        .accessibilityElement(children: row.status == .stalled ? .contain : .combine)
+        .accessibilityAddTraits(row.text != nil ? .isButton : [])
+        .accessibilityAction(named: "Copy") { model.copyRewrite(row.tone) }
+        .accessibilityIdentifier("write.row.\(row.id)")
     }
 
     private func preview(_ p: WritePreview) -> some View {

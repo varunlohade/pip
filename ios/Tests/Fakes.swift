@@ -42,7 +42,20 @@ final class FakeAPI: KeyboardAPI {
     }
 
     func fix(_ text: String) async throws -> WriteResponse { calls.append("fix"); return writeReply }
-    func refine(_ text: String, tone: String) async throws -> WriteResponse { calls.append("refine"); return writeReply }
+    /// Each rewrite call, and the stream the test feeds with send(_:) and end().
+    private(set) var rewrites: [(text: String, tones: [String])] = []
+    private var rewriteStreams: [AsyncThrowingStream<RewriteLine, Error>.Continuation] = []
+    func rewrite(_ text: String, tones: [String]) -> AsyncThrowingStream<RewriteLine, Error> {
+        calls.append("rewrite"); rewrites.append((text, tones))
+        let (stream, cont) = AsyncThrowingStream<RewriteLine, Error>.makeStream()
+        rewriteStreams.append(cont)
+        return stream
+    }
+    /// A version arrives on the latest rewrite call.
+    func send(_ tone: RefineTone, _ text: String) { rewriteStreams.last?.yield(RewriteLine(tone: tone.rawValue, text: text)) }
+    func endRewrite(throwing error: Error? = nil) {
+        if let error { rewriteStreams.last?.finish(throwing: error) } else { rewriteStreams.last?.finish() }
+    }
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { calls.append("tone"); return toneReply }
     func explain(_ text: String) async throws -> ExplainResponse { calls.append("explain"); explained.append(text); return explainReply }
     func explainVisual(_ topic: String) async throws -> Data { calls.append("visual"); explained.append(topic); return visualReply }
@@ -122,6 +135,7 @@ final class FakePasteboard: Pasteboard {
     func copy(_ s: String) { string = s; changeCount += 1 }
     private(set) var png: Data?
     func setPNG(_ png: Data) { self.png = png; changeCount += 1 }
+    func setText(_ text: String) { copy(text) }
 }
 
 /// A clock the test moves by hand. sleep waits until advance() moves `now` past its deadline,

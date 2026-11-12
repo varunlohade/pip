@@ -91,6 +91,11 @@ enum BarItems {
         return out
     }
 
+    /// A chip the ✕ hides: an offer about the typing or the copy. Lines, Undo and the day's chips stay.
+    static func dismissible(_ item: Item) -> Bool {
+        ["copied", "calm", "explain"].contains(item.id) || item.id.hasPrefix("smart.")
+    }
+
     /// Each smart chip, or the one line that says which permission it waits for. The line opens nothing: a keyboard cannot.
     static func smartItems(_ list: [Smart], now: Date) -> [Item] {
         var out: [Item] = []

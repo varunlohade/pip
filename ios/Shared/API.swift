@@ -52,6 +52,13 @@ struct SuggestResponse: Decodable {
 }
 
 struct WriteResponse: Decodable { let text: String; let changed: Bool? }
+/// One line of POST /v1/write/rewrite: a version (`tone` and `text`), a skipped one (`error`), or the end (`done`).
+struct RewriteLine: Decodable, Equatable {
+    var tone: String?
+    var text: String?
+    var error: String?
+    var done: Bool?
+}
 /// tone is "upset" (the other person), "blunt" (the owner's draft) or "ok". calm is set unless tone is "ok".
 struct ToneResponse: Decodable { let tone: String; let calm: String? }
 /// POST /v1/explain: `short` is one line, `body` up to four lines split by newlines.
@@ -101,10 +108,11 @@ struct APIClient {
     }
 
     /// `tap`: the call starts from the owner's tap. The server refuses writing help without this header.
-    func request(_ method: String, _ path: String, body: Encodable? = nil, tap: Bool = false) throws -> URLRequest {
+    /// A tapped call gives up after 8 s, so a stuck answer never holds the panel.
+    func request(_ method: String, _ path: String, body: Encodable? = nil, tap: Bool = false, timeout: TimeInterval? = nil) throws -> URLRequest {
         guard let token else { throw APIError.notPaired }
         guard let url = URL(string: baseURL + path) else { throw APIError.message("Server address is wrong") }
-        var r = URLRequest(url: url, timeoutInterval: 20)
+        var r = URLRequest(url: url, timeoutInterval: timeout ?? (tap ? 8 : 20))
         r.httpMethod = method
         r.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         if let body {
@@ -129,12 +137,19 @@ struct APIClient {
     /// A 401 that survives the refresh means the session is dead. A 401 under /v1/auth/ (a wrong password, a refused Apple
     /// token) does not end the session.
     private func data(_ r: URLRequest) async throws -> Data {
+        let (data, _) = try await authorized(r) { try await session.data(for: $0) }
+        return data
+    }
+
+    /// Sends `r` with `load`. An expired access token gets one refresh and one retry; a 401 that survives it ends the session.
+    /// Throws for any status outside 2xx.
+    private func authorized<T>(_ r: URLRequest, _ load: (URLRequest) async throws -> (T, URLResponse)) async throws -> (T, URLResponse) {
         let epoch = SharedStore.accountEpoch
         let rejected = {
             guard r.url?.path.contains("/v1/auth/") == false else { return }
             NotificationCenter.default.post(name: Self.tokenRejected, object: nil, userInfo: epoch.map { ["epoch": $0] } ?? [:])
         }
-        var (data, resp) = try await session.data(for: r)
+        var (out, resp) = try await load(r)
         var code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, Keychain.get(.refreshToken) != nil {
             let fresh: String
@@ -146,18 +161,19 @@ struct APIClient {
             }
             var again = r
             again.setValue("Bearer \(fresh)", forHTTPHeaderField: "Authorization")
-            (data, resp) = try await session.data(for: again)
+            (out, resp) = try await load(again)
             code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         }
         if code == 401 { rejected() }
-        guard (200..<300).contains(code) else { throw APIError.http(code, String(decoding: data, as: UTF8.self)) }
-        return data
+        guard (200..<300).contains(code) else { throw APIError.http(code, (out as? Data).map { String(decoding: $0, as: UTF8.self) } ?? "") }
+        return (out, resp)
     }
 
     func suggest(_ text: String, context: String? = nil) async throws -> SuggestResponse {
         var body = ["text": text]
         if let context { body["context"] = context }
-        return try await send(request("POST", "/v1/suggest", body: body), as: SuggestResponse.self)
+        // A suggestion is only worth it while the sentence is fresh; a failure stays silent.
+        return try await send(request("POST", "/v1/suggest", body: body, timeout: 4), as: SuggestResponse.self)
     }
 
     // Writing help. Each call starts from a tap, and the server refuses it without the tap header.
@@ -165,8 +181,25 @@ struct APIClient {
         try await send(request("POST", "/v1/write/fix", body: ["text": text], tap: true), as: WriteResponse.self)
     }
 
-    func refine(_ text: String, tone: String) async throws -> WriteResponse {
-        try await send(request("POST", "/v1/write/refine", body: ["text": text, "tone": tone], tap: true), as: WriteResponse.self)
+    /// Every version in one call, each line the moment the server has it (NDJSON).
+    func rewrite(_ text: String, tones: [String]) -> AsyncThrowingStream<RewriteLine, Error> {
+        struct Body: Encodable { let text: String; let tones: [String] }
+        let session = session
+        return AsyncThrowingStream { cont in
+            let task = Task {
+                do {
+                    let r = try request("POST", "/v1/write/rewrite", body: Body(text: text, tones: tones), tap: true)
+                    let (bytes, _) = try await authorized(r) { try await session.bytes(for: $0) }
+                    for try await l in bytes.lines {
+                        if let line = try? JSONDecoder().decode(RewriteLine.self, from: Data(l.utf8)) { cont.yield(line) }
+                    }
+                    cont.finish()
+                } catch {
+                    cont.finish(throwing: error)
+                }
+            }
+            cont.onTermination = { _ in task.cancel() }
+        }
     }
 
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse {

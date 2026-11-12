@@ -98,12 +98,14 @@ final class FixCheckTests: XCTestCase {
 final class FixModelTests: XCTestCase {
     private var host: FakeHost!
     private var api: FakeAPI!
+    private var clock: FakeClock!
     private var model: KeyboardModel!
 
     override func setUp() async throws {
         host = FakeHost()
         api = FakeAPI()
-        model = KeyboardModel(deps: .fake(api: api))
+        clock = FakeClock()
+        model = KeyboardModel(deps: .fake(api: api, clock: clock))
         model.host = host
         model.keyboardAppeared()
     }
@@ -113,9 +115,17 @@ final class FixModelTests: XCTestCase {
         model = nil
     }
 
-    func testLocalFixNeedsNoServerAndUndoPutsItBack() {
-        host.text = "can u send teh bill "
+    /// Types and lets the fingers settle, so a new Fix chip may show.
+    private func typeAndSettle(_ text: String) async {
+        host.text = text
         model.textChanged()
+        for _ in 0..<50 { await Task.yield() }
+        clock.advance(ChipTiming.settleMidWord.seconds)
+        for _ in 0..<50 { await Task.yield() }
+    }
+
+    func testLocalFixNeedsNoServerAndUndoPutsItBack() async {
+        await typeAndSettle("can u send teh bill ")
         XCTAssertEqual(model.fixPlan?.title, "Fix 2 typos")
         model.fix()
         XCTAssertEqual(host.text, "Can you send the bill?")
@@ -123,14 +133,13 @@ final class FixModelTests: XCTestCase {
         XCTAssertFalse(api.calls.contains("fix"))
         model.perform(.undo)
         XCTAssertEqual(host.text, "can u send teh bill ")
-        model.textChanged()
+        await typeAndSettle(host.text)
         XCTAssertNil(model.fixPlan, "Fix is not offered again for text the owner kept")
     }
 
     /// The word still being typed is left out of the chip, so the tap leaves it alone too.
-    func testTapAppliesExactlyWhatTheChipSaid() {
-        host.text = "can u send teh bill tomorow"
-        model.textChanged()
+    func testTapAppliesExactlyWhatTheChipSaid() async {
+        await typeAndSettle("can u send teh bill tomorow")
         let chip = try? XCTUnwrap(model.fixPlan)
         XCTAssertEqual(chip?.title, "Fix 2 typos")
         model.fix()
@@ -145,21 +154,20 @@ final class FixModelTests: XCTestCase {
         XCTAssertNil(model.fixPlan)
     }
 
-    func testFixGrammarInRewriteGoesToTheServerAndPreviewsFirst() async {
+    func testFixedGrammarIsOneRowOfTheRewriteListAndPreviewsFirst() async {
         let text = "The cut and color will take about two hours on Friday"
-        host.text = text
-        model.textChanged()
+        await typeAndSettle(text)
         XCTAssertNil(model.fixPlan, "no grammar chip in the bar")
-        api.writeReply = WriteResponse(text: "The cut and colour will take about two hours on Friday.", changed: true)
         model.toggleWrite()
-        model.fixGrammar()
-        for _ in 0..<500 where api.calls.filter({ $0 == "fix" }).isEmpty || model.writePanel == .busy("Checking the grammar\u{2026}") { await Task.yield() }
-        XCTAssertEqual(api.calls.filter { $0 == "fix" }.count, 1)
-        guard case .preview(let p) = model.writePanel else { return XCTFail("no preview: \(model.writePanel)") }
-        XCTAssertEqual(p.title, "Fix grammar")
-        XCTAssertEqual(host.text, text, "a preview does not change the message")
-        model.usePreview()
+        XCTAssertEqual(api.rewrites.last?.tones.last, "fix")
+        api.send(.fix, "The cut and colour will take about two hours on Friday.")
+        for _ in 0..<500 { if case .versions(let l) = model.writePanel, l.rows.last?.text != nil { break }; await Task.yield() }
+        guard case .versions(let l) = model.writePanel else { return XCTFail("no list: \(model.writePanel)") }
+        XCTAssertEqual(l.rows.last?.tone.title, "Fixed grammar")
+        XCTAssertEqual(host.text, text, "a version does not change the message until it is tapped")
+        model.useRewrite(.fix)
         XCTAssertEqual(host.text, "The cut and colour will take about two hours on Friday.")
         XCTAssertEqual(model.undo?.label, "Replaced \u{2713}")
+        XCTAssertEqual(model.lastWrite, "fix")
     }
 }

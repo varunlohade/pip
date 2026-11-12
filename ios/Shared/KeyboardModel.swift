@@ -50,9 +50,9 @@ enum BarState: Equatable {
     case error(String)
 }
 
-/// The one-tap rewrites in the Rewrite panel. The raw value is the server's tone name.
+/// The versions in the Rewrite list. The raw value is the server's name for each.
 enum RefineTone: String, CaseIterable, Identifiable {
-    case polite, shorter, professional, friendly, firmer
+    case polite, shorter, professional, friendly, firmer, fix
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -61,7 +61,39 @@ enum RefineTone: String, CaseIterable, Identifiable {
         case .professional: "More professional"
         case .friendly: "Friendlier"
         case .firmer: "Firmer"
+        case .fix: "Fixed grammar"
         }
+    }
+}
+
+/// One version in the Rewrite list. `stalled`: no answer in time; the row offers Retry.
+struct RewriteRow: Equatable, Identifiable {
+    enum Status: Equatable { case writing, ready(String), stalled }
+    let tone: RefineTone
+    var status: Status = .writing
+    /// Counts the asks for this row, so an older call's stall timer leaves a retried row alone.
+    var attempt = 0
+    var id: String { tone.rawValue }
+    var text: String? { if case .ready(let t) = status { t } else { nil } }
+}
+
+/// Every version of the paragraph before the cursor, filled in as each one arrives.
+struct RewriteList: Equatable {
+    /// What a tap replaces.
+    let original: String
+    /// What was sent, quoted at the top.
+    let text: String
+    var rows: [RewriteRow] = RefineTone.allCases.map { RewriteRow(tone: $0) }
+    /// The version a hold copied.
+    var copied: RefineTone?
+
+    mutating func set(_ tone: RefineTone, _ status: RewriteRow.Status) {
+        if let i = rows.firstIndex(where: { $0.tone == tone }) { rows[i].status = status }
+    }
+
+    /// The rows of one ask that are still writing show Retry.
+    mutating func stall(_ asked: [RefineTone: Int]) {
+        for i in rows.indices where rows[i].status == .writing && asked[rows[i].tone] == rows[i].attempt { rows[i].status = .stalled }
     }
 }
 
@@ -75,9 +107,10 @@ struct WritePreview: Equatable {
 
 enum WritePanel: Equatable {
     case menu
-    case busy(String)
+    case versions(RewriteList)
     case preview(WritePreview)
-    case message(String)
+    /// Nothing came back: one plain line and Retry.
+    case failed(String)
 }
 
 /// The last replacement, kept for a few seconds so one tap puts the old text back.
@@ -124,13 +157,13 @@ final class KeyboardModel: ObservableObject {
     @Published var paired = false
     @Published var lastLatencyMs: Int?
     /// Events, reminders and notes read from the typed text on the phone.
-    @Published var smart: [SmartChip] = []
+    @Published var smart: [SmartChip] = [] { didSet { noteChipsShown() } }
     /// The line after a smart chip was added, kept for the Undo window.
     @Published var added: SmartAdded?
     /// Nothing is typed, so the bar shows ready chips.
     @Published var fieldEmpty = true
     /// A meaning or an answer for what the last sentence asks ("what does btw mean"). See KeyboardModel+Explain.
-    @Published var explainOffer: ExplainOffer?
+    @Published var explainOffer: ExplainOffer? { didSet { noteChipsShown() } }
     /// The explain card or the visual panel, in place of the keys. Nil when the keys show.
     @Published var explainPanel: ExplainPanel?
     // Explain state, kept here because extensions cannot hold stored properties.
@@ -160,6 +193,11 @@ final class KeyboardModel: ObservableObject {
     private var suggest = SuggestPolicy()
     private var actions: [ActionShortcut] = ActionShortcut.defaults
     private var writeTask: Task<Void, Never>?
+    private var rewriteTasks: [Task<Void, Never>] = []
+    /// A version with no answer by then shows Retry. The whole list gives up at the timeout.
+    static let rewriteStall: Duration = .seconds(4)
+    static let rewriteTimeout: Duration = .seconds(8)
+    static var rewriteFailed: String { "Couldn't reach \(AppConfig.displayName). Tap Retry." }
     private var undoTask: Task<Void, Never>?
     private var smartTask: Task<Void, Never>?
     private var addedTask: Task<Void, Never>?
@@ -169,6 +207,16 @@ final class KeyboardModel: ObservableObject {
     private var serverSmart: (sentence: String, chips: [SmartChip])?
     /// The last text Fix returned or found clean, so the chip does not offer the same text twice.
     private var lastFixed = ""
+    private var fixTask: Task<Void, Never>?
+    /// No chip shows before this time: 10 s after ✕, 5 s after typing past a chip.
+    private var quietUntil: Date?
+    /// The text when the owner tapped ✕. No chip comes back while the field still holds it.
+    private var dismissedText: String?
+    /// When a chip first showed and how many words were typed then, for the typed-past rule.
+    private var chipSeen: (at: Date, words: Int)?
+    /// The copy the keyboard is offering and when it first saw it.
+    private var copiedSeen: (change: Int, at: Date)?
+    private var copiedTask: Task<Void, Never>?
     static let undoWindow: Duration = .seconds(5)
     private let log = Logger(subsystem: "com.orseliyas.pip", category: "keyboard")
     static let pasteTimeout: TimeInterval = 8
@@ -357,9 +405,38 @@ final class KeyboardModel: ObservableObject {
         reloadShortcuts()
         guard paired else { return }
         reloadSnapshot()
-        // hasStrings and changeCount do not trigger the paste prompt; only reading the string does.
+        // A new field starts clean, cooldowns too.
+        quietUntil = nil
+        dismissedText = nil
+        chipSeen = nil
+        offerCopied()
+    }
+
+    /// "Use copied message" for 3 minutes after the keyboard first saw the copy, and once: use, ✕, typing or the time ends it.
+    /// hasStrings and changeCount do not trigger the paste prompt; only reading the string does.
+    private func offerCopied() {
         let pasteboard = deps.pasteboard
-        copiedAvailable = pasteboard.hasStrings && pasteboard.changeCount != deps.store.lastPasteboardChange
+        let change = pasteboard.changeCount
+        guard pasteboard.hasStrings, change != deps.store.lastPasteboardChange else { copiedAvailable = false; return }
+        let now = deps.now()
+        if copiedSeen?.change != change { copiedSeen = (change, now) }
+        let left = (copiedSeen?.at ?? now).addingTimeInterval(ChipTiming.copiedLife).timeIntervalSince(now)
+        guard left > 0 else { endCopied(); return }
+        copiedAvailable = true
+        copiedTask?.cancel()
+        let sleep = deps.sleep
+        copiedTask = Task { [weak self] in
+            try? await sleep(.milliseconds(Int(left * 1000)))
+            guard !Task.isCancelled else { return }
+            self?.endCopied()
+        }
+    }
+
+    /// The copy is used up: it is not offered again.
+    private func endCopied() {
+        copiedTask?.cancel()
+        if let s = copiedSeen { deps.store.lastPasteboardChange = s.change }
+        copiedAvailable = false
     }
 
     /// What the app last wrote for the ready chips: today's appointments.
@@ -395,7 +472,7 @@ final class KeyboardModel: ObservableObject {
     func forgetMemory() {
         closeExplain()
         resetWriting()
-        for t in [suggestTask, smartTask, addedTask, explainTask] { t?.cancel() }
+        for t in [suggestTask, smartTask, addedTask, explainTask, fixTask, copiedTask] { t?.cancel() }
         explainTask = nil
         explainPending = nil
         explainCache = [:]
@@ -415,6 +492,10 @@ final class KeyboardModel: ObservableObject {
         lastSent = ""
         lastLatencyMs = nil
         copiedAvailable = false
+        copiedSeen = nil
+        quietUntil = nil
+        dismissedText = nil
+        chipSeen = nil
         bar = .idle
     }
 
@@ -466,25 +547,79 @@ final class KeyboardModel: ObservableObject {
         forgetIfAccountChanged()
         refreshAccess()
         updateAutoShift()
-        updateFixable()
+        let text = typed
+        typedPast(text)
+        let quiet = chipsQuiet(text)
+        updateFixable(quiet: quiet)
         if let u = undo, !(host?.contextBeforeInput ?? "").hasSuffix(u.replacement) { undo = nil }
         // The dictionary needs no pairing and no network, so a meaning shows even before pairing.
-        if !paired, suggestsWhileTyping { _ = updateExplain(typed) }
+        if !paired, suggestsWhileTyping { if quiet { clearExplainOffer() } else { updateExplain(text) } }
         guard paired, suggestsWhileTyping else { return }
         if case .working = bar { return }
-        let text = typed
         // An explain question is answered by the dictionary or /v1/explain, so it never also goes to /v1/suggest.
-        let explaining = updateExplain(text)
+        let explaining: Bool
+        if quiet { clearExplainOffer(); explaining = false } else { explaining = updateExplain(text) }
         let wasEmpty = fieldEmpty
         fieldEmpty = text.isEmpty
         // Empty again, as after a send: the ready chips read the app's latest snapshot.
         if text.isEmpty, !wasEmpty { reloadSnapshot() }
-        let clear = detectSmart(text)
+        let clear = detectSmart(text, quiet: quiet)
         guard text != lastSent else { return }
         suggestTask?.cancel()
         lastSent = text
         bar = .idle
-        if !explaining, let sentence = suggest.maybe(text, clear: clear) { requestSuggest(sentence, typed: text) }
+        // Typing ends the copied-text offer.
+        if !text.isEmpty, copiedAvailable { endCopied() }
+        if !quiet, !explaining, let sentence = suggest.maybe(text, clear: clear) { requestSuggest(sentence, typed: text) }
+    }
+
+    // MARK: chip life: ✕, cooldowns, typed past
+
+    /// True while no chip may show: the 10 s after ✕ (and the text it was tapped on), the 5 s after typing past a chip.
+    private func chipsQuiet(_ text: String) -> Bool {
+        if let until = quietUntil {
+            if deps.now() < until { return true }
+            quietUntil = nil
+        }
+        if let d = dismissedText {
+            if d == text { return true }
+            dismissedText = nil
+        }
+        return false
+    }
+
+    /// Two new words typed past a chip that showed for at least 1 s and was not used: no chip for 5 s.
+    private func typedPast(_ text: String) {
+        guard let seen = chipSeen else { return }
+        let now = deps.now()
+        guard now.timeIntervalSince(seen.at) >= ChipTiming.typedPastSeen,
+              ChipTiming.words(text) - seen.words >= ChipTiming.typedPastWords else { return }
+        quietUntil = now.addingTimeInterval(ChipTiming.typedPastQuiet)
+        clearChips()
+    }
+
+    /// Notes when a chip about the typing first shows, so typing on past it can be counted.
+    private func noteChipsShown() {
+        let visible = !smart.isEmpty || explainOffer != nil
+        if !visible { chipSeen = nil } else if chipSeen == nil { chipSeen = (deps.now(), ChipTiming.words(typed)) }
+    }
+
+    /// ✕ on the bar: every chip goes, none comes back for 10 s, and none while the text stays the same.
+    func dismissChips() {
+        host?.playClick()
+        quietUntil = deps.now().addingTimeInterval(ChipTiming.dismissQuiet)
+        dismissedText = typed
+        if copiedAvailable { endCopied() }
+        calmOffer = nil
+        clearChips()
+    }
+
+    private func clearChips() {
+        for t in [smartTask, fixTask, suggestTask] { t?.cancel() }
+        if !smart.isEmpty { smart = [] }
+        clearExplainOffer()
+        fixPlan = nil
+        chipSeen = nil
     }
 
     /// Tap on "Use copied message". Reading may show the system paste prompt once, so the read runs
@@ -526,22 +661,34 @@ final class KeyboardModel: ObservableObject {
 
     var nextUp: Appointment? { AppointmentRules.nextUp(appointments, now: deps.now()) }
 
-    /// On every pause, on the phone: events, reminders and notes in the typed text. True when something clear was found.
-    private func detectSmart(_ text: String) -> Bool {
+    /// On every key, on the phone: events, reminders and notes in the typed text. True when something clear was found.
+    /// A chip that no longer applies leaves on this key, and one still showing takes the new reading in place.
+    /// Only a new chip waits for the fingers to settle.
+    private func detectSmart(_ text: String, quiet: Bool) -> Bool {
         smartTask?.cancel()
         if text.isEmpty { smart = []; smartDone = []; serverSmart = nil; return false }
         let found = SmartDetect.detect(text, now: deps.now())
-        let kept = serverSmart.flatMap { s in SuggestPolicy.sentenceKey(SmartDetect.lastSentence(text)) == s.sentence ? s.chips : nil } ?? []
-        let shown = Array((found + kept.filter { k in !found.contains { $0.id == k.id } }).filter { !smartDone.contains($0) }.prefix(SmartDetect.maxChips))
+        guard !quiet else { if !smart.isEmpty { smart = [] }; return !found.isEmpty }
+        let shown = smartChips(text, found: found)
+        let stay = shown.filter { s in smart.contains { $0.id == s.id } }
+        if stay != smart { smart = stay }
         guard shown != smart else { return !found.isEmpty }
         let sleep = deps.sleep
+        let wait = ChipTiming.settle(after: host?.contextBeforeInput ?? "")
         smartTask = Task { [weak self] in
-            try? await sleep(SuggestPolicy.debounce)
+            try? await sleep(wait)
             guard let self, !Task.isCancelled else { return }
             self.smart = shown
             self.recordCaught(shown)
         }
         return !found.isEmpty
+    }
+
+    /// The chips the text holds now: the phone's reading, then the server's for this sentence while it is typed on.
+    private func smartChips(_ text: String, found: [SmartChip]) -> [SmartChip] {
+        let sentence = SmartDetect.lastSentence(text)
+        let kept = serverSmart.flatMap { s in SuggestPolicy.continues(sentence, asked: s.sentence) ? s.chips : nil } ?? []
+        return Array((found + kept.filter { k in !found.contains { $0.id == k.id } }).filter { !smartDone.contains($0) }.prefix(SmartDetect.maxChips))
     }
 
     /// The sentence had no clear match on the phone; the server's device chips may answer it.
@@ -557,7 +704,7 @@ final class KeyboardModel: ObservableObject {
             let device = res.chips.filter { Self.deviceKinds.contains($0.kind) }
             guard !device.isEmpty, self.typed == askedFor else { return }
             let more = device.compactMap { Self.smartChip($0, sentence: sentence, now: self.deps.now()) }.filter { !self.smartDone.contains($0) }
-            self.serverSmart = (SuggestPolicy.sentenceKey(sentence), more)
+            self.serverSmart = (sentence, more)
             self.smart = Array((self.smart + more.filter { m in !self.smart.contains { $0.id == m.id } }).prefix(SmartDetect.maxChips))
             let ms = Int((ContinuousClock.now - typedAt) / .milliseconds(1))
             self.lastLatencyMs = ms
@@ -602,10 +749,20 @@ final class KeyboardModel: ObservableObject {
         return (original.trimmingCharacters(in: .whitespaces), original)
     }
 
-    private func updateFixable() {
+    /// Fix leaves at once when the text is clean. Once shown it follows the text with no pause, so it never blinks.
+    /// A new Fix waits for the fingers to settle: 0.4 s, or 1.0 s in the middle of a word.
+    private func updateFixable(quiet: Bool = false) {
+        fixTask?.cancel()
         let d = draft
-        guard paired, d.text != lastFixed, d.text.split(separator: " ").count >= 3 else { fixPlan = nil; return }
-        fixPlan = localFix(d)
+        guard paired, !quiet, d.text != lastFixed, d.text.split(separator: " ").count >= 3, let plan = localFix(d) else { fixPlan = nil; return }
+        if fixPlan != nil { if fixPlan != plan { fixPlan = plan }; return }
+        let sleep = deps.sleep
+        let wait = ChipTiming.settle(after: host?.contextBeforeInput ?? "")
+        fixTask = Task { [weak self] in
+            try? await sleep(wait)
+            guard let self, !Task.isCancelled else { return }
+            self.fixPlan = plan
+        }
     }
 
     /// The on-device fix for the draft. The chip and its tap both use this, so the tap does exactly what the chip said.
@@ -677,57 +834,123 @@ final class KeyboardModel: ObservableObject {
         }
     }
 
+    /// The Rewrite button: the panel opens and every version starts at once.
     func toggleWrite() {
         host?.playClick()
         notesOpen = false
-        writeTask?.cancel()
+        cancelRewrites()
         writePanel = .menu
         writeOpen.toggle()
+        if writeOpen { startRewrites() }
     }
 
     var canWrite: Bool { !draft.text.isEmpty }
 
-    func refine(_ tone: RefineTone) {
+    /// Asks for `only` (all versions by default) in one streamed call. Each row fills the moment its version arrives.
+    /// A row still writing after 4 s shows Retry; after 8 s the call stops.
+    func startRewrites(_ only: [RefineTone]? = nil) {
         let d = draft
         guard !d.text.isEmpty else { return }
-        runPanel("Writing\u{2026}") { api in
-            let res = try await api.refine(d.text, tone: tone.rawValue)
-            return .preview(WritePreview(kind: "refine", title: tone.title, original: d.original, text: res.text))
+        var list = RewriteList(original: d.original, text: d.text)
+        if only != nil, case .versions(let shown) = writePanel, shown.original == d.original { list = shown }
+        let tones = only ?? RefineTone.allCases
+        var asked: [RefineTone: Int] = [:]
+        for i in list.rows.indices where tones.contains(list.rows[i].tone) {
+            list.rows[i].status = .writing
+            list.rows[i].attempt += 1
+            asked[list.rows[i].tone] = list.rows[i].attempt
         }
-    }
-
-    /// Tap on Fix grammar in the Rewrite panel: the server fixes grammar and spelling, and the result shows first.
-    func fixGrammar() {
-        let d = draft
-        guard !d.text.isEmpty else { return }
-        runPanel("Checking the grammar\u{2026}") { api in
-            let res = try await api.fix(d.text)
-            guard res.text != d.text else { return .message("The grammar looks good \u{2713}") }
-            return .preview(WritePreview(kind: "fix", title: "Fix grammar", original: d.original, text: res.text))
-        }
-    }
-
-    private func runPanel(_ label: String, _ work: @escaping (KeyboardAPI) async throws -> WritePanel) {
-        host?.playClick()
-        writeTask?.cancel()
-        writePanel = .busy(label)
-        writeTask = Task { [weak self] in
+        writePanel = .versions(list)
+        let api = deps.api()
+        let sleep = deps.sleep
+        let started = ContinuousClock.now
+        let batch = TaskBatch()
+        let lines = api.rewrite(d.text, tones: tones.map(\.rawValue))
+        let stream = Task { [weak self] in
             do {
-                guard let api = self?.deps.api() else { return }
-                let next = try await work(api)
-                guard let self, !Task.isCancelled else { return }
-                self.writePanel = next
-            } catch {
-                guard let self, !Task.isCancelled else { return }
-                self.writePanel = .message("That did not work. Try again.")
-            }
+                for try await line in lines {
+                    guard let self, !Task.isCancelled else { return }
+                    self.receive(line, original: d.original, started: started)
+                }
+            } catch {}
+            guard let self, !Task.isCancelled else { return }
+            batch.cancel()
+            self.settleRewrites(asked, original: d.original)
         }
+        let stall = Task { [weak self] in
+            try? await sleep(Self.rewriteStall)
+            guard let self, !Task.isCancelled else { return }
+            self.updateRewrites(d.original) { $0.stall(asked) }
+        }
+        let timeout = Task { [weak self] in
+            try? await sleep(Self.rewriteTimeout)
+            guard let self, !Task.isCancelled else { return }
+            batch.cancel()
+            self.settleRewrites(asked, original: d.original)
+        }
+        batch.tasks = [stream, stall, timeout]
+        rewriteTasks += batch.tasks
+    }
+
+    /// Retry on one row, or on the whole panel when nothing came back.
+    func retryRewrite(_ tone: RefineTone? = nil) {
+        host?.playClick()
+        if let tone, case .versions = writePanel { startRewrites([tone]) } else { cancelRewrites(); startRewrites() }
+    }
+
+    private func receive(_ line: RewriteLine, original: String, started: ContinuousClock.Instant) {
+        guard let tone = line.tone.flatMap(RefineTone.init(rawValue:)) else { return }
+        updateRewrites(original) { l in
+            if l.rows.allSatisfy({ $0.text == nil }), line.text != nil {
+                let ms = Int((ContinuousClock.now - started) / .milliseconds(1))
+                log.notice("PIP_TIMING tap_to_first_text_ms=\(ms, privacy: .public)")
+            }
+            l.set(tone, line.text.map { .ready($0) } ?? .stalled)
+        }
+    }
+
+    /// The call ended: rows still writing show Retry. With no version at all, the panel says so once and offers Retry.
+    private func settleRewrites(_ asked: [RefineTone: Int], original: String) {
+        updateRewrites(original) { $0.stall(asked) }
+        if case .versions(let l) = writePanel, l.original == original, l.rows.allSatisfy({ $0.text == nil }) { writePanel = .failed(Self.rewriteFailed) }
+    }
+
+    private func updateRewrites(_ original: String, _ change: (inout RewriteList) -> Void) {
+        guard case .versions(var l) = writePanel, l.original == original else { return }
+        change(&l)
+        writePanel = .versions(l)
+    }
+
+    private func cancelRewrites() {
+        rewriteTasks.forEach { $0.cancel() }
+        rewriteTasks = []
+    }
+
+    /// Tap on a version: it replaces the paragraph that was read, if the field still holds it.
+    func useRewrite(_ tone: RefineTone) {
+        guard case .versions(let l) = writePanel, let text = l.rows.first(where: { $0.tone == tone })?.text else { return }
+        host?.playClick()
+        cancelRewrites()
+        writeOpen = false
+        writePanel = .menu
+        apply(WritePreview(kind: tone == .fix ? "fix" : "refine", title: tone.title, original: l.original, text: text), label: "Replaced \u{2713}")
+    }
+
+    /// Hold on a version: it is copied and the list stays open. The keyboard's own copy is never offered back as "Use copied message".
+    func copyRewrite(_ tone: RefineTone) {
+        guard case .versions(var l) = writePanel, let text = l.rows.first(where: { $0.tone == tone })?.text else { return }
+        deps.pasteboard.setText(text)
+        deps.store.lastPasteboardChange = deps.pasteboard.changeCount
+        l.copied = tone
+        writePanel = .versions(l)
     }
 
     func backToWriteMenu() {
         host?.playClick()
         writeTask?.cancel()
+        cancelRewrites()
         writePanel = .menu
+        writeOpen = false
     }
 
     /// Tap on the preview: it replaces the text before the cursor.
@@ -763,6 +986,7 @@ final class KeyboardModel: ObservableObject {
     /// A clean slate: between intro scenes, and when the keyboard goes away.
     func resetWriting() {
         writeTask?.cancel()
+        cancelRewrites()
         undoTask?.cancel()
         writeOpen = false
         writePanel = .menu
@@ -834,6 +1058,12 @@ final class KeyboardModel: ObservableObject {
 
     /// One tap adds it: the chip is the confirm. The bar then shows what was added, with Undo for a few seconds.
     func tapSmart(_ chip: SmartChip) {
+        // The tap reads the text again: a chip the text no longer holds does nothing and goes.
+        let text = typed
+        guard smartChips(text, found: SmartDetect.detect(text, now: deps.now())).contains(chip) else {
+            smart.removeAll { $0 == chip }
+            return
+        }
         guard deps.writer.access(chip.place, hasFullAccess: hasFullAccess) == .ready else { return }
         host?.playClick()
         let item: SmartAdded.Item
@@ -899,4 +1129,11 @@ final class KeyboardModel: ObservableObject {
     private func showToday() {
         bar = .done(appointments.isEmpty ? "Nothing on your calendar today" : appointments.map { "\($0.time) \($0.title)" }.joined(separator: " \u{00B7} "))
     }
+}
+
+/// Tasks that stop together: the stream, its stall timer and its timeout.
+@MainActor
+private final class TaskBatch {
+    var tasks: [Task<Void, Never>] = []
+    func cancel() { tasks.forEach { $0.cancel() } }
 }

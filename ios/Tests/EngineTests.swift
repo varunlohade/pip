@@ -2,13 +2,23 @@ import XCTest
 @testable import Pip
 
 final class SuggestPolicyTests: XCTestCase {
-    func testActionishSentenceAsksOnce() {
+    func testActionishSentenceAsksOnceThenAgainWhenItGrowsTwoWords() {
         var p = SuggestPolicy()
         let text = "can we do Ana's thing Friday"
         XCTAssertEqual(p.maybe(text, clear: false), text)
         p.markAsked(text)
-        XCTAssertNil(p.maybe(text, clear: false), "a sentence goes once")
-        XCTAssertNil(p.maybe(text + " after work", clear: false), "typing on in the same sentence does not ask again")
+        XCTAssertNil(p.maybe(text, clear: false), "a sentence version goes once")
+        XCTAssertNil(p.maybe(text + " after", clear: false), "one more word is not enough")
+        XCTAssertEqual(p.maybe(text + " after work", clear: false), text + " after work", "two more words ask again, with the whole sentence")
+        p.markAsked(text + " after work")
+        XCTAssertNil(p.maybe(text + " after work", clear: false))
+        XCTAssertEqual(p.maybe("can we do Ana's thing Monday", clear: false), "can we do Ana's thing Monday", "an edited sentence is a new version")
+    }
+
+    func testShortSentencesNeverAsk() {
+        XCTAssertNil(SuggestPolicy().maybe("call Ana 5", clear: false), "under 12 characters")
+        XCTAssertNil(SuggestPolicy().maybe("appointment tomorrow?", clear: false), "under 3 words")
+        XCTAssertEqual(SuggestPolicy().maybe("call Ana at 5pm", clear: false), "call Ana at 5pm")
     }
 
     func testAClearPhoneMatchAsksNothing() {
@@ -43,8 +53,9 @@ final class SuggestPolicyTests: XCTestCase {
         XCTAssertNil(SuggestPolicy().maybe("token is aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3f ok", clear: false))
     }
 
-    func testSentenceKeyIsTheFirstThreeWords() {
-        XCTAssertEqual(SuggestPolicy.sentenceKey("Can we do Ana's thing"), "can we do")
+    func testAServerChipFollowsItsSentenceWhileItIsTypedOn() {
+        XCTAssertTrue(SuggestPolicy.continues("can we do Ana's thing Friday at 5", asked: "can we do Ana's thing"))
+        XCTAssertFalse(SuggestPolicy.continues("can we do Bo's thing", asked: "can we do Ana's thing"))
     }
 }
 

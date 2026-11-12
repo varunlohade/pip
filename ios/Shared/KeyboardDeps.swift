@@ -6,7 +6,8 @@ import UniformTypeIdentifiers
 protocol KeyboardAPI {
     func suggest(_ text: String, context: String?) async throws -> SuggestResponse
     func fix(_ text: String) async throws -> WriteResponse
-    func refine(_ text: String, tone: String) async throws -> WriteResponse
+    /// The Rewrite list: one line per version as it arrives. `tones` are RefineTone raw values.
+    func rewrite(_ text: String, tones: [String]) -> AsyncThrowingStream<RewriteLine, Error>
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse
     func explain(_ text: String) async throws -> ExplainResponse
     func explainVisual(_ topic: String) async throws -> Data
@@ -80,10 +81,13 @@ protocol Pasteboard: AnyObject {
     var string: String? { get }
     /// Puts an image on the pasteboard, so it pastes into a chat. Needs Full Access in the keyboard.
     func setPNG(_ png: Data)
+    /// A rewrite the owner held to copy.
+    func setText(_ text: String)
 }
 
 extension UIPasteboard: Pasteboard {
     func setPNG(_ png: Data) { setData(png, forPasteboardType: UTType.png.identifier) }
+    func setText(_ text: String) { string = text }
 }
 
 /// Everything KeyboardModel reaches outside itself, except the text host.

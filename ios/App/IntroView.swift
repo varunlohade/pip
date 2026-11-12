@@ -10,7 +10,12 @@ struct DemoAPI: KeyboardAPI {
 
     func suggest(_ text: String, context: String?) async throws -> SuggestResponse { SuggestResponse(chips: [], intent: "none", timings: nil) }
     func fix(_ text: String) async throws -> WriteResponse { WriteResponse(text: fixed, changed: true) }
-    func refine(_ text: String, tone: String) async throws -> WriteResponse { WriteResponse(text: text, changed: false) }
+    func rewrite(_ text: String, tones: [String]) -> AsyncThrowingStream<RewriteLine, Error> {
+        AsyncThrowingStream { cont in
+            for t in tones { cont.yield(RewriteLine(tone: t, text: t == RefineTone.fix.rawValue && !fixed.isEmpty ? fixed : text)) }
+            cont.finish()
+        }
+    }
     func toneCheck(draft: String, client: String?) async throws -> ToneResponse { ToneResponse(tone: "ok", calm: nil) }
     func explain(_ text: String) async throws -> ExplainResponse { throw APIError.message("no explain in the intro") }
     func explainVisual(_ topic: String) async throws -> Data { throw APIError.message("no explain in the intro") }
@@ -50,6 +55,7 @@ final class DemoPasteboard: Pasteboard {
     let changeCount = 0
     let string: String? = nil
     func setPNG(_ png: Data) {}
+    func setText(_ text: String) {}
 }
 
 /// One intro scene. To add a feature, add one value to `all`.

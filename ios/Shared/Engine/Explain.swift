@@ -57,7 +57,7 @@ enum Explain {
         if let x = capture(#"^(.+?) meaning$"#, s), let t = subject(x, maxWords: 2) {
             return Ask(kind: .term, subject: t, question: question, askServerOnMiss: !t.contains(" "))
         }
-        // Topics: "explain the water cycle", "eli5 how vaccines work", "why is the sky blue".
+        // Topics: "explain the water cycle", "eli5 how vaccines work", "explain why the sky is blue".
         for pattern in [
             #"^(?:eli5|explain like i'?m (?:5|five))[:,]? (.+)$"#,
             #"^explain(?: to me)?[:,]? (.+?)(?: to me)?$"#,
@@ -86,12 +86,14 @@ enum Explain {
         return s.trimmingCharacters(in: .whitespaces)
     }
 
-    /// "how does X work" asks about X; "why is the sky blue" asks the whole question. Bare "how X works" only after "explain".
+    /// "how does X work" asks about X; "explain why the sky is blue" asks the whole question. Bare "how X works" and any "why" only after "explain".
     private static func howOrWhy(_ s: String, question: String, needsDoes: Bool) -> Ask? {
         if let x = capture(needsDoes ? #"^how (?:does|do) (.+) work$"# : #"^how (?:(?:does|do) )?(.+?) works?$"#, s) {
             return subject(x, maxWords: 6, topic: true).map { Ask(kind: .topic, subject: $0, question: question) }
         }
-        if let x = capture(#"^why (?:is|are|do|does) (.+)$"#, s), subject(x, maxWords: 6, topic: true) != nil {
+        // A bare "why is the bus late" is everyday chat, not a question about a term. Only "explain why ..." asks.
+        guard !needsDoes else { return nil }
+        if let x = capture(#"^why (?:(?:is|are|do|does) )?(.+)$"#, s), subject(x, maxWords: 6, topic: true) != nil {
             return Ask(kind: .topic, subject: s, question: question)
         }
         return nil

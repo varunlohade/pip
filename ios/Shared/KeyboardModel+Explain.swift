@@ -138,7 +138,7 @@ extension KeyboardModel {
         return true
     }
 
-    private func clearExplainOffer() {
+    func clearExplainOffer() {
         explainTask?.cancel()
         explainPending = nil
         if explainOffer != nil { explainOffer = nil }
@@ -194,13 +194,21 @@ extension KeyboardModel {
         return BarItems.Item(id: "explain", title: o.line, action: .explain, trigger: o.subject)
     }
 
+    /// The offer read again from the text at tap time. A chip the text no longer asks for does nothing and goes.
+    private func currentExplainOffer() -> ExplainOffer? {
+        guard let shown = explainOffer else { return nil }
+        updateExplain(typed)
+        guard let now = explainOffer, now.subject == shown.subject, now.learnedKind == shown.learnedKind else { return nil }
+        return now
+    }
+
     var visualOpen: Bool { if case .visual = explainPanel { return true }; return false }
 
     /// The keyboard grows while the visual panel is open, so the drawing has room.
     var keyboardHeight: CGFloat { visualOpen ? Theme.SystemKeyboard.visualHeight : Theme.SystemKeyboard.height }
 
     func openExplainCard() {
-        guard let o = explainOffer else { return }
+        guard let o = currentExplainOffer() else { return }
         if case .calc(let a) = o { insertCalc(a); return }
         host?.playClick()
         notesOpen = false
@@ -222,7 +230,7 @@ extension KeyboardModel {
 
     /// The sky chip: a meaning or an answer goes straight into the message, like a suggestion; a chart opens its drawing.
     func tapExplainChip() {
-        guard let o = explainOffer else { return }
+        guard let o = currentExplainOffer() else { return }
         if case .calc(let a) = o { insertCalc(a); return }
         if case .chart = o { openExplainCard(); return }
         deps.store.recordLearned(Learned(subject: o.subject, line: o.line, kind: o.learnedKind, date: deps.now()))

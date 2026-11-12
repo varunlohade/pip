@@ -118,3 +118,77 @@ test('write output schemas: size guard, cleaning, tone values', () => {
   assert.deepEqual(ToneSchema.parse({ tone: 'upset', calm: null }), { tone: 'ok', calm: null });
   assert.throws(() => ToneSchema.parse({ tone: 'flirty', calm: 'hey' }));
 });
+
+/** Reads an NDJSON reply line by line, with the time each line arrived. */
+async function lines(res: Response) {
+  const t0 = performance.now();
+  const out: { at: number; line: any }[] = [];
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += value;
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      out.push({ at: performance.now() - t0, line: JSON.parse(buf.slice(0, i)) });
+      buf = buf.slice(i + 1);
+    }
+  }
+  return out;
+}
+
+test('write/rewrite: streams every version as it is ready; a slow one comes last and does not hold the others', async () => {
+  const { call, device, aiCalls } = setup({ write: 'Could you pay by Friday, please?', rewriteMs: { polite: 300, shorter: 10 } });
+  const { token } = device();
+  const res = await call(token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday' });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get('content-type') ?? '', /ndjson/);
+  const got = await lines(res);
+  const versions = got.filter((g) => g.line.tone);
+  assert.deepEqual(versions.map((g) => g.line.tone).sort(), ['firmer', 'fix', 'friendly', 'polite', 'professional', 'shorter']);
+  assert.ok(versions.every((g) => g.line.text === 'Could you pay by Friday, please?'));
+  assert.equal(versions.at(-1)!.line.tone, 'polite', 'the slow version comes last');
+  assert.ok(versions[0].at < 150, `first version after ${versions[0].at} ms`);
+  assert.ok(versions.at(-1)!.at >= 250, 'the slow one really waited');
+  assert.equal(got.at(-1)!.line.done, true);
+  assert.equal(aiCalls.length, 6, 'one model call per version');
+});
+
+test('write/rewrite: a stalled version is skipped after the stall limit; the rest still arrive', async () => {
+  const before = config.llm.rewriteStallMs;
+  config.llm.rewriteStallMs = 200;
+  try {
+    const { call, device } = setup({ rewriteMs: { fix: Infinity } });
+    const { token } = device();
+    const t = performance.now();
+    const got = await lines(await call(token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday' }));
+    const ms = performance.now() - t;
+    const fix = got.find((g) => g.line.tone === 'fix')!;
+    assert.deepEqual(fix.line, { tone: 'fix', error: 'stalled' });
+    assert.ok(fix.at >= 190 && fix.at < 600, `stall skipped after ${fix.at} ms`);
+    assert.equal(got.filter((g) => g.line.text).length, 5);
+    assert.equal(got.at(-1)!.line.done, true);
+    assert.ok(ms < 800, `whole reply took ${ms} ms`);
+  } finally {
+    config.llm.rewriteStallMs = before;
+  }
+});
+
+test('write/rewrite: Retry asks only the named versions; bad tones, no tap and model errors behave', async () => {
+  const { call, device, aiCalls } = setup();
+  const { token } = device();
+  const got = await lines(await call(token, 'POST', '/v1/write/rewrite', { text: 'pay me by friday', tones: ['fix', 'polite'] }));
+  assert.deepEqual(got.filter((g) => g.line.tone).map((g) => g.line.tone).sort(), ['fix', 'polite']);
+  assert.equal(aiCalls.length, 2);
+  for (const b of [{ text: 'hi', tones: [] }, { text: 'hi', tones: ['flirty'] }, { text: '  ' }, { text: 'hi', tone: 'polite' }]) {
+    assert.equal((await call(token, 'POST', '/v1/write/rewrite', b)).status, 400, JSON.stringify(b));
+  }
+  assert.equal((await call(token, 'POST', '/v1/write/rewrite', { text: 'hi' }, { 'X-User-Action': '' })).status, 428);
+  const bad = setup({ write: new Error('boom "secret client text"') });
+  const d = bad.device();
+  const res = await bad.call(d.token, 'POST', '/v1/write/rewrite', { text: 'secret client text', tones: ['shorter'] });
+  const body = await res.text();
+  assert.ok(!body.includes('secret'));
+  assert.deepEqual(body.trim().split('\n').map((l) => JSON.parse(l)).filter((l) => l.tone), [{ tone: 'shorter', error: 'failed' }]);
+});

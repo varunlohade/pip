@@ -1,34 +1,49 @@
 import Foundation
 
-/// When typed text goes to /v1/suggest. Only an action-ish sentence the phone could not read goes, once.
+/// When typed text goes to /v1/suggest. Only an action-ish sentence the phone could not read goes, once per version.
 ///
 /// Pure: the caller hands in the text. The only state is the sentences already sent.
 struct SuggestPolicy {
     /// Shortcuts start with this. They run on the phone and never go to the server.
     static let shortcutPrefix = ";"
-    static let debounce = AppConfig.suggestDebounce
+    /// The server is asked only after the fingers stop this long.
+    static let debounce: Duration = .milliseconds(700)
+    /// A real sentence: at least this many characters and words.
+    static let minChars = 12
+    static let minWords = 3
+    /// A sentence already asked goes again once it grows by this many words.
+    static let regrowWords = 2
 
-    /// Sentences already sent, by their first words. Each goes once.
-    private(set) var askedSentences: Set<String> = []
+    /// Sentences already sent, as their lowercased words.
+    private(set) var asked: [[String]] = []
 
     init() {}
 
     /// Text with action-ish signals but no clear on-device match ("can we do Ana's thing Friday"):
-    /// the last sentence goes to the server once, after the pause. Nil for plain chat, a clear match, a secret, or a sentence already sent.
+    /// the last sentence goes to the server after the pause. Nil for plain chat, a short sentence, a clear match, a secret,
+    /// or a sentence already sent that has not grown by `regrowWords`.
     func maybe(_ typed: String, clear: Bool) -> String? {
-        guard !clear, !typed.isEmpty, !typed.hasPrefix(Self.shortcutPrefix), SecretScan.scan(typed) == .clean, SmartDetect.maybe(typed) else { return nil }
+        guard !clear, !typed.isEmpty, !typed.hasPrefix(Self.shortcutPrefix), SecretScan.scan(typed) == .clean else { return nil }
         let sentence = SmartDetect.lastSentence(typed)
-        return askedSentences.contains(Self.sentenceKey(sentence)) ? nil : sentence
+        let words = Self.words(sentence)
+        guard sentence.count >= Self.minChars, words.count >= Self.minWords, SmartDetect.maybe(sentence) else { return nil }
+        let covered = asked.contains { a in words.starts(with: a) && words.count - a.count < Self.regrowWords }
+        return covered || asked.contains(words) ? nil : sentence
     }
 
     /// Called when the request really goes out, after the pause.
     mutating func markAsked(_ sentence: String) {
-        askedSentences.insert(Self.sentenceKey(sentence))
+        asked.append(Self.words(sentence))
     }
 
-    /// A sentence is known by its first three words, so typing on in the same sentence does not ask again.
-    static func sentenceKey(_ sentence: String) -> String {
-        sentence.lowercased().split(whereSeparator: \.isWhitespace).prefix(3).joined(separator: " ")
+    static func words(_ sentence: String) -> [String] {
+        sentence.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    /// True while `sentence` is `asked` or that sentence typed on: a server chip for `asked` still applies.
+    static func continues(_ sentence: String, asked: String) -> Bool {
+        let a = words(asked)
+        return !a.isEmpty && words(sentence).starts(with: a)
     }
 }
 
