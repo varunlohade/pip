@@ -6,6 +6,8 @@ Private AI runs on NEAR AI Cloud. Payments run on NEAR, with keys held on your p
 
 Built for NEAR HACKATHON. The repo started on 2026-11-12, inside the hackathon window.
 
+**Demo video (2 min): https://x.com/thatasssixr/status/2121687953751576844**
+
 ## For judges: a 2-minute check
 
 No keys and no wallet needed:
