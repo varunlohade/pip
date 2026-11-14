@@ -44,6 +44,9 @@ struct KeyboardHeartbeat: Codable, Equatable {
     /// "ok: pay" or "failed: timed out".
     var lastCall: String?
     var lastCallAt: Date?
+    /// The last Face ID failure in the keyboard, such as "Face ID: LAError -1004 notInteractive". Never a PIN.
+    var payAuth: String?
+    var payAuthAt: Date?
 
     static var thisBuild: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"

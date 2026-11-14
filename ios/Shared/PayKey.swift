@@ -12,8 +12,51 @@ enum PayKey {
 enum SignResult: Equatable { case signed(Data), denied, unavailable }
 
 /// One Face ID for one approval. `.ready` signs 32-byte hashes with the key read by that Face ID; the key lives only as long as
-/// the closure, which the approval drops when it ends.
-enum PaySession { case ready((Data) -> Data?), denied, unavailable }
+/// the closure, which the approval drops when it ends. `.failed` says why, for the card and the keyboard status screen.
+enum PaySession { case ready((Data) -> Data?), failed(PayAuthIssue) }
+
+/// Why Face ID did not give the key: the exact LocalAuthentication or Keychain code, never a secret.
+struct PayAuthIssue: Equatable {
+    /// "LAError -1004 notInteractive" or "OSStatus -25308".
+    let code: String
+    /// The owner said no (cancel, or a face that did not match).
+    let declined: Bool
+
+    init(status: OSStatus, la: Int?) {
+        if let la {
+            code = "LAError \(la) \(Self.name(la))"
+            declined = [LAError.userCancel.rawValue, LAError.authenticationFailed.rawValue].contains(la)
+        } else {
+            code = "OSStatus \(status)"
+            declined = [errSecUserCanceled, errSecAuthFailed].contains(status)
+        }
+    }
+
+    static func name(_ la: Int) -> String {
+        switch LAError.Code(rawValue: la) {
+        case .authenticationFailed?: "authenticationFailed"
+        case .userCancel?: "userCancel"
+        case .userFallback?: "userFallback"
+        case .systemCancel?: "systemCancel"
+        case .passcodeNotSet?: "passcodeNotSet"
+        case .appCancel?: "appCancel"
+        case .invalidContext?: "invalidContext"
+        case .notInteractive?: "notInteractive"
+        case .biometryNotAvailable?: "biometryNotAvailable"
+        case .biometryNotEnrolled?: "biometryNotEnrolled"
+        case .biometryLockout?: "biometryLockout"
+        default: "other"
+        }
+    }
+}
+
+/// One Face ID read of the key bytes. `la` is the LAError code when Face ID itself failed.
+struct PayKeyRead {
+    var raw: Data?
+    var status: OSStatus
+    var la: Int? = nil
+    var issue: PayAuthIssue { PayAuthIssue(status: status, la: la) }
+}
 
 /// Signs the 32-byte transaction hash after Face ID. The app and the keyboard share one key (see PayKeychain).
 protocol PaySigner {
@@ -27,8 +70,8 @@ protocol PaySigner {
 /// Where the raw key bytes live. PayKeychain is the real one; tests pass memory.
 protocol PayKeyStorage {
     func save(_ raw: Data) -> OSStatus
-    /// Asks for Face ID. Nil with the reason when the owner cancels or the phone cannot ask.
-    func load(prompt: String) -> (Data?, OSStatus)
+    /// Asks for Face ID. No bytes, with the reason, when the owner cancels or the phone cannot ask.
+    func load(prompt: String) async -> PayKeyRead
     func delete()
 }
 
@@ -52,9 +95,9 @@ struct PayKeyVault: PaySigner {
 
     func sign(_ hash: Data, prompt: String) async -> SignResult {
         guard hash.count == 32, let id = accountID() else { return .unavailable }
-        let (raw, status) = storage.load(prompt: prompt)
-        guard let raw, let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
-            return [errSecUserCanceled, errSecAuthFailed].contains(status) ? .denied : .unavailable
+        let read = await storage.load(prompt: prompt)
+        guard let raw = read.raw, let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
+            return read.issue.declined ? .denied : .unavailable
         }
         // The App Group copy of the public key must belong to this private key.
         guard PayKey.accountID(key.publicKey) == id, let sig = try? key.signature(for: hash) else { return .unavailable }
@@ -62,13 +105,17 @@ struct PayKeyVault: PaySigner {
     }
 
     func session(prompt: String) async -> PaySession {
-        guard let id = accountID() else { return .unavailable }
-        let (raw, status) = storage.load(prompt: prompt)
-        guard let raw, let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
-            return [errSecUserCanceled, errSecAuthFailed].contains(status) ? .denied : .unavailable
-        }
-        guard PayKey.accountID(key.publicKey) == id else { return .unavailable }
+        guard let id = accountID() else { return .failed(PayAuthIssue(status: errSecItemNotFound, la: nil)) }
+        let read = await storage.load(prompt: prompt)
+        guard let raw = read.raw, let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else { return .failed(read.issue) }
+        guard PayKey.accountID(key.publicKey) == id else { return .failed(PayAuthIssue(status: errSecDecode, la: nil)) }
         return .ready { hash in hash.count == 32 ? try? key.signature(for: hash) : nil }
+    }
+
+    /// The app only: Face ID, then the raw key bytes, to seal them under a new payment PIN.
+    func rawKey(prompt: String) async -> PayKeyRead {
+        guard accountID() != nil else { return PayKeyRead(raw: nil, status: errSecItemNotFound) }
+        return await storage.load(prompt: prompt)
     }
 
     func forget() {
@@ -102,16 +149,26 @@ struct PayKeychain: PayKeyStorage {
         return SecItemAdd(q as CFDictionary, nil)
     }
 
-    func load(prompt: String) -> (Data?, OSStatus) {
+    /// Face ID through LocalAuthentication first, so a failure has its exact LAError code; then the Keychain read reuses that
+    /// evaluated context, with no second sheet.
+    func load(prompt: String) async -> PayKeyRead {
         let ctx = LAContext()
         ctx.localizedReason = prompt
+        ctx.localizedFallbackTitle = ""
+        do {
+            guard try await ctx.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: prompt) else {
+                return PayKeyRead(raw: nil, status: errSecAuthFailed)
+            }
+        } catch {
+            return PayKeyRead(raw: nil, status: errSecAuthFailed, la: (error as NSError).code)
+        }
         var q = query()
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         q[kSecUseAuthenticationContext as String] = ctx
         var out: CFTypeRef?
         let status = SecItemCopyMatching(q as CFDictionary, &out)
-        return (status == errSecSuccess ? out as? Data : nil, status)
+        return PayKeyRead(raw: status == errSecSuccess ? out as? Data : nil, status: status)
     }
 
     func delete() { SecItemDelete(query() as CFDictionary) }

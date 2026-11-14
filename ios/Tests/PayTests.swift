@@ -128,15 +128,22 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertEqual(api.submitted.count, 0)
     }
 
-    func testNoFaceIDInTheKeyboardSaysSoAndSendsNothing() async {
+    func testNoFaceIDInTheKeyboardSaysSoAndOffersTheApp() async throws {
         signer.answer = .unavailable
         await card()
         model.approvePayInKeyboard()
         await until("the note") { model.payPanel?.note != nil }
-        XCTAssertEqual(model.payPanel?.note, "Pip could not ask for Face ID here. Nothing was sent.")
-        XCTAssertEqual(host.opened, [], "the keyboard never hands a payment to the app")
+        XCTAssertEqual(model.payPanel?.note, PayFallback.useApp, "never a silent return")
+        XCTAssertEqual(model.payPanel?.offerApp, true, "Approve in Pip shows")
+        XCTAssertEqual(model.payPanel?.phase, .ready)
+        XCTAssertEqual(store.heartbeat?.payAuth, "Face ID: LAError -1004 notInteractive", "the exact code lands on Keyboard status")
         XCTAssertEqual(api.submitted.count, 0)
         XCTAssertEqual(api.calls.filter { $0 == "unsigned" }.count, 0, "nothing is built before Face ID")
+        host.canOpen = true
+        model.approvePayInApp()
+        XCTAssertEqual(host.opened, [try XCTUnwrap(URL(string: "pip://approve/\(PayIntent.fakeID)"))])
+        XCTAssertNil(model.payPanel)
+        XCTAssertEqual(model.bar, .done("Opening \(AppConfig.displayName)\u{2026}"))
     }
 
     /// Boss man's call: a new recipient is approved in the keyboard too, after the owner taps how the address ends and Face ID.
@@ -319,7 +326,9 @@ final class MemoryKeyStorage: PayKeyStorage {
     var raw: Data?
     var loadStatus = errSecSuccess
     func save(_ raw: Data) -> OSStatus { self.raw = raw; return errSecSuccess }
-    func load(prompt: String) -> (Data?, OSStatus) { loadStatus == errSecSuccess ? (raw, raw == nil ? errSecItemNotFound : errSecSuccess) : (nil, loadStatus) }
+    func load(prompt: String) async -> PayKeyRead {
+        loadStatus == errSecSuccess ? PayKeyRead(raw: raw, status: raw == nil ? errSecItemNotFound : errSecSuccess) : PayKeyRead(raw: nil, status: loadStatus)
+    }
     func delete() { raw = nil }
 }
 
