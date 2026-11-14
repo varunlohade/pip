@@ -213,7 +213,6 @@ struct OnboardingView: View {
     private func complete(_ done: Step) async {
         // Several changes can report the same success. Only the first one counts, or the intro would jump scenes.
         guard !checked else { return }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation(reduceMotion ? Theme.Motion.crossfade : Theme.Motion.stamp) { checked = true }
         try? await Task.sleep(for: Theme.Motion.onboardingCheckHold)
         await advance(from: done)
