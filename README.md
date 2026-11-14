@@ -172,7 +172,7 @@ Pick the **Pip** scheme and an iPhone simulator. Debug builds talk to `http://lo
 
 ## What's next
 
-- **Merlin: Pip for your Mac.** An always-watching private helper. It notices what matters on your screen (a meeting in an email, a deadline, a bill, a seed phrase) and offers the next step before you ask. It only suggests; it acts after your tap. It runs on private AI and tells no one what it sees.
+- **Merlin: an always-watching agent for your computer.** It watches everything that happens on your computer. It spots when something is about to leak, like a password, a private key or a seed phrase, and when you need help. Then it helps on its own, or asks you first. It runs on private AI and tells no one what it sees.
 - **Key backup and recovery.** Today the wallet key lives only on your phone, by design. Uninstalling the app deletes it.
 - **Face ID in the app.** The keyboard uses a PIN, because iOS does not let Face ID run inside a keyboard.
 - **jev inside a TEE.** jev runs on NEAR AI Cloud; Qwen, the main writing model, is already TEE-attested.
