@@ -24,7 +24,7 @@ enum AppConfig {
         (Bundle.main.object(forInfoDictionaryKey: "DemoServerURL") as? String).flatMap { $0.isEmpty ? nil : $0 }
     }
     /// The owner's headline, used on the first screen and wherever the app describes itself.
-    static let tagline = "A friend in your keyboard"
-    static let taglineLine = "Pip answers as you type, and draws the hard parts step by step."
+    static let tagline = "A helper in your keyboard"
+    static let taglineLine = "Pip helps you get things done as you type."
 
 }

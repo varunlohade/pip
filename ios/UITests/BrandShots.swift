@@ -21,7 +21,7 @@ final class BrandShots: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         XCTAssertTrue(element(app, "hero.add").waitForExistence(timeout: 10), "no hero: \(app.debugDescription.suffix(2000))")
-        XCTAssertEqual(element(app, "hero.title").label, "A friend in your keyboard")
+        XCTAssertEqual(element(app, "hero.title").label, "A helper in your keyboard")
         Thread.sleep(forTimeInterval: 1.5)
         shot("b2-1-onboarding")
         element(app, "hero.add").tap()

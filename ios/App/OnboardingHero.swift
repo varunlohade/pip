@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The first screen (B2-1): the cloud sky, the wordmark, the buddy answering "what does btw mean", the headline and one sky button.
+/// The first screen (B2-1): the cloud sky, the wordmark, the buddy turning a typed plan into a calendar event, the headline and one sky button.
 /// Positions follow the 390 x 844 mock and scale with the screen height.
 struct OnboardingHero: View {
     let onAdd: () -> Void
@@ -16,12 +16,11 @@ struct OnboardingHero: View {
                 Wordmark(size: 30).padding(.top, 70 * k)
                 Buddy(size: 90).padding(.top, 170 * k)
                 VStack(alignment: .leading, spacing: 12 * k) {
-                    (Text("what does ").foregroundColor(Theme.Color.text2) + Text("btw").fontWeight(.semibold).foregroundColor(Theme.Color.text1)
-                        + Text(" mean").foregroundColor(Theme.Color.text2))
+                    Text("dinner with Ana friday 7pm").foregroundColor(Theme.Color.text1)
                         .font(.system(size: 15))
                         .padding(.horizontal, 16).frame(height: 40)
                         .background(FrostFill())
-                    Text("by the way").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    Text("Add to calendar").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
                         .padding(.horizontal, 18).frame(height: 40)
                         .background(SkyFill())
                         .padding(.leading, 112)
@@ -32,9 +31,9 @@ struct OnboardingHero: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 58)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Ask what btw means, and Pip answers: by the way")
+                .accessibilityLabel("Type dinner with Ana friday 7pm, and Pip offers: Add to calendar")
                 VStack(spacing: 0) {
-                    // "A friend / in your keyboard", broken where the mock breaks it.
+                    // "A helper / in your keyboard", broken where the mock breaks it.
                     Text(AppConfig.tagline.replacingOccurrences(of: " in your", with: "\nin your"))
                         .font(Theme.Font.display).tracking(Theme.Tracking.display).lineSpacing(0)
                         .foregroundStyle(Theme.Color.text1).multilineTextAlignment(.center)

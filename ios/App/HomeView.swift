@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Home (B2-2): the sky with the wordmark, how much Pip explained today, the last drawing with Replay, the words looked up,
+/// Home (B2-2): the sky with the wordmark, how much Pip explained today, the last drawing with Replay, things to try,
 /// the plans caught in chats with Add, and the "Ask Pip" bar at the bottom.
 struct HomeView: View {
     @EnvironmentObject var session: Session
@@ -14,8 +14,14 @@ struct HomeView: View {
     @State private var replay: Drawing?
     @AppStorage(StoreKey.keyHaptics.rawValue, store: SharedStore.defaults) private var keyHaptics = true
 
-    /// Shown until the owner has looked words up: four common ones, as examples.
-    static let starterWords = ["btw", "ngl", "iirc", "tbh"]
+    /// Shown until the owner has looked words up: what to type, and what Pip offers for it.
+    static let starterActions = [
+        ("dinner with Ana friday 7pm", "Add to calendar"),
+        ("remind me tomorrow to call mom", "Reminder"),
+        ("explain compound interest", "Explain and draw"),
+        ("make this more polite", "Rewrite"),
+        ("tip 18% on 64", "Sum"),
+    ]
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -62,9 +68,9 @@ struct HomeView: View {
     private var headline: String {
         let n = learnedToday.count
         switch n {
-        case 0: return "Ask Pip anything\nwhile you type"
-        case 1: return "1 thing learned\ntoday"
-        default: return "\(n) things learned\ntoday"
+        case 0: return "Get things done\nas you type"
+        case 1: return "1 thing explained\ntoday"
+        default: return "\(n) things explained\ntoday"
         }
     }
 
@@ -111,14 +117,29 @@ struct HomeView: View {
         .accessibilityIdentifier("home.drawings")
     }
 
-    /// The words looked up in the keyboard, or four examples until there are some.
-    private var words: some View {
+    /// The words looked up in the keyboard, or things to type until there are some.
+    @ViewBuilder private var words: some View {
         let mine = learned.filter { $0.kind == .word }
-        let list: [(String, String)] = mine.isEmpty
-            ? Self.starterWords.compactMap { w in ExplainDictionary.shared.lookup(w).map { (w, $0.meaning) } }
-            : Array(mine.prefix(6)).map { ($0.subject, $0.line) }
-        return VStack(alignment: .leading, spacing: 12) {
-            Text(mine.isEmpty ? "Words to try" : "Words").font(Theme.Font.section).foregroundStyle(Theme.Color.text1)
+        if mine.isEmpty { tryList } else { myWords(Array(mine.prefix(6)).map { ($0.subject, $0.line) }) }
+    }
+
+    /// One muted line per example: what to type, then what Pip offers.
+    private var tryList: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Try typing").font(Theme.Font.section).foregroundStyle(Theme.Color.text1).padding(.bottom, 2)
+            ForEach(Self.starterActions, id: \.0) { typed, action in
+                (Text(typed).foregroundColor(Theme.Color.text2) + Text("  \u{2192} \(action)").foregroundColor(Theme.Color.text3))
+                    .font(.system(size: 15)).lineLimit(1)
+            }
+        }
+        .padding(.horizontal, Theme.Metric.cardInset + 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.try")
+    }
+
+    private func myWords(_ list: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Words").font(Theme.Font.section).foregroundStyle(Theme.Color.text1)
             FlowLayout(spacing: 8) {
                 ForEach(list, id: \.0) { w, meaning in
                     (Text(w).fontWeight(.semibold).foregroundColor(Theme.Color.skyDeep) + Text("  \(meaning)").foregroundColor(Theme.Color.text1))
