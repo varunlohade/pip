@@ -1,0 +1,250 @@
+{
+ "route": "USDC@near -> USDC@bsc",
+ "chainDecimals": {
+  "origin": 6,
+  "dest": 18
+ },
+ "listDecimals": {
+  "origin": 6,
+  "dest": 18
+ },
+ "prices": {
+  "origin": [
+   {
+    "source": "coingecko",
+    "price": 0.999645
+   },
+   {
+    "source": "relay",
+    "price": "0.999694"
+   },
+   {
+    "source": "1click",
+    "price": 0.999685
+   }
+  ],
+  "dest": [
+   {
+    "source": "coingecko",
+    "price": 0.999645
+   },
+   {
+    "source": "relay",
+    "price": "0.999753"
+   },
+   {
+    "source": "1click",
+    "price": 0.999685
+   }
+  ]
+ },
+ "quote": {
+  "amountIn": "5061486",
+  "amountInFormatted": "5.061486",
+  "amountInUsd": "5.059891631910",
+  "minAmountIn": "5010971",
+  "amountOut": "5000000000000000000",
+  "amountOutFormatted": "5.0",
+  "amountOutUsd": "4.998425000000",
+  "minAmountOut": "5000000000000000000",
+  "timeEstimate": 23,
+  "refundFee": "4164",
+  "withdrawFee": "10003150994877037"
+ },
+ "verdict": {
+  "ok": true,
+  "verified": true,
+  "numbers": {
+   "mode": "exact_out",
+   "amount_in": {
+    "units": "5061486",
+    "text": "5.061486",
+    "symbol": "USDC",
+    "chain": "near",
+    "decimals": 6
+   },
+   "max_amount_in": {
+    "units": "5061486",
+    "text": "5.061486",
+    "symbol": "USDC",
+    "chain": "near",
+    "decimals": 6
+   },
+   "min_amount_in": {
+    "units": "5010971",
+    "text": "5.010971",
+    "symbol": "USDC",
+    "chain": "near",
+    "decimals": 6
+   },
+   "amount_out": {
+    "units": "5000000000000000000",
+    "text": "5",
+    "symbol": "USDC",
+    "chain": "bsc",
+    "decimals": 18
+   },
+   "min_amount_out": {
+    "units": "5000000000000000000",
+    "text": "5",
+    "symbol": "USDC",
+    "chain": "bsc",
+    "decimals": 18
+   },
+   "fee": {
+    "in_origin": {
+     "units": "61486",
+     "text": "0.061486",
+     "symbol": "USDC",
+     "chain": "near",
+     "decimals": 6
+    },
+    "usd": "0.061464",
+    "bps": "122"
+   },
+   "rate": {
+    "text": "1 USDC = 0.987852184121422048 USDC",
+    "one": "0.987852184121422048"
+   },
+   "eta_seconds": 23,
+   "usd": {
+    "in": "5.059689",
+    "out": "4.998225",
+    "price_sources": {
+     "USDC": [
+      "coingecko",
+      "relay",
+      "1click"
+     ]
+    }
+   }
+  }
+ }
+}
+{
+ "route": "NEAR@near -> ETH@base",
+ "chainDecimals": {
+  "origin": 24,
+  "dest": 18
+ },
+ "listDecimals": {
+  "origin": 24,
+  "dest": 18
+ },
+ "prices": {
+  "origin": [
+   {
+    "source": "coingecko",
+    "price": 3.33
+   },
+   {
+    "source": "relay",
+    "price": null
+   },
+   {
+    "source": "1click",
+    "price": 3.33
+   }
+  ],
+  "dest": [
+   {
+    "source": "coingecko",
+    "price": 1890.65
+   },
+   {
+    "source": "relay",
+    "price": "1889.548125"
+   },
+   {
+    "source": "1click",
+    "price": 1890.81
+   }
+  ]
+ },
+ "quote": {
+  "amountIn": "1157873676556450056968787",
+  "amountInFormatted": "1.157873676556450056968787",
+  "amountInUsd": "3.855719342933",
+  "minAmountIn": "1146294939790885556399099",
+  "amountOut": "2000000000000000",
+  "amountOutFormatted": "0.002",
+  "amountOutUsd": "3.781620000000",
+  "minAmountOut": "2000000000000000",
+  "timeEstimate": 24,
+  "refundFee": "0",
+  "withdrawFee": "560000000000"
+ },
+ "verdict": {
+  "ok": true,
+  "verified": true,
+  "numbers": {
+   "mode": "exact_out",
+   "amount_in": {
+    "units": "1157873676556450056968787",
+    "text": "1.157873676556450056968787",
+    "symbol": "wNEAR",
+    "chain": "near",
+    "decimals": 24
+   },
+   "max_amount_in": {
+    "units": "1157873676556450056968787",
+    "text": "1.157873676556450056968787",
+    "symbol": "wNEAR",
+    "chain": "near",
+    "decimals": 24
+   },
+   "min_amount_in": {
+    "units": "1146294939790885556399099",
+    "text": "1.146294939790885556399099",
+    "symbol": "wNEAR",
+    "chain": "near",
+    "decimals": 24
+   },
+   "amount_out": {
+    "units": "2000000000000000",
+    "text": "0.002",
+    "symbol": "ETH",
+    "chain": "base",
+    "decimals": 18
+   },
+   "min_amount_out": {
+    "units": "2000000000000000",
+    "text": "0.002",
+    "symbol": "ETH",
+    "chain": "base",
+    "decimals": 18
+   },
+   "fee": {
+    "in_origin": {
+     "units": "22348151030924531443262",
+     "text": "0.022348151030924531443262",
+     "symbol": "wNEAR",
+     "chain": "near",
+     "decimals": 24
+    },
+    "usd": "0.074419",
+    "bps": "194"
+   },
+   "rate": {
+    "text": "1 wNEAR = 0.001727304144220687 ETH",
+    "one": "0.001727304144220687"
+   },
+   "eta_seconds": 24,
+   "usd": {
+    "in": "3.855719",
+    "out": "3.7813",
+    "price_sources": {
+     "wNEAR": [
+      "coingecko",
+      "1click"
+     ],
+     "ETH": [
+      "coingecko",
+      "relay",
+      "1click"
+     ]
+    }
+   }
+  }
+ }
+}
