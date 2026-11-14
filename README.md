@@ -18,3 +18,5 @@ How the server checks (`server/src/nearai.ts`, Node crypto only):
 4. After each reply it fetches `GET /v1/signature/<chat id>` and requires an EIP-191 signature, from the attested model key, over the SHA-256 of the exact request and response bytes.
 
 `GET /v1/ai/attestation` (signed-in) returns all of this for the proof screen: each model's result, the last reply signature, the steps above, and what is not checked yet. Not checked yet: Intel TCB status and revocation lists, NVIDIA GPU evidence, and an allowlist of known good builds. Pip's server still sees your text before it reaches the TEE, so this is private from NEAR and the model host, not from Pip. To check a reply yourself, paste its chat id into https://cloud.near.ai/verify.
+
+Payments on NEAR testnet ("send 0.01 NEAR to ana.testnet", approved in the app) live in `server/src/pay/`; design, custody and env vars are in `server/SECURITY.md`. Testnet only: the server holds demo keys, and mainnet would move signing to a passkey on the phone.
