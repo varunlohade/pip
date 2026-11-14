@@ -15,7 +15,9 @@ protocol KeyboardAPI {
     func rates() async throws -> Calc.Rates
     /// A payment proposal. Only the app can approve it.
     func createPayIntent(_ d: PayDraft) async throws -> PayIntent
-    func keyboardApprovePay(_ i: PayIntent, keyboardKey: String) async throws -> PayIntent
+    /// The exact transaction to sign. Without the approver key the server builds it only for a recipient paid before.
+    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned
+    func submitPay(_ id: String, signature: Data) async throws -> PayIntent
     func rejectPay(_ id: String) async throws -> PayIntent
 }
 
@@ -48,10 +50,6 @@ protocol KeyboardStore: AnyObject {
     var payPending: String? { get set }
     /// The payment the app last sent; the keyboard offers its Insert line, then clears it.
     var paySent: PaySent? { get set }
-    /// The capped keyboard send key, from the shared Keychain. Nil until keyboard pay is set up in the app.
-    var payKeyboardKey: String? { get }
-    /// Face ID before each keyboard send.
-    var payFaceID: Bool { get }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -95,8 +93,6 @@ final class SharedKeyboardStore: KeyboardStore {
         get { SharedStore.paySent }
         set { SharedStore.paySent = newValue }
     }
-    var payKeyboardKey: String? { Keychain.get(.payKeyboardKey) }
-    var payFaceID: Bool { SharedStore.payFaceID }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.
@@ -132,8 +128,8 @@ struct KeyboardDeps {
     var haptics: @MainActor () -> KeyHaptics = { SystemHaptics() }
     /// The short wait before the word slots refresh. Real time even in tests, so it never shows in a fake clock's sleeps.
     var slotSleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
-    /// Face ID (or the passcode) before a keyboard send. Tests pass a fake.
-    var auth: () -> Authenticator = { DeviceOwnerAuth() }
+    /// The phone's NEAR key, shared with the app; every signature needs Face ID. Tests pass a fake.
+    var signer: () -> PaySigner = { PayKeyVault() }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

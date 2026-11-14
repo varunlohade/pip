@@ -1,20 +1,31 @@
 import Foundation
-import LocalAuthentication
 
-/// The one place that names the NEAR network on the phone. A mainnet build changes only this.
+/// The NEAR network on the phone: the one the server last confirmed (GET/PUT /v1/pay/network). Testnet until the app switches.
 enum PayNetwork {
-    /// "testnet" or "mainnet". The server also says its network on every intent; the cards show the server's value.
-    static let name = "testnet"
-    /// The account suffix this build sends to: ".testnet", or ".near" on mainnet.
+    /// "testnet" or "mainnet". The cards show each intent's own network.
+    static var name: String { SharedStore.payNetwork == "mainnet" ? "mainnet" : "testnet" }
+    /// The account suffix this network sends to: ".testnet", or ".near" on mainnet.
     static var accountSuffix: String { name == "mainnet" ? ".near" : ".testnet" }
     /// "NEAR testnet"
     static var label: String { "NEAR \(name)" }
 
-    /// A typed account id as this build sends it: on testnet, "ana.near" is read as "ana.testnet".
+    /// A typed account id as this network sends it: on testnet, "ana.near" is read as "ana.testnet".
     static func account(_ typed: String) -> String {
         guard name != "mainnet", typed.hasSuffix(".near") else { return typed }
         return String(typed.dropLast(5)) + accountSuffix
     }
+
+    /// The NearBlocks page for a transaction, built on the phone from the intent's network.
+    static func explorer(_ txHash: String, network: String) -> String {
+        (network == "mainnet" ? "https://nearblocks.io/txns/" : "https://testnet.nearblocks.io/txns/") + txHash
+    }
+}
+
+/// GET /v1/pay/network.
+struct PayNetworkInfo: Decodable, Equatable {
+    let network: String
+    var mainnet_enabled: Bool?
+    var account_id: String?
 }
 
 /// A payment proposal from /v1/pay/intents. The app shows these fields, and approve sends the same ones back.
@@ -29,45 +40,17 @@ struct PayIntent: Decodable, Equatable, Identifiable {
     let tx_hash: String?
     let explorer_url: String?
     let deep_link: String
-    /// Pending only: may the keyboard send this with its capped key? Over the limit or a new recipient opens the app.
-    var keyboard: KeyboardCheck?
+    /// Never paid before: only the app may sign it, so the keyboard opens the app.
+    var new_recipient: Bool?
 
-    struct KeyboardCheck: Decodable, Equatable {
-        let ok: Bool
-        /// not_set_up, new_recipient or over_limit.
-        var reason: String?
-        /// What the keyboard may still send today in this token.
-        var left: String?
-        let paid_before: Int
-    }
+    /// The NearBlocks link, from the tx hash and network, not from the server's URL.
+    var explorer: String? { tx_hash.map { PayNetwork.explorer($0, network: network) } }
 }
 
-/// The server said this needs the app: a new recipient, over the keyboard limit, or no keyboard key.
+/// The server will not build this without the app: a new recipient, or over a limit.
 func needsApp(_ error: Error) -> Bool {
-    if case APIError.http(403, let body) = error { return body.contains("needs_app") }
+    if case APIError.http(403, _) = error { return true }
     return false
-}
-
-enum AuthResult: Equatable { case approved, denied, unavailable }
-
-/// Face ID, or the passcode when Face ID is off or fails.
-protocol Authenticator {
-    func confirm(_ reason: String) async -> AuthResult
-}
-
-struct DeviceOwnerAuth: Authenticator {
-    func confirm(_ reason: String) async -> AuthResult {
-        let ctx = LAContext()
-        var error: NSError?
-        guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else { return .unavailable }
-        do {
-            return try await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) ? .approved : .denied
-        } catch let e as LAError where [.notInteractive, .biometryNotAvailable, .passcodeNotSet, .biometryNotEnrolled].contains(e.code) {
-            return .unavailable
-        } catch {
-            return .denied
-        }
-    }
 }
 
 struct PayWallet: Decodable, Equatable {
@@ -75,6 +58,13 @@ struct PayWallet: Decodable, Equatable {
     let status: String
     let network: String
     var balances: [String: String]?
+}
+
+/// POST /v1/pay/register.
+struct PayRegistered: Decodable, Equatable {
+    let account_id: String
+    let network: String
+    let status: String
 }
 
 /// Which AI answered a reply: in NEAR AI's TEE (`private`), with its attestation checked (`attested`).
@@ -125,7 +115,7 @@ struct PaySent: Codable, Equatable {
     init(_ i: PayIntent, at: Date) {
         id = i.id
         label = "Sent \(i.amount) \(i.token) to \(i.recipient)"
-        line = "Sent you \(i.amount) \(i.token) \u{2713}" + (i.explorer_url.map { " \($0)" } ?? "")
+        line = "Sent you \(i.amount) \(i.token) \u{2713}" + (i.explorer.map { " \($0)" } ?? "")
         self.at = at
     }
 
@@ -144,29 +134,36 @@ extension APIClient {
         try await send(request("GET", "/v1/pay/intents/\(id)"), as: PayIntent.self)
     }
 
-    /// Sends the exact fields the card showed, with the app's approver key.
-    func approvePay(_ i: PayIntent, approverKey: String) async throws -> PayIntent {
-        var r = try request("POST", "/v1/pay/intents/\(i.id)/approve", body: ["amount": i.amount, "token": i.token, "recipient": i.recipient],
-                            timeout: 40)
-        r.setValue(approverKey, forHTTPHeaderField: "X-Pay-Approver")
-        return try await send(r, as: PayIntent.self)
-    }
-
-    /// The keyboard's own approve, with the capped keyboard key. A 403 with needs_app means: open the app.
-    func keyboardApprovePay(_ i: PayIntent, keyboardKey: String) async throws -> PayIntent {
-        var r = try request("POST", "/v1/pay/intents/\(i.id)/keyboard-approve", body: ["amount": i.amount, "token": i.token, "recipient": i.recipient],
+    /// Asks the server to build the exact transaction. The app passes its approver key; the keyboard passes none, so the
+    /// server builds only for a recipient paid before.
+    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned {
+        var r = try request("POST", "/v1/pay/intents/\(i.id)/unsigned", body: ["amount": i.amount, "token": i.token, "recipient": i.recipient],
                             tap: true, timeout: 40)
-        r.setValue(keyboardKey, forHTTPHeaderField: "X-Pay-Keyboard")
-        return try await send(r, as: PayIntent.self)
+        if let approverKey { r.setValue(approverKey, forHTTPHeaderField: "X-Pay-Approver") }
+        return try await send(r, as: PayUnsigned.self)
     }
 
-    /// Made by the app with the approver key. The server caps it to these daily limits and to recipients paid before.
-    func setKeyboardPay(usdcDaily: String, nearDaily: String, approverKey: String) async throws -> (key: String, usdc: String, near: String) {
-        struct Out: Decodable { let keyboard_key: String; let limits: [String: String] }
-        var r = try request("POST", "/v1/pay/keyboard", body: ["usdc_daily": usdcDaily, "near_daily": nearDaily])
+    /// The phone's Ed25519 signature over sha256(tx). The server checks it and broadcasts once.
+    func submitPay(_ id: String, signature: Data) async throws -> PayIntent {
+        try await send(request("POST", "/v1/pay/intents/\(id)/submit", body: ["signature": signature.base64EncodedString()], tap: true, timeout: 40),
+                       as: PayIntent.self)
+    }
+
+    func payNetwork() async throws -> PayNetworkInfo {
+        try await send(request("GET", "/v1/pay/network"), as: PayNetworkInfo.self)
+    }
+
+    func setPayNetwork(_ network: String, approverKey: String) async throws -> PayNetworkInfo {
+        var r = try request("PUT", "/v1/pay/network", body: ["network": network])
         r.setValue(approverKey, forHTTPHeaderField: "X-Pay-Approver")
-        let o = try await send(r, as: Out.self)
-        return (o.keyboard_key, o.limits["USDC"] ?? usdcDaily, o.limits["NEAR"] ?? nearDaily)
+        return try await send(r, as: PayNetworkInfo.self)
+    }
+
+    /// The phone's public key (64 hex). The account is its implicit id; testnet sends free test NEAR once.
+    func registerPayKey(_ publicKeyHex: String, approverKey: String) async throws -> PayRegistered {
+        var r = try request("POST", "/v1/pay/register", body: ["publicKey": publicKeyHex], timeout: 40)
+        r.setValue(approverKey, forHTTPHeaderField: "X-Pay-Approver")
+        return try await send(r, as: PayRegistered.self)
     }
 
     func rejectPay(_ id: String) async throws -> PayIntent {

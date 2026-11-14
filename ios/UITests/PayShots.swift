@@ -1,6 +1,6 @@
 import XCTest
 
-/// Pip Pay on NEAR testnet against `npm run fake` (a fake chain; no network). Run SmartChipShots/test1Setup first to pair
+/// Pip Pay, phone-signed, on NEAR testnet against `npm run fake` (a fake chain; no network; the server checks the real signature). Run SmartChipShots/test1Setup first to pair
 /// and turn the keyboard on. Face ID: enroll the simulator and post a match while this runs (see docs in the report):
 /// `xcrun simctl spawn <sim> notifyutil -p com.apple.BiometricKit_Sim.pearl.match`. Writes to TEST_RUNNER_SHOT_DIR.
 final class PayShots: XCTestCase {
@@ -75,24 +75,34 @@ final class PayShots: XCTestCase {
         element(messages, "space").tap()
     }
 
-    /// Home → "Pay from the keyboard" → Turn on (C-3).
-    func test1KeyboardPaySetup() {
+    /// Home → Pip Pay → Set up (C-3): the phone makes its key and registers its implicit account. Then the mainnet warning.
+    func test1PaySetup() {
         let app = XCUIApplication()
         app.launch()
         let row = element(app, "home.keyboardPay")
         for _ in 0..<6 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
         XCTAssertTrue(row.waitForExistence(timeout: 10), String(app.debugDescription.suffix(3000)))
         row.tap()
-        XCTAssertTrue(element(app, "kbpay.turnOn").waitForExistence(timeout: 6))
+        let setUp = element(app, "kbpay.turnOn")
+        XCTAssertTrue(setUp.waitForExistence(timeout: 6))
+        if setUp.label == "Set up Pip Pay" { setUp.tap() }
+        XCTAssertTrue(label(app, "Pip Pay is on \u{2713}").waitForExistence(timeout: 15), String(app.debugDescription.suffix(3000)))
+        XCTAssertTrue(element(app, "pay.balance").waitForExistence(timeout: 6), String(app.debugDescription.suffix(3000)))
         shot("near-setup")
-        element(app, "kbpay.turnOn").tap()
-        XCTAssertTrue(label(app, "Keyboard pay is on \u{2713}").waitForExistence(timeout: 15), String(app.debugDescription.suffix(3000)))
+        let mainnet = app.segmentedControls.buttons["Mainnet"]
+        XCTAssertTrue(mainnet.waitForExistence(timeout: 6), String(app.debugDescription.suffix(3000)))
+        mainnet.tap()
+        XCTAssertTrue(element(app, "pay.mainnetWarning").waitForExistence(timeout: 8), String(app.debugDescription.suffix(3000)))
+        XCTAssertTrue(element(app, "pay.balance").waitForExistence(timeout: 8))
+        shot("near-mainnet-warning")
+        app.segmentedControls.buttons["Testnet"].tap()
+        XCTAssertTrue(element(app, "pay.mainnetWarning").waitForNonExistence(timeout: 8))
     }
 
     /// First send to ana: a new recipient, so the keyboard hands it to the app (A-style card), then Face ID.
     func test2FirstSendOpensTheApp() {
         let field = openField()
-        enter("send 5 USDC to \(env["PAY_TO"] ?? "ana").near", in: field)
+        enter(env["PAY_TEXT"] ?? "send 5 USDC to \(env["PAY_TO"] ?? "ana").near", in: field)
         let chip = element(messages, "chip.pay")
         XCTAssertTrue(chip.waitForExistence(timeout: 6), String(messages.debugDescription.suffix(3000)))
         shot("near-chip")

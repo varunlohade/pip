@@ -22,10 +22,10 @@ enum StoreKey: String, CaseIterable {
     case payPending = "pay_pending"
     /// The payment the app last sent (PaySent JSON), so the keyboard offers its Insert line.
     case paySent = "pay_sent"
-    /// Keyboard pay: Face ID before every keyboard send. Missing means on.
-    case payFaceID = "pay_face_id"
-    /// Keyboard pay: the daily USDC limit the owner set, as the server confirmed it.
-    case payKeyboardLimit = "pay_keyboard_limit"
+    /// The phone's NEAR public key (64 hex), which is also its implicit account id. Not secret; the private key is in PayKeychain.
+    case payPublicKey = "pay_public_key"
+    /// "testnet" or "mainnet", as the server last confirmed it.
+    case payNetwork = "pay_network"
 }
 
 /// Every App Group file, in one place. All are small JSON files, except the drawings folder.
@@ -52,9 +52,6 @@ enum Secret: String, CaseIterable {
     case legacyDeviceToken = "device_token"
     /// A random id for this install. "Skip for now" sends it.
     case deviceID = "device_id"
-    /// The keyboard send key. Shared on purpose: the server caps it to the daily limit and to recipients paid before.
-    /// The full approver key is never here; it stays in the app's own group (ApproverKeychain).
-    case payKeyboardKey = "pay_keyboard_key"
 }
 
 /// The Keychain, in the shared access group. Items open after the first unlock and never leave this device (no backup, no sync).
@@ -240,14 +237,14 @@ enum SharedStore {
         set { defaults?.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: StoreKey.paySent.rawValue) }
     }
 
-    static var payFaceID: Bool {
-        get { defaults?.object(forKey: StoreKey.payFaceID.rawValue) as? Bool ?? true }
-        set { defaults?.set(newValue, forKey: StoreKey.payFaceID.rawValue) }
+    static var payPublicKey: String? {
+        get { defaults?.string(forKey: StoreKey.payPublicKey.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payPublicKey.rawValue) }
     }
 
-    static var payKeyboardLimit: String? {
-        get { defaults?.string(forKey: StoreKey.payKeyboardLimit.rawValue) }
-        set { defaults?.set(newValue, forKey: StoreKey.payKeyboardLimit.rawValue) }
+    static var payNetwork: String? {
+        get { defaults?.string(forKey: StoreKey.payNetwork.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payNetwork.rawValue) }
     }
 
     // MARK: secrets

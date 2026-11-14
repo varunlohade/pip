@@ -3,15 +3,19 @@
 // Debug routes: GET /_log, GET /_mail (the stub mail, with codes, for sign-up tests), POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}, "explain": {...}, "visual": {...}}
 // explain and visual take raw model JSON; with none, they answer with the log-function fixtures in test/fixtures.
 // Each /_next value answers the next matching model call once.
-// Pay runs on a fake NEAR testnet in memory (ana.testnet and bob.testnet exist); AI replies say they ran in an attested TEE.
+// Pay runs the phone-signed flow on a fake NEAR testnet and mainnet in memory (ana/bob .testnet and .near exist; mainnet is on,
+// with no network); the phone's real signature is checked. AI replies say they ran in an attested TEE.
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type { DeviceAction, ToneCheck } from '../src/ai.ts';
 import { config } from '../src/config.ts';
 import { randomToken, sha256 } from '../src/crypto.ts';
 import type { AttestationSnapshot } from '../src/nearai.ts';
+import { SignedTransaction } from 'near-api-js';
 import type { Chain } from '../src/pay/chain.ts';
 import { payConfig } from '../src/pay/config.ts';
+import { mainnetConfig } from '../src/pay/network.ts';
+import type { PhoneChain } from '../src/pay/phone/chain.ts';
 import { toUnits } from '../src/pay/parse.ts';
 import { setup } from '../test/helpers.ts';
 
@@ -54,6 +58,28 @@ function fakeChain(): Chain {
   };
 }
 
+/** One NEAR network for the phone-signed flow: fixed accounts, balances that go down with each signed send, no network. */
+function fakePhoneChain(suffix: string): PhoneChain {
+  const accounts = new Set([`ana${suffix}`, `bob${suffix}`]);
+  let usdc = toUnits('42.1', 'USDC'), near = toUnits('4.85', 'NEAR');
+  return {
+    async accountExists(id) { return accounts.has(id); },
+    async accessKeyNonce() { return 1000n; },
+    async recentBlockHash() { return 'GJ8ThW5tGmvBbGr8Kto6Ahtv1mhK5cXhkRMdNsJxbVkK'; },
+    async storageRegistered() { return true; },
+    async storageMin() { return 1_250_000_000_000_000_000_000n; },
+    async balances() { return { NEAR: near, USDC: usdc }; },
+    async broadcast(signed) {
+      for (const a of SignedTransaction.decode(Buffer.from(signed)).transaction.actions) {
+        if (a.transfer) near -= BigInt(a.transfer.deposit);
+        if (a.functionCall?.methodName === 'ft_transfer') usdc -= BigInt(JSON.parse(Buffer.from(a.functionCall.args).toString()).amount);
+      }
+      return 'ok';
+    },
+    async fund() { return 'FakeFundTx'; },
+  };
+}
+
 const attestation: AttestationSnapshot = {
   provider: 'near-ai', tier: 'Confidential TEE (NEAR-run)', verify_url: 'https://cloud.near.ai/verify',
   models: [{ model: 'deepseek-ai/DeepSeek-V3.1', ok: true, checked_at: '2026-11-14T16:00:00.000Z', nonce: '00'.repeat(32), gateway: { ok: true, signing_address: '0xfake' }, model_reports: [{ ok: true, signing_address: '0xfake' }] }],
@@ -76,7 +102,11 @@ function build() {
     get explain() { return take('explain'); },
     get visual() { return take('visual'); },
     apple: async () => { throw new Error('no Sign in with Apple on the fake server'); },
-    pay: { chain: fakeChain(), config: { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:fake' } },
+    pay: {
+      chain: fakeChain(),
+      config: { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:fake' },
+      phone: { chains: { testnet: fakePhoneChain('.testnet'), mainnet: fakePhoneChain('.near') }, mainnet: { ...mainnetConfig, enabled: true } },
+    },
     served: { model: 'deepseek-ai/DeepSeek-V3.1', private: true, attested: true },
     attestation,
   });

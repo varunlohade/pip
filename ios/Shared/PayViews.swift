@@ -210,7 +210,7 @@ struct PayApprovalCard: View {
             Text("Sent \(i.amount) \(i.token)").font(.system(size: 30, weight: .bold)).foregroundStyle(Theme.Color.text1)
                 .accessibilityIdentifier("pay.sent")
             Text("to \(i.recipient) on NEAR \(i.network)").font(.system(size: 17)).foregroundStyle(Theme.Color.text2)
-            if let s = i.explorer_url, let url = URL(string: s) {
+            if let s = i.explorer, let url = URL(string: s) {
                 Link(destination: url) {
                     HStack(spacing: 6) {
                         Text(Self.shortTx(s)).lineLimit(1).truncationMode(.middle)
@@ -372,7 +372,7 @@ struct PayPanelBar: View {
             Text(panel.phase == .sent ? "Payment sent" : "Send \(i.amount) \(i.token) to \(i.recipient)")
                 .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.text1).lineLimit(1).minimumScaleFactor(0.75)
             Spacer(minLength: 4)
-            if panel.phase == .sent, let s = i.explorer_url, let url = URL(string: s) {
+            if panel.phase == .sent, let s = i.explorer, let url = URL(string: s) {
                 Link(destination: url) {
                     HStack(spacing: 4) { Text("View tx"); Image(systemName: "arrow.up.right.square") }
                         .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.skyDeep)
@@ -424,7 +424,7 @@ struct PayKeyboardCard: View {
                 if panel.phase == .sent {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Sent you \(i.amount) \(i.token) \u{2713}").font(.system(size: 15)).foregroundStyle(Theme.Color.text1)
-                        if let s = i.explorer_url {
+                        if let s = i.explorer {
                             Text(PayApprovalCard.shortTx(s)).font(.system(size: 15)).foregroundStyle(Theme.Color.skyDeep).lineLimit(1)
                         }
                     }
@@ -449,7 +449,6 @@ struct PayKeyboardCard: View {
             if panel.phase == .sent {
                 Button("Insert in chat", action: insert).buttonStyle(SkyPill(height: 50, font: .system(size: 18, weight: .semibold)))
                     .accessibilityIdentifier("paycard.insert")
-                if let left = panel.leftAfter { hint("\(left) \(i.token) left for keyboard sends today.") }
             } else if case .failed(let line) = panel.phase {
                 hint(line)
             } else {
@@ -469,8 +468,8 @@ struct PayKeyboardCard: View {
                 }
                 if let note = panel.note {
                     Text(note).font(.system(size: 14)).foregroundStyle(Theme.Color.warning).lineLimit(2).accessibilityIdentifier("paycard.note")
-                } else if let k = i.keyboard {
-                    hint("You paid this account \(k.paid_before == 1 ? "once" : "\(k.paid_before) times") before." + (k.left.map { " \($0) \(i.token) left today." } ?? ""))
+                } else {
+                    hint("You paid this account before. Your key signs it on this phone.")
                 }
             }
             Spacer(minLength: 0)
@@ -496,59 +495,82 @@ private func networkBadge(_ network: String) -> some View {
     .accessibilityIdentifier("paycard.network")
 }
 
-// MARK: app: keyboard pay setup (C-3)
+// MARK: app: Pip Pay setup (C-3)
 
-struct KeyboardPaySetupView: View {
-    @Binding var limit: Int
-    @Binding var faceID: Bool
+struct PaySetupView: View {
     let account: String?
+    let wallet: PayWallet?
+    @Binding var network: String
+    let mainnetEnabled: Bool
     let busy: Bool
-    let done: Bool
     let error: String?
-    let turnOn: () -> Void
+    let setUp: () -> Void
+
+    /// "a1b2c3…d4e5f6": an implicit account id is 64 hex chars.
+    static func short(_ id: String) -> String { id.count > 20 ? "\(id.prefix(6))\u{2026}\(id.suffix(6))" : id }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Wordmark(size: 30).padding(.top, 8)
-            Text("Pay from the keyboard").font(Theme.Font.title).foregroundStyle(Theme.Color.text1).padding(.top, 20)
-            Text("Set this up once. Small sends then stay in the chat, with Face ID each time.")
+            Text("Pip Pay").font(Theme.Font.title).foregroundStyle(Theme.Color.text1).padding(.top, 20)
+            Text("Your key stays on this phone. Pip sends only what you sign with Face ID.")
                 .font(Theme.Font.body).foregroundStyle(Theme.Color.text2).padding(.top, 8).fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Keyboard limit per day").font(.system(size: 15)).foregroundStyle(Theme.Color.text2)
-                HStack(alignment: .center) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text("\(limit)").font(.system(size: 52, weight: .bold)).monospacedDigit()
-                        Text("USDC").font(.system(size: 22, weight: .semibold))
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    Text("N").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white).frame(width: 24, height: 24).background(.black, in: Circle())
+                        .frame(width: 42, height: 42).background(Theme.Color.iceSoft, in: RoundedRectangle(cornerRadius: 10))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(account.map(Self.short) ?? "No account yet").font(.system(size: 18, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Theme.Color.text1).lineLimit(1).accessibilityIdentifier("pay.account")
+                        Text("NEAR \(network) account").font(.system(size: 14)).foregroundStyle(Theme.Color.text3)
+                    }
+                    Spacer()
+                    if let account {
+                        Button { UIPasteboard.general.string = account } label: {
+                            Image(systemName: "doc.on.doc").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.Color.skyDeep)
+                                .frame(width: 44, height: 44).background(Theme.Color.panel, in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Copy account id")
+                        .accessibilityIdentifier("pay.copy")
+                    }
+                }
+                if account != nil {
+                    HStack(alignment: .firstTextBaseline, spacing: 14) {
+                        Text("\(wallet?.balances?["NEAR"] ?? "0") NEAR").font(.system(size: 28, weight: .bold)).monospacedDigit()
+                        Text("\(wallet?.balances?["USDC"] ?? "0") USDC").font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.Color.text2)
                     }
                     .foregroundStyle(Theme.Color.text1)
-                    .accessibilityIdentifier("kbpay.limit")
-                    Spacer()
-                    stepper("minus", id: "kbpay.less") { limit = max(1, limit - 5) }
-                    stepper("plus", id: "kbpay.more") { limit = min(25, limit + 5) }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("pay.balance")
                 }
-                Text("Over this, \(AppConfig.displayName) opens the full approval screen.").font(.system(size: 14)).foregroundStyle(Theme.Color.text3)
             }
             .padding(20).frame(maxWidth: .infinity, alignment: .leading).ringCard().padding(.top, 24)
-            HStack(spacing: 14) {
-                Image(systemName: "faceid").font(.system(size: 22)).foregroundStyle(Theme.Color.skyDeep)
-                    .frame(width: 42, height: 42).background(Theme.Color.iceSoft, in: RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Face ID for every send").font(.system(size: 17)).foregroundStyle(Theme.Color.text1)
-                    Text("Asks before each keyboard send").font(.system(size: 14)).foregroundStyle(Theme.Color.text3)
+            if mainnetEnabled {
+                Picker("Network", selection: $network) {
+                    Text("Testnet").tag("testnet")
+                    Text("Mainnet").tag("mainnet")
                 }
-                Spacer()
-                Toggle("", isOn: $faceID).labelsHidden().tint(Theme.Color.success).accessibilityIdentifier("kbpay.faceid")
+                .pickerStyle(.segmented)
+                .disabled(busy)
+                .padding(.top, 20)
+                .accessibilityIdentifier("pay.networkSwitch")
             }
-            .padding(.top, 24)
-            HStack(spacing: 14) {
-                Text("N").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white).frame(width: 24, height: 24).background(.black, in: Circle())
-                    .frame(width: 42, height: 42).background(Theme.Color.iceSoft, in: RoundedRectangle(cornerRadius: 10))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(account ?? "Your Pip wallet").font(.system(size: 17)).foregroundStyle(Theme.Color.text1).lineLimit(1).truncationMode(.middle)
-                    Text("\(PayNetwork.label) account").font(.system(size: 14)).foregroundStyle(Theme.Color.text3)
+            if network == "mainnet" {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.Color.warning)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Real money").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.Color.text1)
+                        Text("Mainnet sends real NEAR and USDC. No one can undo a payment.").font(.system(size: 15)).foregroundStyle(Theme.Color.text2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
+                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.Color.warning.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+                .padding(.top, 14)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("pay.mainnetWarning")
             }
-            .padding(.top, 18)
             Spacer(minLength: 24)
             if let error { Text(error).font(.system(size: 14)).foregroundStyle(Theme.Color.warning).frame(maxWidth: .infinity) }
             HStack(spacing: 6) {
@@ -556,23 +578,14 @@ struct KeyboardPaySetupView: View {
                 Text("New recipients always open \(AppConfig.displayName) first.").font(.system(size: 15)).foregroundStyle(Theme.Color.text2)
             }
             .frame(maxWidth: .infinity).padding(.bottom, 14)
-            Button(action: turnOn) {
-                if busy { ProgressView().tint(.white) } else { Text(done ? "Keyboard pay is on \u{2713}" : "Turn on keyboard pay") }
+            Button(action: setUp) {
+                if busy { ProgressView().tint(.white) } else { Text(account != nil ? "Pip Pay is on \u{2713}" : "Set up Pip Pay") }
             }
             .buttonStyle(SkyPill())
-            .disabled(busy)
+            .disabled(busy || account != nil)
             .accessibilityIdentifier("kbpay.turnOn")
         }
         .padding(.horizontal, Theme.Metric.margin).padding(.bottom, 12)
         .background(Theme.Color.bg.ignoresSafeArea())
-    }
-
-    private func stepper(_ icon: String, id: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon).font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.Color.text1)
-                .frame(width: 56, height: 56).background(Theme.Color.panel, in: Circle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier(id)
     }
 }

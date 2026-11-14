@@ -5,8 +5,12 @@ import SwiftUI
 /// The pay calls the app makes. APIClient is the real one; tests pass a fake.
 protocol PayAPI {
     func payIntent(_ id: String) async throws -> PayIntent
-    func approvePay(_ i: PayIntent, approverKey: String) async throws -> PayIntent
+    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned
+    func submitPay(_ id: String, signature: Data) async throws -> PayIntent
     func rejectPay(_ id: String) async throws -> PayIntent
+    func payNetwork() async throws -> PayNetworkInfo
+    func setPayNetwork(_ network: String, approverKey: String) async throws -> PayNetworkInfo
+    func registerPayKey(_ publicKeyHex: String, approverKey: String) async throws -> PayRegistered
     func registerApprover(current: String?) async throws -> String
     func payWallet() async throws -> PayWallet
     func aiAttestation() async throws -> AIAttestation
@@ -60,9 +64,17 @@ enum PayApprover {
         guard keys.get() == nil, let k = try? await api.registerApprover(current: nil) else { return }
         keys.set(k)
     }
+
+    /// The approver key, made now if this phone has none.
+    static func key(api: PayAPI, keys: ApproverKeys) async throws -> String {
+        if let k = keys.get() { return k }
+        let k = try await api.registerApprover(current: nil)
+        guard keys.set(k) else { throw APIError.message("Could not keep the approval key on this phone.") }
+        return k
+    }
 }
 
-/// One payment on the approval card: load it, approve it behind Face ID, or reject it.
+/// One payment on the approval card: load it, check the server's transaction, sign it with Face ID, or reject it.
 @MainActor
 final class ApprovalModel: ObservableObject {
     typealias Phase = PayPhase
@@ -76,22 +88,22 @@ final class ApprovalModel: ObservableObject {
     @Published var note: String?
 
     private let api: PayAPI
-    private let auth: Authenticator
+    private let signer: PaySigner
     private let keys: ApproverKeys
     private let recordSent: (PaySent) -> Void
     private let now: () -> Date
 
-    init(id: String, api: PayAPI, auth: Authenticator, keys: ApproverKeys, recordSent: @escaping (PaySent) -> Void, now: @escaping () -> Date = Date.init) {
+    init(id: String, api: PayAPI, signer: PaySigner, keys: ApproverKeys, recordSent: @escaping (PaySent) -> Void, now: @escaping () -> Date = Date.init) {
         self.id = id
         self.api = api
-        self.auth = auth
+        self.signer = signer
         self.keys = keys
         self.recordSent = recordSent
         self.now = now
     }
 
     static func live(id: String) -> ApprovalModel {
-        ApprovalModel(id: id, api: APIClient.shared(), auth: DeviceOwnerAuth(), keys: ApproverKeychain(),
+        ApprovalModel(id: id, api: APIClient.shared(), signer: PayKeyVault(), keys: ApproverKeychain(),
                       recordSent: { SharedStore.paySent = $0; SharedStore.payPending = nil })
     }
 
@@ -112,17 +124,31 @@ final class ApprovalModel: ObservableObject {
 
     func approve() async {
         guard let i = intent, phase == .ready else { return }
-        phase = .approving
-        note = nil
-        guard await auth.confirm("Send \(i.amount) \(i.token) to \(i.recipient)") == .approved else {
-            phase = .ready
-            note = "Not approved. Nothing was sent."
+        guard let account = signer.accountID() else {
+            note = "Set up Pip Pay on Home first. Nothing was sent."
             return
         }
+        phase = .approving
+        note = nil
         do {
-            let done = try await api.approvePay(i, approverKey: try await approverKey())
-            intent = done
-            show(done)
+            let u = try await api.unsignedPay(i, approverKey: try await PayApprover.key(api: api, keys: keys))
+            guard case .success(let ok) = PayTxCheck.check(u, intent: i, account: account) else {
+                phase = .failed(PayTxCheck.refusedLine)
+                _ = try? await api.rejectPay(i.id)
+                return
+            }
+            switch await signer.sign(ok.hash, prompt: "Send \(i.amount) \(i.token) to \(i.recipient)") {
+            case .signed(let sig):
+                let done = try await api.submitPay(i.id, signature: sig)
+                intent = done
+                show(done)
+            case .denied:
+                phase = .ready
+                note = "Not approved. Nothing was sent."
+            case .unavailable:
+                phase = .ready
+                note = "Face ID is off for Pip, so it cannot sign. Nothing was sent."
+            }
         } catch {
             phase = .ready
             note = plainLine(error)
@@ -139,16 +165,9 @@ final class ApprovalModel: ObservableObject {
         }
     }
 
-    private func approverKey() async throws -> String {
-        if let k = keys.get() { return k }
-        let k = try await api.registerApprover(current: nil)
-        guard keys.set(k) else { throw APIError.message("Could not keep the approval key on this phone.") }
-        return k
-    }
-
     private func show(_ i: PayIntent) {
         switch i.status {
-        case "pending": phase = .ready
+        case "pending", "built": phase = .ready
         case "sent":
             phase = .sent
             recordSent(PaySent(i, at: now()))
@@ -184,12 +203,12 @@ struct WalletSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             WalletCard(wallet: wallet, failed: failed)
-            NavigationLink { KeyboardPaySetup(account: wallet?.account_id) } label: {
+            NavigationLink { PaySetup() } label: {
                 HStack {
-                    Image(systemName: "keyboard").foregroundStyle(Theme.Color.skyDeep)
-                    Text("Pay from the keyboard").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                    Image(systemName: "key.fill").foregroundStyle(Theme.Color.skyDeep)
+                    Text("Pip Pay").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.Color.text1)
                     Spacer()
-                    Text(SharedStore.payKeyboardLimit.map { "\($0) USDC a day" } ?? "Set up").font(.system(size: 14)).foregroundStyle(Theme.Color.text3)
+                    Text(wallet.map { PaySetupView.short($0.account_id) } ?? "Set up").font(.system(size: 14)).foregroundStyle(Theme.Color.text3)
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.Color.text3)
                 }
                 .padding(.horizontal, 16).frame(height: 48).ringCard()
@@ -220,70 +239,105 @@ struct AttestationScreen: View {
     }
 }
 
-/// Keyboard pay setup (C-3): the approver key signs for a capped keyboard key, which goes to the shared Keychain.
+/// Pip Pay setup (C-3): make the phone's key, register its implicit account, show the balance, switch networks.
 @MainActor
-final class KeyboardPayModel: ObservableObject {
-    @Published var limit = Int(SharedStore.payKeyboardLimit.flatMap(Double.init) ?? 20)
-    @Published var faceID = SharedStore.payFaceID
+final class PaySetupModel: ObservableObject {
+    /// The account registered on the current network, when it is this phone's key.
+    @Published var account: String?
+    @Published var wallet: PayWallet?
+    @Published var network = PayNetwork.name
+    @Published var mainnetEnabled = false
     @Published var busy = false
-    @Published var done = SharedStore.payKeyboardLimit != nil && Keychain.get(.payKeyboardKey) != nil
     @Published var error: String?
+    /// The network the server last confirmed.
+    private var confirmed = PayNetwork.name
 
-    private let api: PayAPI & KeyboardPayAPI
+    private let api: PayAPI
+    private let vault: PayKeyVault
     private let keys: ApproverKeys
-    /// Where the keyboard key and settings go: the shared Keychain and the App Group.
-    private let save: (_ key: String, _ limit: String, _ faceID: Bool) -> Bool
+    private let saveNetwork: (String) -> Void
 
-    init(api: PayAPI & KeyboardPayAPI, keys: ApproverKeys, save: @escaping (String, String, Bool) -> Bool) {
+    init(api: PayAPI, vault: PayKeyVault, keys: ApproverKeys, saveNetwork: @escaping (String) -> Void) {
         self.api = api
+        self.vault = vault
         self.keys = keys
-        self.save = save
+        self.saveNetwork = saveNetwork
     }
 
-    static func live() -> KeyboardPayModel {
-        KeyboardPayModel(api: APIClient.shared(), keys: ApproverKeychain()) { key, limit, faceID in
-            SharedStore.payFaceID = faceID
-            SharedStore.payKeyboardLimit = limit
-            return Keychain.set(.payKeyboardKey, key) == errSecSuccess
-        }
+    static func live() -> PaySetupModel {
+        PaySetupModel(api: APIClient.shared(), vault: PayKeyVault(), keys: ApproverKeychain()) { SharedStore.payNetwork = $0 }
     }
 
-    func turnOn() async {
-        busy = true
-        error = nil
-        defer { busy = false }
+    func load() async {
         do {
-            let approver: String
-            if let k = keys.get() {
-                approver = k
-            } else {
-                approver = try await api.registerApprover(current: nil)
-                guard keys.set(approver) else { throw APIError.message("Could not keep the approval key on this phone.") }
-            }
-            let out = try await api.setKeyboardPay(usdcDaily: "\(limit)", nearDaily: "\(limit)", approverKey: approver)
-            guard save(out.key, out.usdc, faceID) else { throw APIError.message("Could not save keyboard pay on this phone.") }
-            limit = Int(Double(out.usdc) ?? Double(limit))
-            done = true
+            show(try await api.payNetwork())
+            await refreshWallet()
         } catch {
             self.error = plainLine(error)
         }
     }
+
+    func setUp() async {
+        busy = true
+        error = nil
+        defer { busy = false }
+        guard let pk = vault.ensure() else {
+            error = "Turn on a passcode and Face ID to keep a key on this phone."
+            return
+        }
+        await register(pk)
+    }
+
+    /// Mainnet only when the server has it on. The key stays the same; its account is registered on the new network.
+    func switchTo(_ n: String) async {
+        guard n != confirmed else { return }
+        guard n == "testnet" || mainnetEnabled else { network = confirmed; return }
+        busy = true
+        error = nil
+        defer { busy = false }
+        do {
+            let info = try await api.setPayNetwork(n, approverKey: try await PayApprover.key(api: api, keys: keys))
+            show(info)
+            wallet = nil
+            if let pk = vault.accountID() { await register(pk) }
+        } catch {
+            network = confirmed
+            self.error = plainLine(error)
+        }
+    }
+
+    private func register(_ pk: String) async {
+        do {
+            let r = try await api.registerPayKey(pk, approverKey: try await PayApprover.key(api: api, keys: keys))
+            account = r.account_id == pk ? pk : nil
+            await refreshWallet()
+        } catch {
+            self.error = plainLine(error)
+        }
+    }
+
+    private func show(_ info: PayNetworkInfo) {
+        network = info.network
+        confirmed = info.network
+        saveNetwork(info.network)
+        if let m = info.mainnet_enabled { mainnetEnabled = m }
+        account = info.account_id != nil && info.account_id == vault.accountID() ? info.account_id : nil
+    }
+
+    private func refreshWallet() async {
+        guard account != nil else { return }
+        wallet = try? await api.payWallet()
+    }
 }
 
-protocol KeyboardPayAPI {
-    func setKeyboardPay(usdcDaily: String, nearDaily: String, approverKey: String) async throws -> (key: String, usdc: String, near: String)
-}
-
-extension APIClient: KeyboardPayAPI {}
-
-struct KeyboardPaySetup: View {
-    let account: String?
-    @StateObject private var model = KeyboardPayModel.live()
+struct PaySetup: View {
+    @StateObject private var model = PaySetupModel.live()
 
     var body: some View {
-        KeyboardPaySetupView(limit: $model.limit, faceID: $model.faceID, account: account, busy: model.busy, done: model.done,
-                             error: model.error, turnOn: { Task { await model.turnOn() } })
-            .onChange(of: model.faceID) { _, on in SharedStore.payFaceID = on }
-            .onChange(of: model.limit) { _, _ in model.done = false }
+        PaySetupView(account: model.account, wallet: model.wallet,
+                     network: Binding(get: { model.network }, set: { n in model.network = n; Task { await model.switchTo(n) } }),
+                     mainnetEnabled: model.mainnetEnabled, busy: model.busy, error: model.error,
+                     setUp: { Task { await model.setUp() } })
+            .task { await model.load() }
     }
 }

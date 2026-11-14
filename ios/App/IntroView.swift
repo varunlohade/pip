@@ -22,7 +22,8 @@ struct DemoAPI: KeyboardAPI {
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String { throw APIError.message("no sharing in the intro") }
     func rates() async throws -> Calc.Rates { throw APIError.message("no rates in the intro") }
     func createPayIntent(_ d: PayDraft) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
-    func keyboardApprovePay(_ i: PayIntent, keyboardKey: String) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
+    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned { throw APIError.message("no payments in the intro") }
+    func submitPay(_ id: String, signature: Data) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
     func rejectPay(_ id: String) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
 }
 
@@ -44,8 +45,6 @@ final class DemoStore: KeyboardStore {
     var currencyRates: Calc.Rates?
     var payPending: String?
     var paySent: PaySent?
-    let payKeyboardKey: String? = nil
-    let payFaceID = true
 }
 
 /// The intro's calendar: it says yes and keeps nothing, so a scene never touches the real calendar.

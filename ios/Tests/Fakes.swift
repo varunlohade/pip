@@ -1,3 +1,4 @@
+import CryptoKit
 import UIKit
 @testable import Pip
 
@@ -103,20 +104,33 @@ final class FakeAPI: KeyboardAPI {
     }
     func releaseShares() { let h = heldShares; heldShares = []; h.forEach { $0.resume() } }
 
-    // Pay: the intent the server would make, and what the keyboard approve answers.
-    var keyboardCheck: PayIntent.KeyboardCheck? = .init(ok: true, reason: nil, left: "20", paid_before: 2)
-    var keyboardApproveError: Error?
+    // Pay: the intent the server would make, the transaction it builds, and what submit answers.
+    var newRecipient = false
+    /// The account the fake server builds for: the signer's.
+    var account = ""
+    /// Changes the built transaction, as a lying server would.
+    var tamper: ((PayIntent) -> Data)?
+    var unsignedError: Error?
     private(set) var proposed: [PayDraft] = []
-    private(set) var keyboardApproved: [(id: String, key: String)] = []
+    private(set) var unsignedWith: [String?] = []
+    private(set) var submitted: [(id: String, signature: Data, hash: Data)] = []
     private(set) var rejected: [String] = []
+    private var built: [String: Data] = [:]
     func createPayIntent(_ d: PayDraft) async throws -> PayIntent {
         calls.append("payIntent"); proposed.append(d)
-        return PayIntent.fake(d, keyboard: keyboardCheck)
+        return PayIntent.fake(d, newRecipient: newRecipient)
     }
-    func keyboardApprovePay(_ i: PayIntent, keyboardKey: String) async throws -> PayIntent {
-        calls.append("keyboardApprove"); keyboardApproved.append((i.id, keyboardKey))
-        if let e = keyboardApproveError { throw e }
-        return PayIntent.fake(PayDraft(amount: i.amount, token: i.token, recipient: i.recipient, trigger: ""), status: "sent")
+    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned {
+        calls.append("unsigned"); unsignedWith.append(approverKey)
+        if let e = unsignedError { throw e }
+        let bytes = tamper?(i) ?? TestTx.forIntent(i, signer: account)
+        built[i.id] = bytes
+        return TestTx.unsigned(i.id, bytes)
+    }
+    func submitPay(_ id: String, signature: Data) async throws -> PayIntent {
+        calls.append("submit")
+        submitted.append((id, signature, Data(SHA256.hash(data: built[id] ?? Data()))))
+        return PayIntent.fake(PayDraft(amount: "5", token: "USDC", recipient: "ana.testnet", trigger: ""), status: "sent")
     }
     func rejectPay(_ id: String) async throws -> PayIntent {
         calls.append("reject"); rejected.append(id)
@@ -126,19 +140,82 @@ final class FakeAPI: KeyboardAPI {
 
 extension PayIntent {
     static let fakeID = String(repeating: "ab", count: 16)
-    static func fake(_ d: PayDraft, status: String = "pending", keyboard: KeyboardCheck? = nil) -> PayIntent {
+    static func fake(_ d: PayDraft, status: String = "pending", newRecipient: Bool = false, network: String = "testnet") -> PayIntent {
         let hash = status == "sent" ? "7Hq2Xb9TfE3mNwq8RkLz5VdYc1pA6sGh1uJkP4" : nil
-        return PayIntent(id: fakeID, amount: d.amount, token: d.token, recipient: d.recipient, status: status, network: "testnet",
+        return PayIntent(id: fakeID, amount: d.amount, token: d.token, recipient: d.recipient, status: status, network: network,
                          tx_hash: hash, explorer_url: hash.map { "https://testnet.nearblocks.io/txns/\($0)" },
-                         deep_link: "pip://approve/\(fakeID)", keyboard: keyboard)
+                         deep_link: "pip://approve/\(fakeID)", new_recipient: newRecipient)
     }
 }
 
-/// Face ID that answers what the test says, and counts the asks.
-final class FakeAuth: Authenticator, @unchecked Sendable {
-    var answer: AuthResult = .approved
+/// Builds NEAR transactions in Borsh, the way the server does, so tests sign and check real bytes.
+enum TestTx {
+    static func u32(_ n: Int) -> Data { withUnsafeBytes(of: UInt32(n).littleEndian) { Data($0) } }
+    static func string(_ s: String) -> Data { u32(s.utf8.count) + Data(s.utf8) }
+    /// A decimal string as 16 little-endian bytes.
+    static func u128(_ dec: String) -> Data {
+        var le = [UInt8](repeating: 0, count: 16)
+        for ch in dec {
+            var carry = Int(String(ch))!
+            for i in 0..<16 {
+                let v = Int(le[i]) * 10 + carry
+                le[i] = UInt8(v & 0xff)
+                carry = v >> 8
+            }
+        }
+        return Data(le)
+    }
+    static func transfer(_ deposit: String) -> Data { Data([3]) + u128(deposit) }
+    static func call(_ method: String, _ args: String, deposit: String) -> Data {
+        Data([2]) + string(method) + u32(args.utf8.count) + Data(args.utf8) + Data(repeating: 0x11, count: 8) + u128(deposit)
+    }
+    static func tx(signer: String, receiver: String, _ actions: [Data]) -> Data {
+        var d = string(signer) + Data([0]) + (Data(hexString: signer) ?? Data(repeating: 0, count: 32))
+        d += Data(repeating: 0, count: 8) + string(receiver) + Data(repeating: 7, count: 32) + u32(actions.count)
+        for a in actions { d += a }
+        return d
+    }
+    /// The transaction an honest server builds for this intent.
+    static func forIntent(_ i: PayIntent, signer: String) -> Data {
+        if i.token == "NEAR" { return tx(signer: signer, receiver: i.recipient, [transfer(PayTxCheck.units(i.amount, decimals: 24)!)]) }
+        let amount = PayTxCheck.units(i.amount, decimals: 6)!
+        return tx(signer: signer, receiver: PayTxCheck.usdcContracts[i.network]!, [
+            call("storage_deposit", #"{"account_id":"\#(i.recipient)","registration_only":true}"#, deposit: "1250000000000000000000"),
+            call("ft_transfer", #"{"receiver_id":"\#(i.recipient)","amount":"\#(amount)"}"#, deposit: "1"),
+        ])
+    }
+    static func unsigned(_ id: String, _ bytes: Data) -> PayUnsigned {
+        PayUnsigned(id: id, tx_base64: bytes.base64EncodedString(), sign_hash_hex: Data(SHA256.hash(data: bytes)).hex)
+    }
+}
+
+extension Data {
+    init?(hexString s: String) {
+        guard s.count % 2 == 0 else { return nil }
+        var out = Data()
+        var i = s.startIndex
+        while i < s.endIndex {
+            let j = s.index(i, offsetBy: 2)
+            guard let b = UInt8(s[i..<j], radix: 16) else { return nil }
+            out.append(b)
+            i = j
+        }
+        self = out
+    }
+}
+
+/// The phone's key in memory: a real CryptoKit key, with Face ID that answers what the test says.
+final class FakeSigner: PaySigner, @unchecked Sendable {
+    let key = Curve25519.Signing.PrivateKey()
+    var answer: SignResult?
+    var hasKey = true
     private(set) var asks = 0
-    func confirm(_ reason: String) async -> AuthResult { asks += 1; return answer }
+    func accountID() -> String? { hasKey ? PayKey.accountID(key.publicKey) : nil }
+    func sign(_ hash: Data, prompt: String) async -> SignResult {
+        asks += 1
+        if let answer { return answer }
+        return .signed(try! key.signature(for: hash))
+    }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.
@@ -170,8 +247,6 @@ final class FakeStore: KeyboardStore {
     }
     var payPending: String?
     var paySent: PaySent?
-    var payKeyboardKey: String? = "pkb_fake_keyboard_key_for_tests_only"
-    var payFaceID = true
 }
 
 /// Records every key haptic instead of playing it.
@@ -287,11 +362,11 @@ final class FakeSpeaker: Speaker {
 extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
                      clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker(),
-                     haptics: HapticSpy = HapticSpy(), auth: FakeAuth = FakeAuth()) -> KeyboardDeps {
+                     haptics: HapticSpy = HapticSpy(), signer: FakeSigner = FakeSigner()) -> KeyboardDeps {
         KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
                      sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
-                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, auth: { auth })
+                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, signer: { signer })
     }
 }
 

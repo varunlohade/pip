@@ -6,13 +6,12 @@ struct PayPanel: Equatable {
     var phase: PayPhase = .ready
     /// One quiet line, such as "Not approved. Nothing was sent."
     var note: String?
-    /// After a send: what is left for keyboard sends today, in the intent's token.
-    var leftAfter: String?
 }
 
-/// Type-to-pay in the keyboard (design C). The keyboard proposes a payment on the server. If keyboard pay is set up, the
-/// recipient was paid before and the amount fits the keyboard's daily limit, the keyboard shows its own card and sends
-/// after Face ID with the capped keyboard key. Anything else opens the app, which alone holds the full approver key.
+/// Type-to-pay in the keyboard (design C). The keyboard proposes a payment on the server. If this phone has its NEAR key and
+/// the recipient was paid before, the keyboard shows its own card, checks the server's transaction, and signs it after Face ID
+/// with the key it shares with the app. The server builds it only within its caps. A new recipient, a refusal, or no Face ID
+/// here opens the app, which alone holds the approver key.
 extension KeyboardModel {
     /// Reads a payment from the text. True when one shows, so the sentence does not also go to /v1/suggest.
     func updatePay(_ text: String, quiet: Bool) -> Bool {
@@ -35,7 +34,7 @@ extension KeyboardModel {
         paySent.map { BarItems.Item(id: "paid", title: $0.label, detail: $0.line, tone: .success) }
     }
 
-    /// Tap on the chip: the server keeps the exact fields for 10 minutes and says whether the keyboard may send them.
+    /// Tap on the chip: the server keeps the exact fields for 10 minutes and says whether the recipient is new.
     func tapPay() {
         guard let d = payOffer else { return }
         host?.playClick()
@@ -43,13 +42,13 @@ extension KeyboardModel {
         payDone.insert(d)
         payOffer = nil
         bar = .working("Getting it ready\u{2026}")
-        let api = deps.api()
+        let api = deps.api(), signer = deps.signer()
         payTask = Task { [weak self] in
             do {
                 let intent = try await api.createPayIntent(d)
                 guard let self, !Task.isCancelled else { return }
                 self.deps.store.payPending = intent.id
-                if intent.keyboard?.ok == true, self.deps.store.payKeyboardKey != nil {
+                if intent.new_recipient == false, signer.accountID() != nil {
                     self.bar = .idle
                     self.notesOpen = false
                     self.writeOpen = false
@@ -65,41 +64,42 @@ extension KeyboardModel {
         }
     }
 
-    /// New recipient, over the limit, no keyboard key, or no Face ID here: the app shows its full approval card.
+    /// New recipient, over a limit, no key on this phone, or no Face ID here: the app shows its full approval card.
     func openAppToApprove(_ intent: PayIntent) {
         payPanel = nil
         let opened = URL(string: intent.deep_link).map { host?.open($0) ?? false } ?? false
         bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Open \(AppConfig.displayName) to approve")
     }
 
-    /// "Approve with Face ID" on the keyboard card.
+    /// "Approve with Face ID" on the keyboard card: check the server's transaction, then Face ID signs it.
     func approvePayInKeyboard() {
-        guard var p = payPanel, p.phase == .ready, let key = deps.store.payKeyboardKey else { return }
+        guard var p = payPanel, p.phase == .ready else { return }
         host?.playClick()
         p.phase = .approving
         p.note = nil
         payPanel = p
         let i = p.intent
-        let api = deps.api(), auth = deps.auth(), faceID = deps.store.payFaceID
+        let api = deps.api(), signer = deps.signer()
         payTask = Task { [weak self] in
-            if faceID {
-                let r = await auth.confirm("Send \(i.amount) \(i.token) to \(i.recipient)")
+            do {
+                let u = try await api.unsignedPay(i, approverKey: nil)
                 guard let self, !Task.isCancelled else { return }
-                switch r {
-                case .approved: break
+                guard let account = signer.accountID(), case .success(let ok) = PayTxCheck.check(u, intent: i, account: account) else {
+                    self.payPanel?.phase = .failed(PayTxCheck.refusedLine)
+                    Task { _ = try? await api.rejectPay(i.id) }
+                    return
+                }
+                switch await signer.sign(ok.hash, prompt: "Send \(i.amount) \(i.token) to \(i.recipient)") {
+                case .signed(let sig):
+                    let done = try await api.submitPay(i.id, signature: sig)
+                    guard !Task.isCancelled else { return }
+                    self.finishKeyboardSend(done)
                 case .denied:
                     self.payPanel?.phase = .ready
                     self.payPanel?.note = "Not approved. Nothing was sent."
-                    return
                 case .unavailable:
                     self.openAppToApprove(i)
-                    return
                 }
-            }
-            do {
-                let done = try await api.keyboardApprovePay(i, keyboardKey: key)
-                guard let self, !Task.isCancelled else { return }
-                self.finishKeyboardSend(done, left: i.keyboard?.left)
             } catch {
                 guard let self, !Task.isCancelled else { return }
                 if needsApp(error) { self.openAppToApprove(i); return }
@@ -109,16 +109,12 @@ extension KeyboardModel {
         }
     }
 
-    private func finishKeyboardSend(_ done: PayIntent, left: String?) {
+    private func finishKeyboardSend(_ done: PayIntent) {
         deps.store.payPending = nil
         guard var p = payPanel else { return }
         p.intent = done
         switch done.status {
-        case "sent":
-            p.phase = .sent
-            if let l = left.flatMap({ Decimal(string: $0) }), let a = Decimal(string: done.amount) {
-                p.leftAfter = "\(max(l - a, 0))"
-            }
+        case "sent": p.phase = .sent
         case "failed": p.phase = .failed("It did not go through. Nothing left your wallet.")
         default: p.phase = .failed("Not confirmed yet. Check the link on NearBlocks.")
         }
