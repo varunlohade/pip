@@ -94,26 +94,3 @@ export function findToken(list: TokenRow[], symbol: string, chain: string): { ok
 export function findOrigin(list: TokenRow[], origin: Origin): TokenRow | null {
   return list.find((t) => t.assetId === ORIGINS[origin].assetId) ?? null;
 }
-
-const RELAY_NATIVE: Record<string, string> = { sol: '11111111111111111111111111111111' };
-/** Canonical Relay assets for coins that also live on NEAR, by CoinGecko id, so Relay can price an origin asset too. */
-const RELAY_BY_COINGECKO: Record<string, { chainId: number; address: string }> = {
-  'usd-coin': { chainId: 1, address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' },
-  tether: { chainId: 1, address: '0xdac17f958d2ee523a2206206994597c13d831ec7' },
-  ethereum: { chainId: 1, address: '0x0000000000000000000000000000000000000000' },
-};
-
-/**
- * Where Relay prices this token, or null (Relay has no NEAR chain, so NEAR-only coins have no Relay price).
- * `from: 'row'` means the contract address came from 1Click's own token row, so that price is not independent of 1Click.
- */
-export function relayAsset(t: TokenRow): { chainId: number; address: string; from: 'pip' | 'row' } | null {
-  const c = CHAINS[t.blockchain];
-  if (c?.relayChainId && t.blockchain !== 'near') {
-    if (t.contractAddress) return { chainId: c.relayChainId, address: t.contractAddress, from: 'row' };
-    const address = c.kind === 'evm' ? '0x0000000000000000000000000000000000000000' : RELAY_NATIVE[t.blockchain];
-    if (address) return { chainId: c.relayChainId, address, from: 'pip' };
-  }
-  const known = t.coingeckoId ? RELAY_BY_COINGECKO[t.coingeckoId] : undefined;
-  return known ? { ...known, from: 'pip' } : null;
-}

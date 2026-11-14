@@ -17,8 +17,8 @@ import { buildTransfer, implicitAccountId, nearPublicKey, parsePublicKey, parseS
 /** Cross-chain payments (src/pay/xchain) ride on this flow: they describe their card, may refuse a build, and build their own deposit tx. */
 export type XchainHooks = {
   describe(intentId: string): Record<string, unknown> | null;
-  /** Before a build: re-quotes an old quote onto the intent, or says why it cannot (status + error). Null when ready. */
-  refresh(i: PhoneIntent): Promise<{ status: 403 | 409 | 422 | 502 | 400; error: string } | null>;
+  /** Before a build: re-quotes an old quote onto the intent (requoted: true), or says why it cannot (status + error). */
+  refresh(i: PhoneIntent): Promise<{ status: 403 | 409 | 422 | 502 | 400; error: string } | { requoted: boolean }>;
   /** The deposit transaction for an xchain intent, or null when the intent is not xchain. */
   build(i: PhoneIntent, ctx: { signerId: string; publicKey: Uint8Array; nonce: bigint; blockHash: string }): Promise<{ bytes: Uint8Array; hash: Uint8Array } | null>;
 };
@@ -238,9 +238,12 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
     }
     if (fields.amount !== i.amount || fields.token !== i.token || fields.recipient !== i.recipient) return c.json({ error: 'the details do not match this payment' }, 409);
     if (i.new_recipient && !isApp(c)) return c.json({ error: 'approve a new recipient in the Pip app' }, 403);
+    // A re-quote changes the amount and deposit account: the answer carries the fresh card and requoted: true, so the app re-shows it.
+    let requoted = false;
     if (deps.xchain?.describe(i.id)) {
-      const stale = await deps.xchain.refresh(i);
-      if (stale) return c.json({ error: stale.error, ...view(i) }, stale.status);
+      const r = await deps.xchain.refresh(i);
+      if ('error' in r) return c.json({ error: r.error, ...view(i) }, r.status);
+      requoted = r.requoted;
       i = store.intent(i.id)!;
     }
     const a = store.account(userId, i.network);
@@ -282,7 +285,7 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
       return c.json({ error: claim }, 403);
     }
     pay.audit(userId, i.id, 'built');
-    return c.json(unsignedView(i));
+    return c.json(unsignedView(i, requoted));
   });
 
   // ---- submit: the phone's signature over sha256(tx). Checked against the registered key and the exact stored bytes, then one broadcast.
@@ -328,10 +331,10 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
     return c.json({ payments: store.history(userId, networks.get(userId), 50).map((i) => view(expireIfDue(i))) });
   });
 
-  function unsignedView(i: PhoneIntent) {
+  function unsignedView(i: PhoneIntent, requoted = false) {
     const bytes = Buffer.from(i.tx_b64!, 'base64');
     return {
-      ...view(i), signer_id: store.account(i.user_id, i.network)?.account_id ?? null, public_key: i.public_key, nonce: i.nonce,
+      ...view(i), requoted, signer_id: store.account(i.user_id, i.network)?.account_id ?? null, public_key: i.public_key, nonce: i.nonce,
       tx_base64: i.tx_b64, sign_hash_hex: Buffer.from(sha256(bytes)).toString('hex'), sign: 'Ed25519 over the 32 bytes of sign_hash_hex; send base64 (64 bytes) to /submit',
     };
   }

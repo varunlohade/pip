@@ -7,12 +7,13 @@ import { setup } from './helpers.ts';
 import { payConfig } from '../src/pay/config.ts';
 import { mainnetConfig } from '../src/pay/network.ts';
 import type { PhoneChain } from '../src/pay/phone/chain.ts';
-import { ORIGINS, checkAddress, findToken, relayAsset, type TokenRow } from '../src/pay/xchain/assets.ts';
+import { ORIGINS, checkAddress, findToken, type TokenRow } from '../src/pay/xchain/assets.ts';
+import { checkPin } from '../src/pay/xchain/pins.ts';
 import { keccak256 } from '../src/pay/xchain/eip55.ts';
 import { agreedPrice, checkQuote, defaultLimits, quoteRequest, typedUnits, type Prices } from '../src/pay/xchain/check.ts';
 import { parseXchain } from '../src/pay/xchain/parse.ts';
 import { mapStatus } from '../src/pay/xchain/routes.ts';
-import { relaySource, type OneClick, type OneClickQuote, type OneClickStatus, type PriceSource } from '../src/pay/xchain/sources.ts';
+import { type OneClick, type OneClickQuote, type OneClickStatus, type PriceSource } from '../src/pay/xchain/sources.ts';
 import { buildDeposit } from '../src/pay/xchain/tx.ts';
 import { diffBps, fromBase, parsePrice, toBase, usdText, usdValue } from '../src/pay/xchain/units.ts';
 
@@ -298,7 +299,7 @@ function fakeChain(): { chain: PhoneChain; sent: Uint8Array[] } {
   };
 }
 
-function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = {}) {
+function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tokens?: TokenRow[] } = {}) {
   let feeBps = o.feeBps;
   let clock = Date.parse('2026-11-14T15:00:00Z');
   const now = () => clock;
@@ -307,7 +308,7 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = 
   const deposits: unknown[] = [];
   let ocStatus: OneClickStatus['status'] = 'PROCESSING';
   const oneclick: OneClick = {
-    async tokens() { return TOKENS; },
+    async tokens() { return o.tokens ?? TOKENS; },
     async quote(req) {
       quotes.push(req);
       const n = quotes.length;
@@ -317,8 +318,8 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = 
     async submitDeposit(b) { deposits.push(b); },
   };
   const prices: PriceSource[] = [
-    { name: 'coingecko', price: async (t) => PRICE[t.coingeckoId!] ?? null },
-    { name: 'relay', price: async (t) => (o.relayDown ? null : PRICE[t.coingeckoId!] ?? null) },
+    { name: 'coingecko', price: async (_t, pin) => PRICE[pin.coingeckoId] ?? null },
+    { name: 'relay', price: async (_t, pin) => (o.relayDown ? null : PRICE[pin.coingeckoId] ?? null) },
   ];
   const registered = new Set<string>();
   const views = { async storageRegistered(_c: string, a: string) { return registered.has(a); }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a: string) { return a === 'ana.near'; } };
@@ -382,6 +383,7 @@ test('xchain route: quote -> phone intent -> exact deposit tx -> submit -> depos
   const fields = { amount: q.intent.amount, token: q.intent.token, recipient: q.intent.recipient };
   assert.equal((await w.call('POST', `/v1/pay/intents/${q.intent.id}/unsigned`, fields)).status, 403, 'a new destination needs the app key');
   const u = await (await w.call('POST', `/v1/pay/intents/${q.intent.id}/unsigned`, fields, true)).json();
+  assert.equal(u.requoted, false, 'a fresh quote is not re-quoted');
   const tx = Transaction.decode(Buffer.from(u.tx_base64, 'base64'));
   assert.equal(tx.receiverId, ORIGINS.USDC.contract);
   assert.equal(tx.signerId, w.keyHex);
@@ -417,6 +419,18 @@ test('xchain route: NEAR origin wraps; the signing window is 2 minutes; an old q
   assert.equal(u.status, 200, await u.clone().text());
   const ub = await u.json();
   assert.equal(w.quotes.length, 2, 'the old quote was replaced by a fresh one');
+  assert.equal(ub.requoted, true);
+  assert.notEqual(ub.recipient, q.intent.recipient, 'the deposit account changed');
+  // The tx matches the NEW card: receiver contract, deposit account and exact max input all come from the fresh answer.
+  {
+    const t = Transaction.decode(Buffer.from(ub.tx_base64, 'base64'));
+    const ft = JSON.parse(Buffer.from(t.actions.at(-1)!.functionCall!.args).toString());
+    assert.equal(ft.receiver_id, ub.recipient);
+    assert.equal(ft.receiver_id, ub.xchain.deposit_address);
+    assert.equal(ft.amount, ub.xchain.max_amount_in.units);
+    assert.equal(ft.amount, toBase(ub.amount, 24)!.toString());
+    assert.equal(ub.xchain.max_amount_in.text, ub.amount);
+  }
   assert.equal(ub.recipient, 'ef'.repeat(32), 'the tx and card use the new deposit account');
   assert.equal(ub.xchain.deposit_address, 'ef'.repeat(32));
   assert.equal(Date.parse(ub.xchain.quote_at), Date.parse(q.quote_at) + 61_000);
@@ -512,11 +526,35 @@ test('fix 4: a mixed-case EVM address must pass EIP-55', () => {
 });
 
 test('fix 5: a price needs a source independent of 1Click', () => {
-  assert.match((agreedPrice([{ source: '1click', price: '1' }, { source: 'relay-via-1click-address', price: '1' }], 200n) as { reason: string }).reason, /independent of 1Click/);
+  assert.match((agreedPrice([{ source: '1click', price: '1' }, { source: '1click-again', price: '1' }], 200n) as { reason: string }).reason, /independent of 1Click/);
   assert.equal(agreedPrice([{ source: '1click', price: '1' }], 200n).ok, false);
   assert.ok(agreedPrice([{ source: 'relay', price: '1' }, { source: '1click', price: '1' }], 200n).ok);
-  const relay = relaySource(relayAsset);
-  assert.equal(relay.label!(tok('USDC', 'base')), 'relay-via-1click-address', 'the address came from the 1Click row');
-  assert.equal(relay.label!(tok('ETH', 'base')), 'relay', 'a native coin uses Pip\'s own address');
-  assert.equal(relay.label!(TOKENS.find((t) => t.assetId === ORIGINS.USDC.assetId)!), 'relay', 'NEAR USDC is priced through Pip\'s Ethereum twin');
+});
+
+test('pins: prices use Pip\'s own (chain, contract) record; a row that disagrees is refused; unpinned is not verified', async () => {
+  const base = tok('USDC', 'base');
+  const p = checkPin(base);
+  assert.ok(p.ok);
+  assert.equal(p.pin.coingeckoId, 'usd-coin');
+  assert.deepEqual(p.pin.relay, { chainId: 8453, address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' });
+  assert.equal((checkPin(tok('USDC', 'bsc')) as { pin: { decimals: number } }).pin.decimals, 18);
+  assert.match((checkPin({ ...base, coingeckoId: 'scam-coin' }) as { refused: string }).refused, /CoinGecko id \(scam-coin\) differs/);
+  assert.match((checkPin({ ...base, decimals: 18 }) as { refused: string }).refused, /decimals \(18\) differs/);
+  assert.match((checkPin({ ...base, symbol: 'USDT' }) as { refused: string }).refused, /symbol/);
+  const unpinned = checkPin({ ...base, contractAddress: '0x1111111111111111111111111111111111111111' });
+  assert.equal(unpinned.ok, false);
+  assert.equal((unpinned as { refused: unknown }).refused, null);
+
+  // Through the route: a lying row is refused before any quote; an unpinned asset makes no intent.
+  const lying = world({ tokens: TOKENS.map((t) => (t === base ? { ...t, coingeckoId: 'scam-coin' } : t)) });
+  await lying.start();
+  const r = await lying.call('POST', '/v1/pay/xchain/quote', quoteBody);
+  assert.equal(r.status, 422);
+  assert.equal(lying.quotes.length, 0);
+  const odd = world({ tokens: TOKENS.map((t) => (t === base ? { ...t, contractAddress: '0x1111111111111111111111111111111111111111' } : t)) });
+  await odd.start();
+  const u = await (await odd.call('POST', '/v1/pay/xchain/quote', quoteBody)).json();
+  assert.equal(u.verified, false);
+  assert.equal(u.intent, null);
+  assert.match(u.not_verified[0], /not on Pip's pinned list/);
 });

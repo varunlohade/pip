@@ -9,7 +9,8 @@ import { mainnetConfig, openNetworkStore, type MainnetConfig } from '../network.
 import { toUnits } from '../parse.ts';
 import { openPhoneStore, type PhoneIntent } from '../phone/store.ts';
 import type { XchainHooks } from '../phone/routes.ts';
-import { CHAINS, ORIGINS, checkAddress, findOrigin, findToken, relayAsset, type Origin, type TokenRow } from './assets.ts';
+import { CHAINS, ORIGINS, checkAddress, findOrigin, findToken, type Origin, type TokenRow } from './assets.ts';
+import { checkPin, type Pin } from './pins.ts';
 import { checkQuote, defaultLimits, quoteRequest, typedUnits, type Limits, type Mode, type Numbers } from './check.ts';
 import { createChainDecimals, type ChainDecimals } from './decimals.ts';
 import { chainName, parseXchain } from './parse.ts';
@@ -68,7 +69,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
   const { db, now } = base;
   const main = deps.mainnet ?? mainnetConfig;
   const oneclick = deps.oneclick ?? createOneClick();
-  const prices = deps.prices ?? [coingeckoSource(), relaySource(relayAsset), listSource];
+  const prices = deps.prices ?? [coingeckoSource(), relaySource(), listSource];
   const chainDecimals = deps.chainDecimals ?? createChainDecimals();
   const views = deps.views ?? createNearViews(main.rpcUrl);
   const limits = deps.limits ?? defaultLimits();
@@ -79,7 +80,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
   const json = async <T extends z.ZodTypeAny>(c: Context<Env>, schema: T): Promise<z.infer<T>> => schema.parse(await c.req.json().catch(() => {
     throw new HttpError(400, 'body must be JSON');
   }));
-  const priceAll = (t: TokenRow) => Promise.all(prices.map(async (s) => ({ source: s.label?.(t) ?? s.name, price: await s.price(t).catch(() => null) })));
+  const priceAll = (t: TokenRow, pin: Pin) => Promise.all(prices.map(async (s) => ({ source: s.name, price: await s.price(t, pin).catch(() => null) })));
 
   const describe = (r: XchainRow) => {
     const n = JSON.parse(r.numbers_json) as Numbers;
@@ -133,13 +134,20 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     if (!found.ok) return fail(400, found.reason);
     const dest = found.token;
     if (dest.assetId === origin.assetId) return fail(400, 'same token on NEAR: use a plain payment');
+    // Each asset must match Pip's own pin; prices are looked up with the pin, not 1Click's row.
+    const pins: Pin[] = [];
+    for (const t of [origin, dest]) {
+      const p = checkPin(t);
+      if (!p.ok) return p.refused ? fail(422, p.refused, { verified: false }) : answer({ verified: false, not_verified: [p.reason], numbers: null, intent: null });
+      pins.push(p.pin);
+    }
     const typed = typedUnits(body.amount, mode, origin, dest);
     if (!typed.ok) return fail(400, typed.reason);
 
     const at = now();
     const sent = quoteRequest({ mode, units: typed.units, origin, dest, recipient: body.recipient, refundTo: account.account_id, deadline: new Date(at + DEADLINE_MS), slippageBps: limits.slippageBps, dry: body.dry ?? false });
     const [liveIn, liveOut, pIn, pOut, q] = await Promise.all([
-      chainDecimals(origin).catch(() => null), chainDecimals(dest).catch(() => null), priceAll(origin), priceAll(dest),
+      chainDecimals(origin).catch(() => null), chainDecimals(dest).catch(() => null), priceAll(origin, pins[0]), priceAll(dest, pins[1]),
       oneclick.quote(sent).catch((e: Error) => e),
     ]);
     if (q instanceof Error) {
@@ -178,7 +186,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     /** A quote older than 60 s is quoted and checked again before the tx is built; the intent takes the new numbers. */
     async refresh(i) {
       const r = store.get(i.id);
-      if (!r || now() - r.quote_at <= QUOTE_MAX_AGE_MS) return null;
+      if (!r || now() - r.quote_at <= QUOTE_MAX_AGE_MS) return { requoted: false };
       const n = JSON.parse(r.numbers_json) as Numbers;
       const from = (Object.keys(ORIGINS) as Origin[]).find((o) => ORIGINS[o].assetId === r.origin_asset)!;
       const res = await runQuote(i.user_id, {
@@ -193,7 +201,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
         if (!store.requote(i.id, { amount: res.amount, units: res.units.toString(), depositAddress: res.q.quote.depositAddress!, expiresAt: Math.min(res.at + SIGN_WINDOW_MS, res.deadline - DEADLINE_MARGIN_MS), numbersJson: JSON.stringify(res.v.numbers), quoteJson: JSON.stringify(res.q), quoteAt: res.at, deadline: res.deadline })) return false;
         return true;
       });
-      return moved ? null : { status: 409, error: 'this payment changed; open it again' };
+      return moved ? { requoted: true } : { status: 409, error: 'this payment changed; open it again' };
     },
     async build(i, ctx) {
       const r = store.get(i.id);
