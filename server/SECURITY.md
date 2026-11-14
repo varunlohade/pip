@@ -73,3 +73,14 @@
 - Caps per network, per payment and per rolling day, in one SQLite transaction with the build. A built but unsigned tx counts until its intent expires. Mainnet defaults: 2 NEAR / 5 NEAR a day, 10 USDC / 20 USDC a day (`PAY_MAINNET_MAX_PER_TX_*`, `PAY_MAINNET_MAX_DAILY_*`). The caps guard the server's flow; the phone holds the key, so it could always sign outside Pip.
 - Idempotent: `unsigned` twice returns the same bytes; `submit` after a send returns the first result. An unknown broadcast outcome is kept with its tx hash and never rebuilt or resent.
 - Risks: a server bug could build a tx that differs from the card; the app refuses it (above). The server's DB holds public keys and unsigned bytes only. Library: `near-api-js` 7.5.3 (MIT AND Apache-2.0).
+
+## Cross-chain payments: NEAR Intents 1Click (mainnet only)
+- Code: `server/src/pay/xchain/`. Number checks: `docs/XCHAIN-NUMBERS.md`. Off unless `PAY_MAINNET=1` and the user's network is mainnet; testnet users get 409 before any 1Click call (Intents has no testnet).
+- `POST /v1/pay/xchain/parse {text}`, `POST /v1/pay/xchain/quote {amount, token, chain, recipient, from?, mode?, dry?}`, `GET /v1/pay/xchain/:id`.
+- 1Click needs no key. `ONECLICK_API_KEY` (sent as `X-API-Key`) is optional; without it 1Click adds its own 1 bp app fee (seen in the live dry quote). Optional: `ONECLICK_BASE_URL`, `XCHAIN_*` limits.
+- A checked quote becomes a normal phone intent: token = origin (NEAR, USDC or USDT on NEAR), amount = the max input, recipient = 1Click's deposit account, `new_recipient` always true, so only the app key can build it. The phone signs as for any payment. The server holds no key.
+- The tx goes to the origin token contract only: optional `storage_deposit` (signer, wrap only; deposit account), `near_deposit` (NEAR origin only, the exact amount), then `ft_transfer(deposit account, exact max input)` with 1 yoctoNEAR.
+- The full signed 1Click quote is stored (`pay_xchain.quote_json`) for disputes. After a send, the status route tells 1Click the deposit tx once and polls its status at most every 5 s.
+- Assets are pinned by (chain, contract) in `pins.ts` (52 pins, 49 verified); unpinned or unverified assets are never payable. XRP destination tags are blocked until 1Click's tag format is verified.
+- A named `.near` recipient must exist on mainnet. Mixed-case EVM addresses must pass EIP-55. An intent can be signed for 2 minutes; a quote over 60 s old is re-quoted and re-checked at `/unsigned`.
+- Risks: refunds go to the user's NEAR account by 1Click's rules; a 1Click outage after the deposit leaves funds with 1Click until refund. NEAR's price has only CoinGecko as an independent source (Relay has no NEAR chain); CoinGecko ids come from 1Click's token rows.

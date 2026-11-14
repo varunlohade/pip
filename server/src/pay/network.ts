@@ -17,6 +17,7 @@ export const mainnetConfig = {
   caps: {
     NEAR: { perTx: env.PAY_MAINNET_MAX_PER_TX_NEAR ?? '2', daily: env.PAY_MAINNET_MAX_DAILY_NEAR ?? '5' },
     USDC: { perTx: env.PAY_MAINNET_MAX_PER_TX_USDC ?? '10', daily: env.PAY_MAINNET_MAX_DAILY_USDC ?? '20' },
+    USDT: { perTx: env.PAY_MAINNET_MAX_PER_TX_USDT ?? '10', daily: env.PAY_MAINNET_MAX_DAILY_USDT ?? '20' },
   } as Caps,
 };
 export type MainnetConfig = typeof mainnetConfig;

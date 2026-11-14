@@ -22,6 +22,7 @@ import { createDevMailer, type Mailer } from './mailer.ts';
 import { createRates, type Rates } from './rates.ts';
 import { payRoutes, type PayDeps } from './pay/routes.ts';
 import { phoneRoutes } from './pay/phone/routes.ts';
+import { xchainRoutes } from './pay/xchain/routes.ts';
 import { payConfig } from './pay/config.ts';
 
 export type Deps = {
@@ -381,7 +382,9 @@ export function createApp(deps: Deps) {
 
   // ---- payments on NEAR testnet: parse, propose, approve in the app.
   // Phone-signed payments (testnet and mainnet) go first; they hand legacy server-held requests on with next().
-  phoneRoutes(app, { db, now }, deps.pay?.config ?? payConfig, deps.pay?.phone);
+  // Cross-chain (NEAR Intents 1Click, mainnet only) adds its own routes and rides on the phone-signed flow through hooks.
+  const xchain = xchainRoutes(app, { db, now }, deps.pay?.config ?? payConfig, { mainnet: deps.pay?.phone?.mainnet, ...deps.pay?.xchain });
+  phoneRoutes(app, { db, now }, deps.pay?.config ?? payConfig, { ...deps.pay?.phone, xchain: xchain.hooks });
   payRoutes(app, { db, cipher, now }, deps.pay);
 
   return app;
