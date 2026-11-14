@@ -26,6 +26,19 @@ final class PayDetectTests: XCTestCase {
             XCTAssertNil(PayDetect.detect(t), t)
         }
     }
+
+    func testTheVerbMayBeLeftOut() {
+        XCTAssertEqual(PayDetect.detect("0.05 near to ana.testnet"),
+                       PayDraft(amount: "0.05", token: "NEAR", recipient: "ana.testnet", trigger: "0.05 near to ana.testnet"))
+        XCTAssertEqual(PayDetect.detect("ok 5usdc to @ana.testnet thanks")?.amount, "5")
+        XCTAssertEqual(PayDetect.detect("send 5 USDC to ana.testnet")?.trigger, "send 5 USDC to ana.testnet", "the verb stays in the trigger")
+        XCTAssertNotNil(PayDetect.mainnetSuffix("1 near to ana.mainnet"))
+        for t in ["swap 1 near to usdc", "swap 1 near to ana.near", "I owe 5 dollars to my mom", "request 5 usdc on base",
+                  "ask ana for 5 usdc to ana.testnet", "15 near to ana", "v1.5 near to ana.testnet", "1,5 near to ana.testnet",
+                  "-5 near to ana.testnet", "x$5 usdc to ana.testnet", "0.1234567 usdc to ana.testnet", "$5 near to ana.testnet"] {
+            XCTAssertNil(PayDetect.detect(t), t)
+        }
+    }
 }
 
 @MainActor

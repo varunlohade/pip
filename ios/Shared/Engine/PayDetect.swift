@@ -14,8 +14,12 @@ struct PayDraft: Equatable, Hashable {
 }
 
 enum PayDetect {
+    /// Where a payment with no verb may start ("0.05 near to ana.testnet"): not inside a number or word, and not after a swap,
+    /// request or past-tense word ("swap 1 near to …", "ask ana for 5 usdc", "I sent 5 USDC to …").
+    static let bare = #"(?<![\w.,$-])(?<!\$\s)(?<!\b(?:send|pay|transfer|give|sent|paid|gave|transferred|owe|owed|got|received|swap|convert|exchange|trade|request|charge|for|my)\s{1,4})"#
+
     private static let re = try! NSRegularExpression(
-        pattern: #"\b(?:send|pay|transfer|give)\s+(\$\s?)?(\d{1,12}(?:\.\d{1,24})?)\s*(near|usdc)\s+to\s+@?([a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(?:testnet|near))(?=$|[\s,;!?]|\.(?:\s|$))"#,
+        pattern: #"(?:\b(?:send|pay|transfer|give)\s+|"# + bare + #")(\$\s?)?(\d{1,12}(?:\.\d{1,24})?)\s*(near|usdc)\s+to\s+@?([a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.(?:testnet|near))(?=$|[\s,;!?]|\.(?:\s|$))"#,
         options: [.caseInsensitive])
 
     /// The last payment in the text, or nil.
@@ -37,7 +41,7 @@ enum PayDetect {
     static let suffixHelp = "NEAR accounts end in .near (mainnet) or .testnet"
 
     private static let mainnetRe = try! NSRegularExpression(
-        pattern: #"\b(?:send|pay|transfer|give)\s+\$?\s?\d{1,12}(?:\.\d{1,24})?\s*(?:near|usdc)\s+to\s+@?[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.mainnet(?=$|[\s,;!?.])"#,
+        pattern: #"(?:\b(?:send|pay|transfer|give)\s+|"# + bare + #")\$?\s?\d{1,12}(?:\.\d{1,24})?\s*(?:near|usdc)\s+to\s+@?[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.mainnet(?=$|[\s,;!?.])"#,
         options: [.caseInsensitive])
 
     /// The words of a payment to a ".mainnet" account, or nil.

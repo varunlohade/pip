@@ -780,6 +780,33 @@ test('swap parse: 18 cases', () => {
   assert.equal((parseAny('swap 1 near to usdc') as { kind: string }).kind, 'swap');
 });
 
+test('xchain parse: the verb may be left out when the target is an address', () => {
+  const read = (text: string) => parseXchain(text) as Record<string, unknown>;
+  for (const [text, amount, token, chain] of [
+    [`5 usdc to ${EVM} on base`, '5', 'USDC', 'base'],
+    [`$5 to ${EVM} on base`, '5', 'USDC', 'base'],
+    [`$0.02 USDT to ${TRON_ADDR}`, '0.02', 'USDT', 'tron'],
+    [`ok 10 USDT to ${SOL_ADDR} thanks`, '10', 'USDT', 'sol'],
+    ['0.05 near to ana.near', '0.05', 'NEAR', 'near'],
+  ] as const) {
+    const r = read(text);
+    assert.equal(r.valid, true, `${text}: ${r.reason}`);
+    assert.deepEqual([r.amount, r.token, r.chain], [amount, token, chain], text);
+  }
+  assert.equal(read(`5 usdc to ${EVM}`).needs, 'chain');
+  assert.equal(read(`5 usdc to ${EVM} on base and 6 usdc to ${EVM} on base`).reason, 'more than one payment in the text; send one at a time');
+  for (const text of ['swap 1 near to usdc', 'swap 1 near to ana.near', 'I owe 5 dollars to my mom', 'I paid $5 to my mom', 'request 5 usdc on base',
+    'ask ana for 5 usdc on base', '1 near to usdc', `15${EVM} on base`, `x5 usdc to ${EVM} on base`, `I sent 5 usdc to ${EVM} on base`]) {
+    assert.match(String(read(text).reason), /no payment found/, text);
+  }
+  const kind = (text: string) => (parseAny(text) as { kind?: string }).kind;
+  assert.equal(kind(`5 usdc to ${EVM} on base`), 'xchain');
+  assert.equal(kind('swap 1 near to usdc'), 'swap');
+  assert.equal(kind('swap $5 to eth'), undefined, 'no swap before, none now');
+  assert.equal(kind('request 5 usdc on base'), 'request');
+  assert.equal(kind('ask ana for 5 usdc on base'), 'request');
+});
+
 test('swap check: exact input spends exactly the typed amount; the minimum received sits on the slippage boundary', () => {
   const dest = tok('USDC', 'near');
   const at = judge({ mode: 'exact_in', amount: '1', from: 'NEAR', dest, tweak: (q) => { q.quote.minAmountOut = ((BigInt(q.quote.amountOut) * 9_900n) / 10_000n).toString(); } });

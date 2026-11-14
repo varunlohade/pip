@@ -192,6 +192,18 @@ final class PayDollarTests: XCTestCase {
         XCTAssertNil(XchainDetect.candidate("send 5 to 0x8ba1f109551bD432803012645Ac136ddd64DBA72"), "no $ and no token: unclear")
     }
 
+    func testCrossChainWithNoVerb() {
+        XCTAssertEqual(XchainDetect.candidate("5 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72 on base"),
+                       "5 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72 on base")
+        XCTAssertNotNil(XchainDetect.candidate("$5 to 0x8ba1f109551bD432803012645Ac136ddd64DBA72 on base"))
+        XCTAssertEqual(XchainDetect.candidate("send 5 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72 on base"),
+                       "send 5 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72 on base", "the verb stays in the words")
+        for t in ["5 to 0x8ba1f109551bD432803012645Ac136ddd64DBA72", "I sent 5 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+                  "I have 5 usdc and want to 0x8ba1f109551bD432803012645Ac136ddd64DBA72", "0.05 near to ana.testnet"] {
+            XCTAssertNil(XchainDetect.candidate(t), t)
+        }
+    }
+
     func testDollarUSDCToANearAccountIsAPlainPay() {
         XCTAssertEqual(PayDetect.detect("send $5 usdc to ana.testnet")?.amount, "5")
         XCTAssertNil(PayDetect.detect("send $5 near to ana.testnet"), "$ with NEAR is unclear")

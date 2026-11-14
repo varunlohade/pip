@@ -9,9 +9,15 @@ const TOKEN = String.raw`(near|usdc)`;
 // Anything that looks like a target; the account id rules are checked after the match, so a bad id gets a clear reason.
 const TARGET = String.raw`(@?[^\s,;!?]+?)`;
 const END = String.raw`(?=[\s,;!?]|\.(?:\s|$)|$)`;
-// "send 5 USDC to ana.testnet" or "pay ana.testnet 5 USDC". Only these two shapes; nothing is guessed.
+// Where a payment with no verb may start ("0.05 near to ana.testnet"): not inside a number or word, and not after a swap,
+// request or past-tense word ("swap 1 near to …", "ask ana for 5 usdc", "I sent 5 USDC to …").
+export const BARE = String.raw`(?<![\w.,$-])(?<!\$\s)(?<!\b(?:send|pay|transfer|give|sent|paid|gave|transferred|owe|owed|got|received|swap|convert|exchange|trade|request|charge|for|my)\s+)`;
+// With no verb the target must look like an account (a dot, or 64 hex), so "1 near to usdc" is not read as a payment.
+const BARE_TARGET = String.raw`(@?(?:[a-z\d_-]+(?:\.[a-z\d_-]+)+|[0-9a-f]{64}))`;
+// "send 5 USDC to ana.testnet", "5 USDC to ana.testnet" or "pay ana.testnet 5 USDC". Only these shapes; nothing is guessed.
 const SHAPES: { re: RegExp; amount: number; token: number; to: number }[] = [
   { re: new RegExp(String.raw`\b${VERB}\s+${AMOUNT}\s*${TOKEN}\s+to\s+${TARGET}${END}`, 'gi'), amount: 1, token: 2, to: 3 },
+  { re: new RegExp(String.raw`${BARE}(\d+(?:\.\d+)?)\s*${TOKEN}\s+to\s+${BARE_TARGET}${END}`, 'gi'), amount: 1, token: 2, to: 3 },
   { re: new RegExp(String.raw`\b${VERB}\s+${TARGET}\s+${AMOUNT}\s*${TOKEN}${END}`, 'gi'), amount: 2, token: 3, to: 1 },
 ];
 

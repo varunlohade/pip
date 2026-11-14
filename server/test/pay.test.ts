@@ -21,6 +21,10 @@ const ok: [string, string, 'NEAR' | 'USDC', string][] = [
   ['please pay sub.ana.testnet 0.5 near!', '0.5', 'NEAR', 'sub.ana.testnet'],
   [`send 1 NEAR to ${'a'.repeat(64)}`, '1', 'NEAR', 'a'.repeat(64)],
   ['send 1.000001 USDC to ana.testnet', '1.000001', 'USDC', 'ana.testnet'],
+  // No verb: "<amount> <token> to <account>".
+  ['0.05 near to ana.testnet', '0.05', 'NEAR', 'ana.testnet'],
+  ['ok 5 USDC to @ana.testnet thanks', '5', 'USDC', 'ana.testnet'],
+  ['hey, 2usdc to shop-1.testnet', '2', 'USDC', 'shop-1.testnet'],
 ];
 for (const [text, amount, token, recipient] of ok) {
   test(`parse ok: ${text.slice(0, 50)}`, () => {
@@ -44,6 +48,22 @@ const bad: [string, RegExp][] = [
   ['lunch at 5?', /no payment found/],
   ['send 1 NEAR to a.testnet and send 2 NEAR to b.testnet', /more than one/],
   ['send 5 USDC', /no payment found/],
+  ['0.1234567 usdc to ana.testnet', /at most 6 decimals/],
+  ['0.05 near to ana.near', /mainnet/],
+  ['1 near to a.testnet and 2 near to b.testnet', /more than one/],
+  // No verb, and not a payment: the amount sits inside a number or word, or after a swap, request or past-tense word.
+  ['swap 1 near to usdc', /no payment found/],
+  ['swap 1 near to ana.testnet', /no payment found/],
+  ['I owe 5 dollars to my mom', /no payment found/],
+  ['I sent 5 USDC to ana.testnet', /no payment found/],
+  ['request 5 usdc on base', /no payment found/],
+  ['ask ana for 5 usdc to ana.testnet', /no payment found/],
+  ['1 near to usdc', /no payment found/],
+  ['15 near to ana', /no payment found/],
+  ['v1.5 near to ana.testnet', /no payment found/],
+  ['1,5 near to ana.testnet', /no payment found/],
+  ['-5 near to ana.testnet', /no payment found/],
+  ['$5 usdc to ana.testnet', /no payment found/],
 ];
 for (const [text, reason] of bad) {
   test(`parse refuses: ${text.slice(0, 50)}`, () => {

@@ -1,3 +1,4 @@
+import { BARE } from '../parse.ts';
 import { CHAINS, ORIGINS, addressChain, chainByName, checkAddress, type Origin } from './assets.ts';
 
 export type XchainPayment = { amount: string; token: string; chain: string; recipient: string; from: Origin | null; tag: string | null };
@@ -11,7 +12,8 @@ const TAG = String.raw`(?:\s+(?:destination\s+)?(?:tag|memo)\s+(\d{1,10}))?`;
 const FROM = String.raw`(?:\s+from\s+(?:my\s+)?([a-z]+)(?:\s+(?:wallet|balance|account))?)?`;
 const END = String.raw`(?=[\s,;!?]|\.(?:\s|$)|$)`;
 // "send 20 USDT on solana to <addr> from my NEAR", "pay 0.01 ETH to 0x… on base". One shape; nothing is guessed.
-const SHAPE = new RegExp(String.raw`\b${VERB}\s+(\S+?)\s*([a-z][a-z0-9]{1,9})${ON}\s+to\s+(@?[^\s,;!?]+?)${TAG}${ON}${FROM}${END}`, 'gi');
+// The verb may be left out ("5 usdc to 0x… on base"); then the target must be an address Pip knows (see parseXchain).
+const SHAPE = new RegExp(String.raw`(?:\b(${VERB})\s+|${BARE}(?=\d))(\S+?)\s*([a-z][a-z0-9]{1,9})${ON}\s+to\s+(@?[^\s,;!?]+?)${TAG}${ON}${FROM}${END}`, 'gi');
 
 // "$" with a dollar stablecoin is only the unit: "$0.02 USDT" is "0.02 USDT", "5 bucks of usdc" is "5 USDC", and a bare "$5" is "5 USDC".
 // The number itself is never touched (docs/XCHAIN-NUMBERS.md). "$5 ETH" stays as typed, so it fails as before: dollars or ETH is unclear.
@@ -20,7 +22,8 @@ export function dollarsAsUnit(text: string): string {
   return text
     .replace(new RegExp(String.raw`\$\s?(\d[\d.]*)\s*(${DOLLAR_TOKENS})\b`, 'gi'), '$1 $2')
     .replace(new RegExp(String.raw`\b(\d[\d.]*)\s+(?:bucks|dollars|usd)\s+(?:of|in|worth\s+of)\s+(${DOLLAR_TOKENS})\b`, 'gi'), '$1 $2')
-    .replace(new RegExp(String.raw`\b(${VERB})\s+\$\s?(\d[\d.]*)(?=\s+to\s)`, 'gi'), '$1 $2 USDC');
+    .replace(new RegExp(String.raw`\b(${VERB})\s+\$\s?(\d[\d.]*)(?=\s+to\s)`, 'gi'), '$1 $2 USDC')
+    .replace(new RegExp(String.raw`${BARE}\$\s?(\d[\d.]*)(?=\s+to\s)`, 'gi'), '$1 USDC');
 }
 
 const BAD_AMOUNT = 'write the amount as a plain number above zero, like 5 or 0.5';
@@ -32,10 +35,12 @@ function cleanAmount(raw: string): string | null {
 
 /** Reads one any-token, any-chain payment from a line of text. Pure: no network. Decimals are checked later against the token list. */
 export function parseXchain(text: string): XchainParse {
-  const found = [...dollarsAsUnit(text).matchAll(SHAPE)];
+  // A match with no verb counts only when its target is an address: "1 near to usdc" stays a swap, "5 usdc to my mom" stays words.
+  const isAddress = (raw: string) => { const t = raw.replace(/^@/, '').replace(/\.$/, ''); return !!(addressChain(t) || addressChain(t.toLowerCase())); };
+  const found = [...dollarsAsUnit(text).matchAll(SHAPE)].filter((m) => m[1] || isAddress(m[5]));
   if (found.length === 0) return { valid: false, reason: 'no payment found; try "send 5 USDC to 0x… on base"' };
   if (found.length > 1) return { valid: false, reason: 'more than one payment in the text; send one at a time' };
-  const [, amountRaw, tokenRaw, on1, targetRaw, tagRaw, on2, fromRaw] = found[0];
+  const [, , amountRaw, tokenRaw, on1, targetRaw, tagRaw, on2, fromRaw] = found[0];
   const amount = cleanAmount(amountRaw);
   if (!amount) return { valid: false, reason: BAD_AMOUNT };
   const token = tokenRaw.toUpperCase();

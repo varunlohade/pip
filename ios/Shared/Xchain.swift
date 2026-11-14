@@ -155,11 +155,15 @@ enum XchainOffer: Equatable {
     static let mainnetLine = "Cross-chain pay needs Mainnet. Switch in Pip Pay."
 }
 
-/// The keyboard's cheap test before it asks the server: a pay verb, an amount, a token word, "to", and something shaped like
+/// The keyboard's cheap test before it asks the server: a pay verb (or none), an amount, a token word, "to", and something shaped like
 /// an address on another chain (or a NEAR account paid in a token the plain flow does not send).
 enum XchainDetect {
     private static let re = try! NSRegularExpression(
         pattern: #"\b(?:send|pay|transfer|give)\s+(\$\s?)?\d[\d.]*\s*(?:(?:bucks|dollars|usd)\s+(?:of|in|worth\s+of)\s+)?([a-z][a-z0-9]{1,9}\b)?[^\n]{0,40}?\bto\s+@?(0x[0-9a-f]{40}|bc1[a-z0-9]{20,90}|[13][1-9a-z]{25,34}|t[1-9a-z]{33}|r[1-9a-z]{24,34}|[1-9a-z]{32,44}|[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.near)\b[^\n]{0,60}"#,
+        options: [.caseInsensitive])
+    /// "5 usdc to 0x… on base" or "$5 to 0x…" with no verb: the token (or "on <chain>") must sit right before "to".
+    private static let bareRe = try! NSRegularExpression(
+        pattern: PayDetect.bare + #"(\$\s?)?\d[\d.]*\s*(?:(?:bucks|dollars|usd)\s+(?:of|in|worth\s+of)\s+)?([a-z][a-z0-9]{1,9}\b)?(?:\s+(?:on|via)\s+[a-z]+)?\s+to\s+@?(0x[0-9a-f]{40}|bc1[a-z0-9]{20,90}|[13][1-9a-z]{25,34}|t[1-9a-z]{33}|r[1-9a-z]{24,34}|[1-9a-z]{32,44}|[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.near)\b[^\n]{0,60}"#,
         options: [.caseInsensitive])
 
     /// The words to send to /v1/pay/xchain/parse, or nil. A plain NEAR send (PayDetect) is never a cross-chain ask.
@@ -167,7 +171,8 @@ enum XchainDetect {
         guard PayDetect.detect(text) == nil else { return nil }
         if let w = IntentsDetect.candidate(text) { return w }
         let ns = text as NSString
-        guard let m = re.matches(in: text, range: NSRange(location: 0, length: ns.length)).last else { return nil }
+        let all = NSRange(location: 0, length: ns.length)
+        guard let m = (re.matches(in: text, range: all) + bareRe.matches(in: text, range: all)).max(by: { $0.range.location < $1.range.location }) else { return nil }
         // "$5 to …" has no token: the server reads the $ as USDC. Without a $, a token is needed.
         let dollar = m.range(at: 1).location != NSNotFound
         if dollar, !Flags.dollarPay { return nil }
