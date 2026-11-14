@@ -27,6 +27,8 @@ struct DemoAPI: KeyboardAPI {
     func parseXchain(_ text: String) async throws -> XchainParsed { throw APIError.message("no payments in the intro") }
     func quoteXchain(_ p: XchainParsed) async throws -> XchainQuote { throw APIError.message("no payments in the intro") }
     func xchainStatus(_ id: String) async throws -> XchainStatus { throw APIError.message("no payments in the intro") }
+    func requestPay(_ p: XchainParsed) async throws -> RequestCard { throw APIError.message("no payments in the intro") }
+    func requestStatus(_ id: String) async throws -> RequestStatus { throw APIError.message("no payments in the intro") }
     func submitPay(_ id: String, signature: Data) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
     func rejectPay(_ id: String) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
 }

@@ -1,4 +1,4 @@
-import type { TokenRow } from './assets.ts';
+import { checkAddress, type TokenRow } from './assets.ts';
 import type { OneClickQuote } from './sources.ts';
 import { diffBps, fromBase, parsePrice, toBase, usdText, usdValue } from './units.ts';
 
@@ -23,12 +23,15 @@ export function typedUnits(amount: string, mode: Mode, origin: TokenRow, dest: T
   return { ok: true, units };
 }
 
-/** The 1Click quote request. `dry` true never makes a deposit address. */
-export function quoteRequest(p: { mode: Mode; units: bigint; origin: TokenRow; dest: TokenRow; recipient: string; refundTo: string; deadline: Date; slippageBps: number; dry: boolean }) {
+/**
+ * The 1Click quote request. `dry` true never makes a deposit address. A receive request refunds to the user's own NEAR Intents
+ * account (`refundType: 'INTENTS'`), because Pip cannot know the payer's address.
+ */
+export function quoteRequest(p: { mode: Mode; units: bigint; origin: TokenRow; dest: TokenRow; recipient: string; refundTo: string; deadline: Date; slippageBps: number; dry: boolean; refundType?: 'ORIGIN_CHAIN' | 'INTENTS' }) {
   return {
     dry: p.dry, swapType: p.mode === 'exact_out' ? 'EXACT_OUTPUT' : 'EXACT_INPUT', slippageTolerance: p.slippageBps,
     originAsset: p.origin.assetId, depositType: 'ORIGIN_CHAIN', destinationAsset: p.dest.assetId, amount: p.units.toString(),
-    refundTo: p.refundTo, refundType: 'ORIGIN_CHAIN', recipient: p.recipient, recipientType: 'DESTINATION_CHAIN',
+    refundTo: p.refundTo, refundType: p.refundType ?? 'ORIGIN_CHAIN', recipient: p.recipient, recipientType: 'DESTINATION_CHAIN',
     deadline: p.deadline.toISOString(), depositMode: 'SIMPLE',
   };
 }
@@ -68,6 +71,8 @@ export type Verdict =
 export function checkQuote(p: {
   mode: Mode; typed: bigint; origin: TokenRow; dest: TokenRow; chainDecimals: { origin: number | null; dest: number | null };
   sent: Record<string, unknown>; q: OneClickQuote; prices: { origin: Prices; dest: Prices }; limits: Limits; now: number; minDeadlineMs: number;
+  /** Where the deposit is paid. NEAR (the default) for Pip's own payments; the payer's chain for a receive request. */
+  depositChain?: string;
 }): Verdict {
   const { origin: o, dest: d, q, limits } = p;
   const refuse = (refused: string, numbers: Numbers | null = null): Verdict => ({ ok: false, verified: false, refused, not_verified: [], numbers });
@@ -99,7 +104,10 @@ export function checkQuote(p: {
   // 5. A real quote: a NEAR deposit account, no memo, and enough time before the deposit address goes cold.
   if (p.sent.dry === false) {
     const dep = String(x.depositAddress ?? '');
-    if (!/^[0-9a-f]{64}$/.test(dep) && !/^(([a-z\d]+[-_])*[a-z\d]+\.)+near$/.test(dep)) return refuse('the quote has no NEAR deposit account');
+    const on = p.depositChain ?? 'near';
+    if (on === 'near') {
+      if (!/^[0-9a-f]{64}$/.test(dep) && !/^(([a-z\d]+[-_])*[a-z\d]+\.)+near$/.test(dep)) return refuse('the quote has no NEAR deposit account');
+    } else if (!checkAddress(on, dep).ok) return refuse(`the quote's deposit address is not a ${on} address`);
     if (x.depositMemo) return refuse('the quote needs a memo; Pip does not send memos');
     const dl = Date.parse(String(x.deadline ?? ''));
     if (!(dl >= p.now + p.minDeadlineMs)) return refuse('the quote deadline is too close');

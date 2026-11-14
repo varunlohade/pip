@@ -161,12 +161,12 @@ final class SecretFilterTests: XCTestCase {
         XCTAssertEqual(SecretFilter.finishedWords("hello"), "")
     }
 
-    /// The 162-line router eval (server/test/fixtures/route-eval.json): no line is called a secret.
+    /// The 186-line router eval (server/test/fixtures/route-eval.json): no line is called a secret.
     func testNoFalsePositivesOnTheRouterEval() throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../server/test/fixtures/route-eval.json")
         let eval = try JSONDecoder().decode([String: [String]].self, from: Data(contentsOf: url))
         let lines = eval.values.flatMap { $0 }
-        XCTAssertEqual(lines.count, 162)
+        XCTAssertEqual(lines.count, 186)
         let flagged = lines.filter(SecretFilter.isSecret)
         XCTAssertEqual(flagged, [], "false positives: \(flagged.count) of \(lines.count)")
     }
@@ -288,6 +288,8 @@ final class RouteModelTests: XCTestCase {
             host.insert(recipient)
             model.textChanged()
             XCTAssertFalse(model.secretLine, "locked on pasted \(recipient)")
+            // A cross-chain recipient waits 300 ms of real time for the server's parse (a live preview on testnet).
+            for _ in 0..<3000 where model.payItem == nil { try? await Task.sleep(for: .milliseconds(1)) }
             XCTAssertNotNil(model.payItem, "no pay chip for pasted \(recipient)")
             XCTAssertEqual(model.barItems.first?.id, "pay", "\(recipient): \(ids())")
             await typingPause()
@@ -363,19 +365,31 @@ final class RouteModelTests: XCTestCase {
         XCTAssertNil(model.drawTopic)
     }
 
-    /// On testnet a cross-chain ask the router finds shows the Mainnet line, never nothing.
-    func testRouterXchainOnTestnetShowsTheMainnetLine() async {
+    /// On testnet a cross-chain ask the router finds still goes to the server: it answers a live NEAR Intents preview.
+    func testRouterXchainOnTestnetAsksForALivePreview() async {
         api.routeReply = RouteResponse(label: "xchain_pay", confidence: 0.9, chips: [])
         set("move my usdc over to arbitrum")
         await pause()
-        await until("mainnet line") { model.payItem != nil }
-        XCTAssertEqual(model.payItem?.title, XchainOffer.mainnetLine)
+        await until("the chip") { model.payItem?.detail == "Review" }
+        XCTAssertEqual(api.parsed, ["move my usdc over to arbitrum"])
     }
 
-    /// His 0.4 case: "$0.02 USDT" to a Tron address. On testnet the bar says Mainnet is needed at once.
-    func testDollarUSDTToTronShowsAChip() {
+    /// The router's swap label reads the sentence on the server too.
+    func testRouterSwapLabelOffersASwap() async {
+        api.routeReply = RouteResponse(label: "swap", confidence: 0.9, chips: [])
+        api.parseReply = XchainParsed(valid: true, kind: "swap", amount: "1", token: "USDC", chain: "near", from: "NEAR")
+        set("turn one near into usdc please")
+        await pause()
+        await until("the swap chip") { model.payItem?.title == "Swap 1 NEAR to USDC" }
+    }
+
+    /// His 0.4 case: "$0.02 USDT" to a Tron address. On testnet the server reads it and the card is a live preview.
+    func testDollarUSDTToTronShowsAChip() async {
         set("send $0.02 USDT to TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f")
-        XCTAssertEqual(model.payItem?.title, XchainOffer.mainnetLine)
+        // The keyboard waits 300 ms of real time for the words to settle before it asks.
+        for _ in 0..<3000 where model.payItem?.detail != "Review" { try? await Task.sleep(for: .milliseconds(1)) }
+        XCTAssertEqual(model.payItem?.detail, "Review")
+        XCTAssertEqual(api.parsed, ["send $0.02 USDT to TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f"])
     }
 
     /// The router gets the last lines from the typing memory as context.

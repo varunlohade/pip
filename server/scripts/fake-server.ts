@@ -115,7 +115,8 @@ function fakeOneClick(now: () => number): OneClick {
         aOut = (aIn * pIn * sOut * (10_000n - fee)) / (pOut * sIn * 10_000n);
         minOut = (aOut * (10_000n - slip)) / 10_000n;
       }
-      const depositAddress = n.toString(16).padStart(2, '0').repeat(32);
+      // A receive request is paid on the payer's chain: an EVM deposit address there; Pip's own deposits go to a NEAR account.
+      const depositAddress = o.blockchain === 'near' ? n.toString(16).padStart(2, '0').repeat(32) : `0x${n.toString(16).padStart(40, '0')}`;
       recipients.set(depositAddress, String(req.recipient));
       return {
         quote: {
@@ -172,7 +173,7 @@ function build() {
       phone: { chains: { testnet: fakePhoneChain('.testnet'), mainnet: fakePhoneChain('.near') }, mainnet: { ...mainnetConfig, enabled: true } },
       xchain: {
         oneclick: fakeOneClick(now), prices: fakePrices, chainDecimals: async (t) => t.decimals, limits: defaultLimits({}),
-        views: { async storageRegistered() { return true; }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a) { return a === 'ana.near' || a === 'bob.near'; } },
+        views: { async storageRegistered() { return true; }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a) { return a === 'ana.near' || a === 'bob.near'; }, async balance() { return 10n ** 30n; } },
       },
     },
     served: { model: 'deepseek-ai/DeepSeek-V3.1', private: true, attested: true },

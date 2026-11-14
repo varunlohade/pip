@@ -159,3 +159,14 @@ A `3…` address fits both Bitcoin and Litecoin, so the text must name the chain
 ## Golden tests
 
 `server/test/xchain.test.ts` covers every decimal class in the pin table (6, 8, 9, 18, 24, including USDC/USDT 18 on BNB Chain, BTC/DOGE/LTC/BCH/WBTC 8, SOL/SUI 9, XRP/ADA/TRX 6), each address check above with good and bad cases, and also USDC 6, USDT 6, NEAR 24 (1 yocto), wNEAR 24, ETH 18, SOL 9, BTC 8; `0.000001 USDC`; too many decimals; USDC on BNB (18) against USDC on NEAR (6) in one quote; dust (1 unit in, 0 out, refused); a token list with wrong decimals (refused); a quote whose formatted amount does not fit its decimals (refused); fee, rate, echo, exactness, deadline, memo and price-spread failures.
+
+## Swaps, live previews and receiving (build 0.8)
+
+Code: `routes.ts` (`/v1/pay/xchain/swap`, `/v1/pay/xchain/request`, `/v1/pay/xchain/requests/:id`, `/v1/pay/addresses`), `parse.ts` (`parseSwap`, `parseRequest`, `parseAny`). Every rule above still applies.
+
+- **Swap** ("swap 1 near to usdc", "swap 10 usdc to eth on base"): exact input, so `amountIn` must equal the typed amount. The recipient is never typed: on NEAR it is the user's own account; on another chain it is the user's saved address for that chain ("My addresses", checked by that chain's validator, changed only by the app). No saved address: 400 with `needs: "address"`. "to near" on NEAR is wNEAR (1Click delivers the NEP-141).
+- **Minimum received**: `minAmountOut >= amountOut × (10000 − slippage) / 10000`. One unit below the bound is refused. The card shows the slippage as its own line.
+- **Live preview**: on testnet (or with mainnet off on the server) the quote is a real 1Click quote with `dry: true`, checked the same way, answered with `preview: true` and `intent: null`. The refund/recipient account is the phone's implicit id, which the same key owns on mainnet. On mainnet with too little in the wallet (`ft_balance_of`, or the native balance for NEAR) the checked card comes back as a preview with `need` and "Need 0.8 more NEAR". A preview never makes a phone intent, so nothing can be built, signed or submitted from it.
+- **Receive** ("request 5 usdc on base", "top up my pip with 20 usdc from base"): origin = the token on the payer's chain, destination = the same token on NEAR, recipient = the user's own NEAR account, exact input. The deposit address must be a valid address on the payer's chain. Pip cannot know the payer's address, so `refundType` is `INTENTS` and `refundTo` is the user's own NEAR account: a failed or late payment is refunded to the user's NEAR Intents balance, not to the payer. The address stays open 60 minutes and is shown as valid until 15 minutes before 1Click's deadline. Pip signs nothing and moves no money here; on testnet the request is a dry preview with no address.
+
+Live dry quotes on 2026-11-14 (no deposit address, no money): `server/test/fixtures/xchain-live-swap-dry.txt`.

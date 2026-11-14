@@ -23,6 +23,9 @@ protocol KeyboardAPI {
     func parseXchain(_ text: String) async throws -> XchainParsed
     func quoteXchain(_ p: XchainParsed) async throws -> XchainQuote
     func xchainStatus(_ id: String) async throws -> XchainStatus
+    /// Receive: a checked deposit address on the payer's chain (or a preview), and where it stands. Pip moves no money here.
+    func requestPay(_ p: XchainParsed) async throws -> RequestCard
+    func requestStatus(_ id: String) async throws -> RequestStatus
     func submitPay(_ id: String, signature: Data) async throws -> PayIntent
     func rejectPay(_ id: String) async throws -> PayIntent
 }

@@ -454,6 +454,7 @@ struct PayPanelBar: View {
     }
 
     static func title(_ p: PayPanel) -> String {
+        if let t = SwapText.title(p) { return t }
         if let card = p.xchain, let n = card.numbers, let d = card.destination {
             if p.phase == .sent { return p.swap.map { $0.line(chain: d.chain_name) } ?? "Payment sent" }
             return p.requoted ? "Price updated" : "Send \(n.amount_out.text) \(n.amount_out.symbol) on \(d.chain_name)"
@@ -474,6 +475,10 @@ struct PayKeyboardCard: View {
     var body: some View {
         if let pin = panel.pin {
             PINPadCard(panel: panel, pin: pin, digit: digit, deleteDigit: deleteDigit, reject: reject)
+        } else if let r = panel.request {
+            RequestKeyboardCard(panel: panel, card: r, share: insert, close: reject)
+        } else if let card = panel.xchain, card.swap || card.preview {
+            SwapKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert)
         } else if let card = panel.xchain {
             XchainKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert, pick: pick)
         } else {

@@ -1,0 +1,9 @@
+Two read-only DRY 1Click quotes (no deposit address, no money), 2026-11-14, checked with checkQuote and live prices
+(CoinGecko, Relay, 1Click list). Recipient and refund were a placeholder implicit id.
+
+== swap 1 NEAR -> USDC on NEAR (dry)
+ quote {"amountIn":"1.0","amountOut":"3.091943","minOut":"3061023","eta":22,"refundType":"ORIGIN_CHAIN"}
+ verdict verified; in 1 wNEAR out 3.091943 min 3.061023 USDC fee $0.050101 (162 bps) 1 wNEAR = 3.091943 USDC
+== request 5 USDC on Base -> USDC on NEAR, refund INTENTS (dry)
+ quote {"amountIn":"5.0","amountOut":"4.995554","minOut":"4945598","eta":35,"refundType":"INTENTS"}
+ verdict verified; in 5 USDC out 4.995554 min 4.945598 USDC fee $0.054383 (109 bps) 1 USDC = 0.99911 USDC

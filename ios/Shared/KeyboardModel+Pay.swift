@@ -14,6 +14,10 @@ struct PayPanel: Equatable {
     var pending: PayUnsigned?
     /// Cross-chain, after the deposit landed.
     var swap: SwapState?
+    /// Receive: a request or top-up card. Nothing to approve; the owner shares the address.
+    var request: RequestCard?
+    /// Where a shared request stands.
+    var requestStatus: RequestStatus?
     /// Pip's own PIN pad, with the digits typed so far.
     var pin: String?
     /// The keyboard can read a PIN-sealed key: "Approve with PIN". Else "Set a payment PIN in Pip".
@@ -21,10 +25,13 @@ struct PayPanel: Equatable {
     /// The PIN is being checked (PBKDF2 takes a moment).
     var checkingPIN = false
 
-    init(intent: PayIntent, xchain: XchainCard? = nil) {
+    init(intent: PayIntent, xchain: XchainCard? = nil, request: RequestCard? = nil) {
         self.intent = intent
         self.xchain = xchain
-        if let card = xchain {
+        self.request = request
+        if request != nil {
+            confirm = nil
+        } else if let card = xchain {
             if card.firstTime, let to = card.destination?.recipient { confirm = AddressConfirm(to) }
         } else if intent.new_recipient != false {
             confirm = AddressConfirm(intent.recipient)
@@ -34,10 +41,14 @@ struct PayPanel: Equatable {
     var requoted: Bool { pending != nil }
     /// Approve is on: a ready card, a verified quote, and the address confirmed when it is new.
     var canApprove: Bool {
-        phase == .ready && (xchain?.approvable ?? true) && (confirm?.confirmed ?? true)
+        request == nil && phase == .ready && (xchain?.approvable ?? true) && (confirm?.confirmed ?? true)
     }
     /// What the system Face ID sheet says.
     var prompt: String {
+        if let card = xchain, card.swap, let n = card.numbers {
+            let out = n.min_amount_out ?? n.amount_out
+            return "Swap \(n.max_amount_in.text) \(XchainCardText.origin(n.max_amount_in.symbol)) for at least \(out.text) \(out.symbol)"
+        }
         if let n = xchain?.numbers, let d = xchain?.destination {
             return "Send \(n.amount_out.text) \(n.amount_out.symbol) on \(d.chain_name) to \(XchainCardText.short(d.recipient))"
         }
@@ -81,11 +92,7 @@ extension KeyboardModel {
             if xchainOffer != nil { xchainOffer = nil }
             return false
         }
-        if PayNetwork.name != "mainnet" {
-            let offer = XchainOffer.needsMainnet(trigger: words)
-            if xchainOffer != offer { xchainOffer = offer }
-            return true
-        }
+        // On testnet too: the server answers a live NEAR Intents preview (a real dry quote) that cannot be approved.
         guard words != xchainAsked else { return true }
         xchainAsked = words
         xchainTask?.cancel()
@@ -105,20 +112,21 @@ extension KeyboardModel {
     static func offer(_ parsed: XchainParsed?, words: String) -> XchainOffer? {
         switch parsed {
         case .some(let p) where p.valid && p.kind == "xchain": .ready(p, trigger: words)
+        case .some(let p) where p.valid && p.kind == "swap": .swap(p, trigger: words)
+        case .some(let p) where p.valid && (p.kind == "request" || p.kind == "topup"): .request(p, trigger: words)
+        case .some(let p) where !p.valid && p.needs == "chain" && (p.kind == "request" || p.kind == "topup"):
+            .chainChoice(prompt: p.reason ?? "Which chain?", chains: ChainChoice.payer, trigger: words)
         case .some(let p) where !p.valid && p.needs == "chain" && Flags.dollarPay: .whichChain(trigger: words)
         case .some(let p) where !p.valid: .refused(p.reason ?? "Pip cannot send this yet", trigger: words)
         default: nil
         }
     }
 
-    /// The router said "pay" or "xchain_pay" but the phone's regex read no payment: the server's parse reads the sentence.
-    /// On testnet a cross-chain ask shows the "needs Mainnet" line, never nothing.
+    /// The router said "pay", "xchain_pay", "swap" or "request_pay" but the phone's regex read nothing: the server's parse reads
+    /// the sentence. On testnet a plain "pay" stays with the NEAR flow; the others get a live preview.
     func routeToPay(_ sentence: String, label: String) {
         guard payOffer == nil, xchainOffer == nil, payPanel == nil, !lineHasSecret else { return }
-        if PayNetwork.name != "mainnet" {
-            if label == "xchain_pay" { xchainOffer = .needsMainnet(trigger: sentence) }
-            return
-        }
+        if PayNetwork.name != "mainnet", label == "pay" { return }
         xchainAsked = sentence
         xchainTask?.cancel()
         let api = deps.api()
@@ -149,6 +157,16 @@ extension KeyboardModel {
             return BarItems.Item(id: "pay", title: why, tone: .secondary, trigger: t)
         case .whichChain(let t):
             return BarItems.Item(id: "pay", title: "Which chain?", tone: .secondary, trigger: t)
+        case .swap(let p, let t):
+            let on = (p.chain ?? "near") == "near" ? "" : " on \(p.chain?.capitalized ?? "")"
+            return BarItems.Item(id: "pay", title: "Swap \(p.amount ?? "") \(p.from ?? "") to \(XchainCardText.origin(p.token ?? ""))\(on)",
+                                 detail: "Review", action: .pay, trigger: t)
+        case .request(let p, let t):
+            let chain = p.chain?.capitalized ?? ""
+            let title = p.kind == "topup" ? "Top up \(p.amount ?? "") \(p.token ?? "") from \(chain)" : "Request \(p.amount ?? "") \(p.token ?? "") on \(chain)"
+            return BarItems.Item(id: "pay", title: title, detail: "Review", action: .pay, trigger: t)
+        case .chainChoice(let prompt, _, let t):
+            return BarItems.Item(id: "pay", title: prompt, tone: .secondary, trigger: t)
         case nil:
             return nil
         }
@@ -161,6 +179,8 @@ extension KeyboardModel {
     /// Tap on the chip: the server keeps the exact fields (10 minutes; 2 for a cross-chain quote), and the card opens here.
     func tapPay() {
         if case .ready(let p, let words) = xchainOffer { return tapXchain(p, words: words) }
+        if case .swap(let p, let words) = xchainOffer { return tapXchain(p, words: words) }
+        if case .request(let p, let words) = xchainOffer { return tapRequest(p, words: words) }
         guard let d = payOffer else { return }
         host?.playClick()
         payTask?.cancel()
@@ -210,6 +230,67 @@ extension KeyboardModel {
                 guard let self, !Task.isCancelled else { return }
                 self.xchainDone.remove(words)
                 self.bar = .error(plainLine(error))
+            }
+        }
+    }
+
+    /// "request 5 usdc on base": the server quotes and checks a deposit address that delivers to the owner's NEAR account.
+    /// Nothing is signed. On testnet the card is a preview with no address.
+    private func tapRequest(_ p: XchainParsed, words: String) {
+        host?.playClick()
+        payTask?.cancel()
+        xchainDone.insert(words)
+        xchainOffer = nil
+        bar = .working("Getting a deposit address\u{2026}")
+        let api = deps.api()
+        payTask = Task { [weak self] in
+            do {
+                let card = try await api.requestPay(p)
+                guard let self, !Task.isCancelled else { return }
+                let none = PayIntent(id: "", amount: "", token: p.token ?? "", recipient: "", status: "request", network: PayNetwork.name,
+                                     tx_hash: nil, explorer_url: nil, deep_link: "", new_recipient: false)
+                self.showPanel(PayPanel(intent: none, request: card))
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.xchainDone.remove(words)
+                self.bar = .error(plainLine(error))
+            }
+        }
+    }
+
+    /// "Insert request" types the payment request in the chat; a top-up copies the address instead. Then Pip watches it land.
+    private func shareRequest() {
+        guard var p = payPanel, let card = p.request, card.live, let id = card.request?.id else { return }
+        host?.playClick()
+        if card.topUp {
+            if let a = card.deposit_address { deps.pasteboard.setText(a) }
+            p.note = "Address copied. Pay it from your other wallet."
+        } else if let line = RequestText.chatLine(card), let host {
+            let before = host.contextBeforeInput ?? ""
+            if let w = XchainDetect.candidate(before), before.hasSuffix(w) {
+                for _ in 0..<w.count { host.deleteBackward() }
+            }
+            let now = host.contextBeforeInput ?? ""
+            host.insert((now.isEmpty || now.last?.isWhitespace == true ? "" : " ") + line)
+            p.note = nil
+        }
+        p.phase = .sent
+        p.requestStatus = RequestStatus(status: card.request?.status ?? "waiting_for_payment")
+        payPanel = p
+        pollRequest(id)
+    }
+
+    /// A shared request: asks where it is until the money lands, is refunded, fails or expires.
+    private func pollRequest(_ id: String) {
+        let api = deps.api(), every = Self.swapPollEvery
+        payTask = Task { [weak self] in
+            for _ in 0..<400 {
+                try? await Task.sleep(for: every)
+                guard !Task.isCancelled else { return }
+                guard let s = try? await api.requestStatus(id) else { continue }
+                guard let self, !Task.isCancelled, self.payPanel?.request?.request?.id == id else { return }
+                if self.payPanel?.requestStatus != s { self.payPanel?.requestStatus = s }
+                if s.done { return }
             }
         }
     }
@@ -423,7 +504,8 @@ extension KeyboardModel {
     }
 
     func rejectPayInKeyboard() {
-        guard let p = payPanel, p.phase == .ready else { closePayPanel(); return }
+        // A preview or a request has nothing to decline on the server.
+        guard let p = payPanel, p.phase == .ready, p.request == nil, p.xchain?.preview != true else { closePayPanel(); return }
         host?.playClick()
         let api = deps.api()
         deps.store.payPending = nil
@@ -434,7 +516,10 @@ extension KeyboardModel {
 
     /// "Insert in chat" on the sent card.
     func insertKeyboardSent() {
+        if payPanel?.request != nil { return shareRequest() }
         guard let p = payPanel, p.phase == .sent else { return }
+        // A swap stays with the owner: nothing to tell the chat.
+        if p.xchain?.swap == true { return closePayPanel() }
         payPanel = nil
         if let card = p.xchain, let n = card.numbers, let d = card.destination {
             guard case .delivered(let url) = p.swap else { return }
