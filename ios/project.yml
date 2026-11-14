@@ -41,6 +41,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Only standard HTTPS and Apple crypto, so no export compliance question.
+        ITSAppUsesNonExemptEncryption: false
         AppName: $(PRODUCT_DISPLAY_NAME)
         DefaultServerURL: $(DEFAULT_SERVER_URL)
         DemoServerURL: $(DEMO_SERVER_URL)
@@ -108,6 +109,7 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         # Only standard HTTPS and Apple crypto, so no export compliance question.
+        ITSAppUsesNonExemptEncryption: false
         AppName: $(PRODUCT_DISPLAY_NAME)
         DefaultServerURL: $(DEFAULT_SERVER_URL)
         DemoServerURL: $(DEMO_SERVER_URL)
