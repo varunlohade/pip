@@ -195,7 +195,8 @@ final class PayShots: XCTestCase {
         let ends = messages.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'paycard.end.'"))
         if ends.firstMatch.waitForExistence(timeout: 1) {
             let to = env["PAY_TO_FULL"] ?? "ana.testnet"
-            let right = (0..<ends.count).map { ends.element(boundBy: $0) }.first { to.hasSuffix(String($0.identifier.dropFirst("paycard.end.".count))) }
+            let name = [".testnet", ".near"].first { to.hasSuffix($0) }.map { String(to.dropLast($0.count)) } ?? to
+            let right = (0..<ends.count).map { ends.element(boundBy: $0) }.first { name.hasSuffix(String($0.identifier.dropFirst("paycard.end.".count))) }
             XCTAssertNotNil(right)
             right?.tap()
         }

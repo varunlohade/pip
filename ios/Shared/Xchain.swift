@@ -299,38 +299,53 @@ enum SwapState: Equatable {
     }
 }
 
-/// First time paying an address: the owner taps how it ends (one of three) before Face ID.
+/// First time paying an address: the card shows the whole address with its ending marked, and the owner taps that ending
+/// (one of three) before the PIN. A ".near"/".testnet" name ends at its last 4 characters before the suffix.
 struct AddressConfirm: Equatable {
     let address: String
     let options: [String]
     var picked: String?
 
-    var answer: String { String(address.suffix(4)) }
+    /// Characters a decoy never uses, so no wrong option differs from the right one by a lookalike only.
+    static let confusable: Set<Character> = ["0", "O", "o", "1", "l", "I", "i", "|"]
+
+    /// The address in three parts: before the ending, the ending, and a name suffix such as ".testnet".
+    var parts: (head: String, end: String, tail: String) { Self.split(address) }
+    var answer: String { parts.end }
     var confirmed: Bool { picked == answer }
+
+    static func split(_ a: String) -> (head: String, end: String, tail: String) {
+        var base = Substring(a), tail = ""
+        for s in [".testnet", ".near"] where a.count > s.count && a.lowercased().hasSuffix(s) {
+            base = a.dropLast(s.count)
+            tail = String(a.suffix(s.count))
+            break
+        }
+        return (String(base.dropLast(4)), String(base.suffix(4)), tail)
+    }
 
     init(_ address: String) {
         self.address = address
-        let real = String(address.suffix(4))
-        let chars = Array(address)
+        let real = Self.split(address).end
+        let chars = Array(real)
+        let hex = chars.allSatisfy(\.isHexDigit)
+        let upper = chars.contains { $0.isUppercase }, lower = chars.contains { $0.isLowercase }
+        let letters = hex ? "abcdef" : "abcdefghjkmnpqrstuvwxyz"
+        let cased = upper && !lower ? letters.uppercased() : upper ? letters + letters.uppercased() : letters
+        let pool = Array("23456789" + cased).filter { !Self.confusable.contains($0) }
+        // Each decoy differs from the real ending in at least 3 places (all places when it is shorter), case aside.
+        let need = min(3, chars.count)
+        var seed = address.unicodeScalars.reduce(UInt64(1469598103934665603)) { ($0 ^ UInt64($1.value)) &* 1099511628211 }
         var decoys: [String] = []
-        // Other 4-character runs of the same address look alike, which is the point: read the real end.
-        var at = max(0, chars.count - 8)
-        while decoys.count < 2, at >= 0 {
-            let run = String(chars[at..<min(at + 4, chars.count)])
-            if run.count == 4, run != real, !decoys.contains(run) { decoys.append(run) }
-            at -= 3
-        }
-        let pool = Array("0123456789abcdef")
-        let base = real.count == 4 ? Array(real) : Array("0000")
-        var k = 0
-        while decoys.count < 2 {
-            var c = base
-            let pos = 3 - k % 4
-            let idx = pool.firstIndex(of: Character(c[pos].lowercased())) ?? 0
-            c[pos] = pool[(idx + 1 + k) % pool.count]
+        for _ in 0..<500 where decoys.count < 2 {
+            var c: [Character] = []
+            for _ in chars {
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                c.append(pool[Int((seed >> 33) % UInt64(pool.count))])
+            }
             let s = String(c)
-            if s != real, !decoys.contains(s) { decoys.append(s) }
-            k += 1
+            let diff = zip(c, chars).filter { $0.lowercased() != $1.lowercased() }.count
+            if diff >= need, !decoys.contains(s) { decoys.append(s) }
         }
         var opts = decoys
         let slot = address.unicodeScalars.reduce(0) { ($0 + Int($1.value)) % 3 }

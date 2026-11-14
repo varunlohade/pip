@@ -255,12 +255,20 @@ extension KeyboardModel {
 
     var visualOpen: Bool { if case .visual = explainPanel { return true }; return false }
 
-    /// The keyboard grows while the visual panel or the calendar is open, so they have room.
-    var keyboardHeight: CGFloat { Self.height(panel: explainPanel, calendarOpen: calendar != nil || payPanel != nil) }
+    /// The keyboard grows while the visual panel, the calendar or a pay card is open, and a little more for a new address check.
+    var keyboardHeight: CGFloat { Self.height(panel: explainPanel, calendarOpen: calendar != nil, pay: Self.payHeight(payPanel)) }
 
-    static func height(panel: ExplainPanel?, calendarOpen: Bool) -> CGFloat {
+    static func height(panel: ExplainPanel?, calendarOpen: Bool, pay: CGFloat? = nil) -> CGFloat {
         if case .visual? = panel { return Theme.SystemKeyboard.visualHeight }
+        if let pay { return pay }
         return calendarOpen ? Theme.SystemKeyboard.calendarHeight : Theme.SystemKeyboard.height
+    }
+
+    /// The pay card takes the calendar's height, and a little more while it asks for a new address's ending.
+    static func payHeight(_ p: PayPanel?) -> CGFloat? {
+        guard let p else { return nil }
+        let checking = p.pin == nil && p.phase == .ready && p.confirm?.confirmed == false
+        return checking ? Theme.SystemKeyboard.addressCheckHeight : Theme.SystemKeyboard.calendarHeight
     }
 
     func openExplainCard() {

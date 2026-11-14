@@ -50,10 +50,9 @@ final class KeyboardViewController: UIInputViewController, TextHost {
         hosting?.rootView = KeyboardView(model: m)
         // The visual panel and the calendar need more room than the keys; the input view follows the model's height.
         // @Published sends before the property changes, so the height comes from the new value.
-        // The pay card takes the calendar's height.
-        bag = m.$explainPanel.combineLatest(m.$calendar.map { $0 != nil }.removeDuplicates(), m.$payPanel.map { $0 != nil }.removeDuplicates())
-            .sink { [weak self] panel, calendarOpen, payOpen in
-                self?.heightConstraint?.constant = KeyboardModel.height(panel: panel, calendarOpen: calendarOpen || payOpen)
+        bag = m.$explainPanel.combineLatest(m.$calendar.map { $0 != nil }.removeDuplicates(), m.$payPanel.map(KeyboardModel.payHeight).removeDuplicates())
+            .sink { [weak self] panel, calendarOpen, pay in
+                self?.heightConstraint?.constant = KeyboardModel.height(panel: panel, calendarOpen: calendarOpen, pay: pay)
             }
     }
 
