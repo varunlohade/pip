@@ -295,6 +295,8 @@ struct AccountView: View {
     @State private var busy = false
     @State private var addEmail = false
     @State private var emailEnabled = false
+    /// The Pip Pay wallet behind this phone's key, read so delete can warn about the money in it.
+    @State private var payWallet: PayWallet?
 
     var body: some View {
         ScrollView {
@@ -383,6 +385,7 @@ struct AccountView: View {
         case .logout: return "Pip forgets everything on this phone: words, drawings and notes." + lost
         case .everywhere: return "You are signed out on every phone, and this phone forgets everything." + lost
         case .delete: return "This deletes your account and everything in it, on this phone and on our server. You cannot undo it."
+            + (WalletWarning.onDelete(hasKey: PayKeyVault().accountID() != nil, wallet: payWallet) ?? "")
             + (info?.password == true ? " Type your password to confirm." : "")
         case nil: return ""
         }
@@ -404,6 +407,7 @@ struct AccountView: View {
 
     private func load() async {
         info = try? await APIClient.shared().account()
+        if PayKeyVault().accountID() != nil { payWallet = try? await APIClient.shared().payWallet() }
     }
 
     private func leave(_ how: Session.Leave) async {

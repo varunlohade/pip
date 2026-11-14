@@ -15,6 +15,8 @@ final class WipeTests: XCTestCase {
         let d = try XCTUnwrap(SharedStore.defaults)
         for k in StoreKey.allCases { d.set("\(mark) \(k.rawValue)", forKey: k.rawValue) }
         d.set("left by an older build \(mark)", forKey: "some_old_key")
+        // The pay public key is the phone's, not the person's, and stays (see testLogoutKeepsThePayKey).
+        d.set(String(repeating: "ab", count: 32), forKey: StoreKey.payPublicKey.rawValue)
         SharedStore.notes = [Note(text: "Ana's pin is in the drawer \(mark)", trigger: ";pin")]
         SharedStore.appointments = [Appointment(start: Date(), end: Date().addingTimeInterval(600), title: "Dentist \(mark)")]
         SharedStore.actionShortcuts = ActionShortcut.defaults
@@ -68,6 +70,7 @@ final class WipeTests: XCTestCase {
 
     func testLogoutEmptiesEveryStore() async throws {
         try await seedEverything()
+        defer { SharedStore.payPublicKey = nil }
         // iOS's own container record must survive every wipe: deleting it broke the keyboard in Muninn.
         // The simulator writes it; a stand-in is written only when it is missing, and removed again at the end.
         let record = try XCTUnwrap(SharedStore.container).appendingPathComponent(Self.containerRecord)
@@ -100,8 +103,9 @@ final class WipeTests: XCTestCase {
         for s in Secret.allCases where s != .deviceID { XCTAssertNil(Keychain.get(s), "Keychain \(s)") }
         XCTAssertFalse(SharedStore.signedIn)
         let d = try XCTUnwrap(SharedStore.defaults)
-        // Two keys stay on purpose: the new epoch, and the install marker (it holds no data about the person).
-        for k in StoreKey.allCases where k != .accountEpoch && k != .installed { XCTAssertNil(d.object(forKey: k.rawValue), "App Group default \(k)") }
+        // Three keys stay on purpose: the new epoch, the install marker and the pay public key (none holds data about the person).
+        for k in StoreKey.allCases where ![.accountEpoch, .installed, .payPublicKey].contains(k) { XCTAssertNil(d.object(forKey: k.rawValue), "App Group default \(k)") }
+        XCTAssertEqual(SharedStore.payPublicKey, String(repeating: "ab", count: 32))
         XCTAssertNil(d.object(forKey: "some_old_key"), "an unknown App Group default")
         XCTAssertNotNil(SharedStore.accountEpoch)
         XCTAssertNotEqual(SharedStore.accountEpoch, oldEpoch, "a new epoch tells the keyboard")
@@ -125,6 +129,25 @@ final class WipeTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.object(forKey: "intro_seen"), "the app's own defaults")
         // The real proof: no file left in temp, caches or the App Group holds the marker.
         XCTAssertEqual(filesHoldingMark(under: [tmp, caches, group]), [], "files that still hold the last person's data")
+    }
+
+    /// The NEAR pay key has no backup: a logout that deleted it would lose the money in the account.
+    func testLogoutKeepsThePayKey() async throws {
+        let vault = PayKeyVault()
+        vault.forget()
+        defer { vault.forget() }
+        let pk = try XCTUnwrap(vault.ensure())
+        Keychain.set(.accessToken, "pat_person_a")
+        Keychain.set(.refreshToken, "prt_person_a")
+
+        let line = await Session().leave(.logout)
+        XCTAssertNil(line)
+
+        XCTAssertFalse(SharedStore.signedIn, "the session is gone")
+        XCTAssertEqual(Keychain.count(), 1, "only the pay key is left in the shared group")
+        XCTAssertTrue(PayKeychain().exists(), "the pay key stays")
+        XCTAssertEqual(vault.accountID(), pk, "and its account id")
+        guard case .signed = await vault.sign(Data(repeating: 1, count: 32), prompt: "t") else { return XCTFail("the kept key still signs") }
     }
 
     /// The keyboard runs in its own process. It sees the new epoch the next time it appears and drops the last person's state.

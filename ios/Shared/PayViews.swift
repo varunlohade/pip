@@ -497,6 +497,29 @@ private func networkBadge(_ network: String) -> some View {
 
 // MARK: app: Pip Pay setup (C-3)
 
+/// What the owner reads before the phone's NEAR key is deleted. The key has no backup, so the money goes with it.
+enum WalletWarning {
+    static func balance(_ w: PayWallet?) -> String {
+        guard let w else { return "Pip could not read this wallet's balance." }
+        return "This wallet holds \(w.balances?["NEAR"] ?? "0") NEAR and \(w.balances?["USDC"] ?? "0") USDC."
+    }
+
+    /// "Remove wallet from this phone": always shown, with the balance.
+    static func remove(_ w: PayWallet?) -> String {
+        balance(w) + " This cannot be undone; funds are lost without the key. Move them out first."
+    }
+
+    /// Delete account: only when this phone holds a key with money in it, or a balance Pip could not read.
+    static func onDelete(hasKey: Bool, wallet: PayWallet?) -> String? {
+        guard hasKey, wallet == nil || holdsFunds(wallet) else { return nil }
+        return " It also removes the Pip Pay key. " + remove(wallet)
+    }
+
+    static func holdsFunds(_ w: PayWallet?) -> Bool {
+        (w?.balances ?? [:]).values.contains { (Decimal(string: $0) ?? 0) > 0 }
+    }
+}
+
 struct PaySetupView: View {
     let account: String?
     let wallet: PayWallet?
@@ -504,7 +527,10 @@ struct PaySetupView: View {
     let mainnetEnabled: Bool
     let busy: Bool
     let error: String?
+    var hasKey = false
     let setUp: () -> Void
+    var remove: () -> Void = {}
+    @State private var confirmRemove = false
 
     /// "a1b2c3…d4e5f6": an implicit account id is 64 hex chars.
     static func short(_ id: String) -> String { id.count > 20 ? "\(id.prefix(6))\u{2026}\(id.suffix(6))" : id }
@@ -584,8 +610,21 @@ struct PaySetupView: View {
             .buttonStyle(SkyPill())
             .disabled(busy || account != nil)
             .accessibilityIdentifier("kbpay.turnOn")
+            if hasKey {
+                Button("Remove wallet from this phone") { confirmRemove = true }
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.Color.warning)
+                    .frame(maxWidth: .infinity).padding(.top, 10)
+                    .disabled(busy)
+                    .accessibilityIdentifier("pay.remove")
+            }
         }
         .padding(.horizontal, Theme.Metric.margin).padding(.bottom, 12)
         .background(Theme.Color.bg.ignoresSafeArea())
+        .alert("Remove wallet from this phone?", isPresented: $confirmRemove) {
+            Button("Cancel", role: .cancel) {}
+            Button("Remove wallet", role: .destructive, action: remove).accessibilityIdentifier("pay.remove.confirm")
+        } message: {
+            Text(WalletWarning.remove(wallet))
+        }
     }
 }

@@ -186,7 +186,7 @@ final class Session: ObservableObject {
 
     enum Leave: Equatable { case logout, everywhere, delete(password: String?) }
 
-    /// Logout, log out everywhere and delete account. The server call comes first; then the phone forgets everything.
+    /// Logout, log out everywhere and delete account. The server call comes first; then the phone forgets everything but the pay key.
     /// A plain logout still wipes the phone when the server cannot be reached (the session then just expires there).
     /// Log out everywhere and delete must reach the server, or nothing changes and the owner sees why.
     func leave(_ how: Leave) async -> String? {
@@ -203,6 +203,8 @@ final class Session: ObservableObject {
             if how != .logout { return Self.line(error) }
         }
         await LocalWipe.wipeAll()
+        // Logout keeps the NEAR pay key (it has no backup). Deleting the account removes it, after the balance warning.
+        if case .delete = how { PayKeyVault().forget() }
         reset()
         return nil
     }

@@ -65,7 +65,7 @@ Two custody paths live in `server/src/pay/`. Full design: `server/SECURITY.md`.
 
 **Keyboard pay (design C).** One-time setup in the app gives the keyboard its own capped key. With it, the keyboard can approve a repeat payment, under the keyboard's daily limit, with Face ID. Anything else answers `needs_app` and opens the app.
 
-**Honest state of the iOS app.** The phone-signed flow is done and tested on the server (`server/test/pay-phone.test.ts`, 10 tests). `server/scripts/mainnet-sign-demo.ts` plays the phone from a terminal: `example` builds and signs a tx offline, and `send` runs the full flow on mainnet (real money, so it needs `PIP_CONFIRM_MAINNET=yes`). The iOS app does not sign on the phone yet. It still uses the older server-held testnet path, so the app's pay screens need `PAY_LEGACY_CUSTODY=1`. On that path the server holds a demo testnet key per user. Testnet tokens have no value. See "Limits and honest gaps".
+**Honest state of the iOS app.** The phone-signed flow is done and tested on the server (`server/test/pay-phone.test.ts`, 10 tests). `server/scripts/mainnet-sign-demo.ts` plays the phone from a terminal: `example` builds and signs a tx offline, and `send` runs the full flow on mainnet (real money, so it needs `PIP_CONFIRM_MAINNET=yes`). The iOS app now signs on the phone: its own Ed25519 key, behind Face ID, signed this testnet transfer: https://testnet.nearblocks.io/txns/Cbx3hEFg6EMsFzzC5Y3zLJoc6SeZq6rSYzMveUmPKnvv. See "Limits and honest gaps".
 
 ## Architecture
 
@@ -210,10 +210,10 @@ Server: `hono`, `@hono/node-server`, `zod`, `near-api-js` 7.5.3 (MIT and Apache-
 
 ## Limits and honest gaps
 
-- **The iOS app does not sign on the phone yet.** Phone signing works on the server and from the terminal script. The app still calls the legacy server-held testnet path (`PAY_LEGACY_CUSTODY=1`).
-- **The legacy testnet path holds keys on the server.** Each user gets a funder sub-account. Its key is stored encrypted on the server. This is fine only because testnet tokens have no value.
+- **Phone signing has shipped.** The iOS app signs every payment with its own key. Testnet proof, signed on the phone: https://testnet.nearblocks.io/txns/Cbx3hEFg6EMsFzzC5Y3zLJoc6SeZq6rSYzMveUmPKnvv
+- **The legacy testnet path holds keys on the server.** It is off by default (`PAY_LEGACY_CUSTODY=1` turns it on). Each user gets a funder sub-account. Its key is stored encrypted on the server. This is fine only because testnet tokens have no value.
 - **No mainnet payment shown.** Mainnet code exists and is tested with a fake chain. We do not link a mainnet transaction.
-- **No key backup.** With phone-held keys, a lost phone loses the key. Export and recovery are not built.
+- **No key backup or recovery. This is the main gap left.** The key lives only on this phone. Logout keeps it. "Remove wallet from this phone" and account delete remove it, after a warning that shows the balance. A lost phone, or deleting the app, loses the key and the money in it. Export and recovery are not built.
 - **Attestation gaps.** No Intel TCB or revocation check, no NVIDIA GPU evidence, no allowlist of builds. Pip's server sees the text before the TEE.
 - **Not all AI is private.** The tone check (Typesafe jev) and the OpenRouter fallback run outside a TEE. The reply marks say so.
 - **`npm run dev` needs a Typesafe key.** Without one, use `npm run fake`.

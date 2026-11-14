@@ -268,10 +268,11 @@ final class PaySetupModel: ObservableObject {
         PaySetupModel(api: APIClient.shared(), vault: PayKeyVault(), keys: ApproverKeychain()) { SharedStore.payNetwork = $0 }
     }
 
+    /// The key outlives a logout, so after the next sign-in its same public key is registered for the new session.
     func load() async {
         do {
             show(try await api.payNetwork())
-            await refreshWallet()
+            if account == nil, let pk = vault.accountID() { await register(pk) } else { await refreshWallet() }
         } catch {
             self.error = plainLine(error)
         }
@@ -286,6 +287,15 @@ final class PaySetupModel: ObservableObject {
             return
         }
         await register(pk)
+    }
+
+    var hasKey: Bool { vault.accountID() != nil }
+
+    /// "Remove wallet from this phone", after the owner confirmed the balance warning. The key is gone for good.
+    func removeWallet() {
+        vault.forget()
+        account = nil
+        wallet = nil
     }
 
     /// Mainnet only when the server has it on. The key stays the same; its account is registered on the new network.
@@ -336,8 +346,8 @@ struct PaySetup: View {
     var body: some View {
         PaySetupView(account: model.account, wallet: model.wallet,
                      network: Binding(get: { model.network }, set: { n in model.network = n; Task { await model.switchTo(n) } }),
-                     mainnetEnabled: model.mainnetEnabled, busy: model.busy, error: model.error,
-                     setUp: { Task { await model.setUp() } })
+                     mainnetEnabled: model.mainnetEnabled, busy: model.busy, error: model.error, hasKey: model.hasKey,
+                     setUp: { Task { await model.setUp() } }, remove: { model.removeWallet() })
             .task { await model.load() }
     }
 }

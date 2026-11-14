@@ -451,6 +451,55 @@ final class PaySetupModelTests: XCTestCase {
     }
 }
 
+/// Removing the wallet, its warning, and the same key after a new sign-in.
+@MainActor
+final class WalletRemoveTests: XCTestCase {
+    func testRemoveDeletesTheKey() async throws {
+        let api = FakePayAPI()
+        let vault = PayKeyVault()
+        vault.forget()
+        defer { vault.forget() }
+        let m = PaySetupModel(api: api, vault: vault, keys: MemoryKeys(), saveNetwork: { _ in })
+        await m.setUp()
+        XCTAssertTrue(m.hasKey)
+        XCTAssertTrue(PayKeychain().exists())
+        m.removeWallet()
+        XCTAssertFalse(m.hasKey)
+        XCTAssertNil(m.account)
+        XCTAssertFalse(PayKeychain().exists(), "the Keychain item is gone")
+        XCTAssertNil(SharedStore.payPublicKey)
+    }
+
+    func testTheWarningShowsTheBalance() {
+        let w = PayWallet(account_id: "a", status: "ready", network: "testnet", balances: ["NEAR": "1.25", "USDC": "3"])
+        let line = WalletWarning.remove(w)
+        XCTAssertTrue(line.contains("1.25 NEAR"))
+        XCTAssertTrue(line.contains("3 USDC"))
+        XCTAssertTrue(line.contains("This cannot be undone; funds are lost without the key."))
+        XCTAssertTrue(WalletWarning.remove(nil).contains("could not read"))
+
+        XCTAssertEqual(WalletWarning.onDelete(hasKey: true, wallet: w).map { $0.contains("1.25 NEAR") && $0.contains("cannot be undone") }, true)
+        let empty = PayWallet(account_id: "a", status: "ready", network: "testnet", balances: ["NEAR": "0", "USDC": "0"])
+        XCTAssertNil(WalletWarning.onDelete(hasKey: true, wallet: empty), "no money, no warning")
+        XCTAssertNil(WalletWarning.onDelete(hasKey: false, wallet: w), "no key on this phone, nothing to lose here")
+        XCTAssertNotNil(WalletWarning.onDelete(hasKey: true, wallet: nil), "an unread balance still warns")
+    }
+
+    /// After logout and a new sign-in the server has no account for this phone yet; opening Pip Pay registers the same key.
+    func testTheSameKeyIsRegisteredAgainAfterSignIn() async throws {
+        let storage = MemoryKeyStorage()
+        var pub: String?
+        let vault = PayKeyVault(storage: storage, publicKeyHex: { pub }, setPublicKeyHex: { pub = $0 })
+        let pk = try XCTUnwrap(vault.ensure())
+        let api = FakePayAPI()
+        let m = PaySetupModel(api: api, vault: vault, keys: MemoryKeys(), saveNetwork: { _ in })
+        await m.load()
+        XCTAssertEqual(api.keys.map(\.key), [pk])
+        XCTAssertEqual(m.account, pk)
+        XCTAssertNotNil(storage.raw, "no new key was made")
+    }
+}
+
 extension Result {
     var failure: Failure? { if case .failure(let e) = self { return e }; return nil }
 }

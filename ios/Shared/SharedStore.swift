@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Every App Group UserDefaults key, in one place. Nothing secret goes here: secrets live in the Keychain (`Secret`).
@@ -90,6 +91,24 @@ enum Keychain {
     static func deleteAll() {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccessGroup as String: AppConfig.keychainGroup]
         SecItemDelete(q as CFDictionary)
+    }
+
+    /// Every generic password in the shared group except the NEAR pay key. Logout uses it: the key holds money and has
+    /// no backup, so only "Remove wallet from this phone" or account delete may remove it. Reads attributes only (no Face ID).
+    static func deleteAllButPayKey() {
+        let ctx = LAContext()
+        ctx.interactionNotAllowed = true
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccessGroup as String: AppConfig.keychainGroup,
+                                kSecMatchLimit as String: kSecMatchLimitAll, kSecReturnAttributes as String: true,
+                                kSecUseAuthenticationContext as String: ctx]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess else { return }
+        for item in out as? [[String: Any]] ?? [] where item[kSecAttrService as String] as? String != PayKeychain.service {
+            var one: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccessGroup as String: AppConfig.keychainGroup]
+            one[kSecAttrService as String] = item[kSecAttrService as String] ?? ""
+            one[kSecAttrAccount as String] = item[kSecAttrAccount as String] ?? ""
+            SecItemDelete(one as CFDictionary)
+        }
     }
 
     /// How many items the shared group holds. The wipe test reads it.
