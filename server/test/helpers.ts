@@ -11,10 +11,11 @@ import logExplain from './fixtures/log-explain.json' with { type: 'json' };
 import logScene from './fixtures/log-scene.json' with { type: 'json' };
 import ratesUsd from './fixtures/rates-usd.json' with { type: 'json' };
 import { createRates } from '../src/rates.ts';
+import type { PayDeps } from '../src/pay/routes.ts';
 
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>> } = {}) {
+export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; pay?: PayDeps } = {}) {
   const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
@@ -62,7 +63,7 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     return new Response(JSON.stringify(v), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   const rates = createRates({ fetch: ratesFetch, now: opts.now });
-  const app = createApp({ db, cipher, ai, rates, now: opts.now, apple: opts.apple, onNewUser: opts.onNewUser, mailer, emailEnabled: opts.emailEnabled ?? true });
+  const app = createApp({ db, cipher, ai, rates, now: opts.now, apple: opts.apple, onNewUser: opts.onNewUser, mailer, emailEnabled: opts.emailEnabled ?? true, pay: opts.pay });
   /** A signed-in user with a live access token, made straight in the DB. */
   const device = () => {
     const userId = db.createUser();

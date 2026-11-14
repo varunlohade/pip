@@ -19,6 +19,7 @@ import { PasswordBusyError } from './password.ts';
 import { clientIp, HttpError, rateLimiter, type Env } from './http.ts';
 import { createDevMailer, type Mailer } from './mailer.ts';
 import { createRates, type Rates } from './rates.ts';
+import { payRoutes, type PayDeps } from './pay/routes.ts';
 
 export type Deps = {
   db: Db; cipher: Cipher; ai: Ai; now?: () => number;
@@ -31,6 +32,8 @@ export type Deps = {
   onNewUser?: (userId: string) => void;
   /** Currency rates for the keyboard's conversions. The default reads the keyless public source, cached for an hour. */
   rates?: Rates;
+  /** NEAR testnet payments (src/pay). Tests pass a fake chain. */
+  pay?: PayDeps;
 };
 export type { Env };
 export type Chip = { kind: string; label: string; payload: Record<string, unknown>; needs_confirm: boolean; trigger?: string };
@@ -364,6 +367,9 @@ export function createApp(deps: Deps) {
       return c.json({ error: 'rates are not available right now' }, 502);
     }
   });
+
+  // ---- payments on NEAR testnet: parse, propose, approve in the app.
+  payRoutes(app, { db, cipher, now }, deps.pay);
 
   return app;
 }
