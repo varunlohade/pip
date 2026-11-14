@@ -35,6 +35,28 @@ enum Theme {
         static let successEdge = SwiftUI.Color(hex: 0x1F8A55).opacity(0.3)
         /// Something to fix: an error line.
         static let warning = SwiftUI.Color(hex: 0xB0461A)
+
+        /// Light and dark, for what the keyboard shows. The keyboard follows the system appearance; the app is light only.
+        enum Keyboard {
+            static let ink1 = dynamic(0x0B0C0F, 0xF2F2F7)
+            static let ink2 = dynamic(0x4F5D6B, 0xB4BBC4)
+            static let ink3 = dynamic(0x758696, 0x949BA5)
+            static let card = dynamic(0xFFFFFF, 0x2C2C2E)
+            static let panel = dynamic(0xFAFAFA, 0x3A3A3C)
+            static let key = dynamic(0xFFFFFF, 0x4A4A4C)
+            static let link = dynamic(0x0082F3, 0x5AB8FF)
+            static let warning = dynamic(0x9E3C12, 0xFFA273)
+            static let successInk = dynamic(0x1B6E46, 0x8FE3B4)
+            static let successChip = dynamic(0xDDF3E6, 0x1D3A2B)
+            /// The NEAR "N" disc: black on light, white on dark.
+            static let mark = dynamic(0x000000, 0xFFFFFF)
+            static let markInk = dynamic(0xFFFFFF, 0x000000)
+            static let shadow = dynamic(0x000000, 0x000000).opacity(0.12)
+
+            static func dynamic(_ light: UInt32, _ dark: UInt32) -> SwiftUI.Color {
+                SwiftUI.Color(UIColor { $0.userInterfaceStyle == .dark ? UIColor(hex: dark) : UIColor(hex: light) })
+            }
+        }
     }
 
     /// Inter is not bundled; SF Pro is the closest system face, with tight tracking for headings as in Inter Display.

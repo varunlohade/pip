@@ -14,6 +14,12 @@ struct PayPanel: Equatable {
     var pending: PayUnsigned?
     /// Cross-chain, after the deposit landed.
     var swap: SwapState?
+    /// Face ID could not run here: Pip's own PIN pad, with the digits typed so far.
+    var pin: String?
+    /// The PIN is being checked (PBKDF2 takes a moment).
+    var checkingPIN = false
+    /// "Approve in Pip": no PIN on this phone, or too many wrong tries.
+    var offerApp = false
 
     init(intent: PayIntent, xchain: XchainCard? = nil) {
         self.intent = intent
@@ -232,62 +238,164 @@ extension KeyboardModel {
         payPanel = p
     }
 
-    /// "Approve with Face ID": one Face ID, a proof for the server, then the checked transaction is signed.
+    /// "Approve with Face ID": one Face ID, a proof for the server, then the checked transaction is signed. When Face ID cannot
+    /// run here, the card says why and offers Pip's PIN pad, or "Approve in Pip". It never stays silent.
     func approvePayInKeyboard() {
-        guard var p = payPanel, p.canApprove else { return }
+        guard var p = payPanel, p.canApprove, p.pin == nil else { return }
         host?.playClick()
+        let pinVault = deps.pin()
+        if pinVault.faceFailedLast, pinVault.isSet, !pinVault.isLocked {
+            p.pin = ""
+            p.note = "Enter your Pip PIN to approve."
+            payPanel = p
+            return
+        }
         p.phase = .approving
         p.note = nil
+        p.offerApp = false
         payPanel = p
-        let api = deps.api(), signer = deps.signer()
+        let signer = deps.signer()
         payTask = Task { [weak self] in
             let session = await signer.session(prompt: p.prompt)
             guard let self, !Task.isCancelled else { return }
-            guard case .ready(let sign) = session, let account = signer.accountID() else {
-                self.payPanel?.phase = .ready
-                self.payPanel?.note = session.denied ? "Not approved. Nothing was sent." : "Pip could not ask for Face ID here. Nothing was sent."
-                return
+            switch session {
+            case .ready(let sign):
+                pinVault.faceFailedLast = false
+                await self.send(p, sign: sign)
+            case .failed(let issue):
+                self.beat(payAuth: "Face ID: \(issue.code)")
+                if !issue.declined { pinVault.faceFailedLast = true }
+                self.faceIDFailed(issue, pinVault)
             }
-            do {
-                var i = p.intent
-                let u: PayUnsigned
-                if let built = p.pending {
-                    u = built
-                } else {
-                    guard let proof = sign(PayApproval.proofHash(i)) else { throw APIError.message("Pip could not sign here. Nothing was sent.") }
-                    u = try await api.unsignedPay(i, approverKey: nil, proof: proof)
-                    guard !Task.isCancelled else { return }
-                    if u.requoted == true {
-                        // A new price: show the new card. It needs its own Face ID.
-                        guard let card = u.xchain, card.approvable else {
-                            self.payPanel?.phase = .failed("The new price could not be checked. Nothing was sent.")
-                            return
-                        }
-                        var next = self.payPanel ?? p
-                        next.intent = u.intent(updating: i)
-                        next.xchain = card
-                        next.pending = u
-                        next.phase = .ready
-                        next.note = nil
-                        self.payPanel = next
+        }
+    }
+
+    /// The fallback line and control after Face ID did not give the key.
+    private func faceIDFailed(_ issue: PayAuthIssue, _ pinVault: PayPINVault) {
+        guard var p = payPanel else { return }
+        p.phase = .ready
+        if pinVault.isLocked {
+            p.note = PayFallback.locked
+            p.offerApp = true
+        } else if pinVault.isSet {
+            p.pin = ""
+            p.note = issue.declined ? "Face ID didn't match. Enter your Pip PIN." : PayFallback.usePIN
+        } else {
+            p.note = issue.declined ? "Not approved. Nothing was sent." : PayFallback.useApp
+            p.offerApp = !issue.declined
+        }
+        payPanel = p
+    }
+
+    /// One digit on the PIN pad. The sixth digit checks the PIN.
+    func typePINDigit(_ d: String) {
+        guard var p = payPanel, var pin = p.pin, !p.checkingPIN, pin.count < PayPIN.length, d.count == 1, d.allSatisfy(\.isNumber) else { return }
+        host?.playClick()
+        pin += d
+        p.pin = pin
+        payPanel = p
+        if pin.count == PayPIN.length { checkPIN(pin) }
+    }
+
+    func deletePINDigit() {
+        guard var p = payPanel, let pin = p.pin, !p.checkingPIN, !pin.isEmpty else { return }
+        host?.playClick()
+        p.pin = String(pin.dropLast())
+        payPanel = p
+    }
+
+    private func checkPIN(_ pin: String) {
+        guard var p = payPanel else { return }
+        p.checkingPIN = true
+        p.note = nil
+        payPanel = p
+        let pinVault = deps.pin()
+        payTask = Task { [weak self] in
+            let result = await pinVault.unlock(pin)
+            guard let self, !Task.isCancelled, var now = self.payPanel else { return }
+            now.checkingPIN = false
+            switch result {
+            case .ready(let key):
+                defer { key.wipe() }
+                now.pin = nil
+                now.phase = .approving
+                self.payPanel = now
+                await self.send(now, sign: key.sign)
+                return
+            case .wrong(let left):
+                now.pin = ""
+                now.note = "Wrong PIN. \(left) \(left == 1 ? "try" : "tries") left."
+            case .locked:
+                now.pin = nil
+                now.note = PayFallback.locked
+                now.offerApp = true
+            case .notSet:
+                now.pin = nil
+                now.note = PayFallback.useApp
+                now.offerApp = true
+            }
+            self.payPanel = now
+        }
+    }
+
+    /// "Approve in Pip": the app reads the same payment by id, asks for Face ID there and signs it.
+    func approvePayInApp() {
+        guard let p = payPanel, !p.intent.id.isEmpty else { return }
+        host?.playClick()
+        payTask?.cancel()
+        payPanel = nil
+        let opened = URL(string: p.intent.deep_link).map { host?.open($0) ?? false } ?? false
+        bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Open \(AppConfig.displayName) to approve this payment")
+    }
+
+    /// The proof for the server, then the checked transaction, signed with `sign` (Face ID's key or the PIN's).
+    private func send(_ p: PayPanel, sign: @escaping (Data) -> Data?) async {
+        let api = deps.api(), signer = deps.signer()
+        guard let account = signer.accountID() else {
+            payPanel?.phase = .ready
+            payPanel?.note = PayFallback.useApp
+            payPanel?.offerApp = true
+            return
+        }
+        do {
+            var i = p.intent
+            let u: PayUnsigned
+            if let built = p.pending {
+                u = built
+            } else {
+                guard let proof = sign(PayApproval.proofHash(i)) else { throw APIError.message("Pip could not sign here. Nothing was sent.") }
+                u = try await api.unsignedPay(i, approverKey: nil, proof: proof)
+                guard !Task.isCancelled else { return }
+                if u.requoted == true {
+                    // A new price: show the new card. It needs its own approval.
+                    guard let card = u.xchain, card.approvable else {
+                        payPanel?.phase = .failed("The new price could not be checked. Nothing was sent.")
                         return
                     }
-                }
-                i = p.pending.map { $0.intent(updating: i) } ?? i
-                guard case .success(let ok) = PayTxCheck.check(u, intent: i, account: account, xchain: p.xchain) else {
-                    self.payPanel?.phase = .failed(PayTxCheck.refusedLine)
-                    Task { _ = try? await api.rejectPay(i.id) }
+                    var next = payPanel ?? p
+                    next.intent = u.intent(updating: i)
+                    next.xchain = card
+                    next.pending = u
+                    next.phase = .ready
+                    next.note = nil
+                    payPanel = next
                     return
                 }
-                guard let sig = sign(ok.hash) else { throw APIError.message("Pip could not sign here. Nothing was sent.") }
-                let done = try await api.submitPay(i.id, signature: sig)
-                guard !Task.isCancelled else { return }
-                self.finishKeyboardSend(done)
-            } catch {
-                guard !Task.isCancelled else { return }
-                self.payPanel?.phase = .ready
-                self.payPanel?.note = plainLine(error)
             }
+            i = p.pending.map { $0.intent(updating: i) } ?? i
+            guard case .success(let ok) = PayTxCheck.check(u, intent: i, account: account, xchain: p.xchain) else {
+                payPanel?.phase = .failed(PayTxCheck.refusedLine)
+                Task { _ = try? await api.rejectPay(i.id) }
+                return
+            }
+            guard let sig = sign(ok.hash) else { throw APIError.message("Pip could not sign here. Nothing was sent.") }
+            let done = try await api.submitPay(i.id, signature: sig)
+            guard !Task.isCancelled else { return }
+            finishKeyboardSend(done)
+        } catch {
+            guard !Task.isCancelled else { return }
+            payPanel?.phase = .ready
+            payPanel?.note = plainLine(error)
         }
     }
 
@@ -386,6 +494,9 @@ extension KeyboardModel {
     }
 }
 
-extension PaySession {
-    var denied: Bool { if case .denied = self { true } else { false } }
+/// The card's lines when Face ID cannot give the key in the keyboard.
+enum PayFallback {
+    static let usePIN = "Face ID isn't available in the keyboard. Enter your Pip PIN."
+    static let useApp = "Face ID isn't available in the keyboard. Approve in \(AppConfig.displayName)."
+    static let locked = "Too many tries. Open \(AppConfig.displayName) to unlock."
 }

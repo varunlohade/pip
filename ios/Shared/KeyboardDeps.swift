@@ -149,6 +149,8 @@ struct KeyboardDeps {
     var slotSleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     /// The phone's NEAR key, shared with the app; every signature needs Face ID. Tests pass a fake.
     var signer: () -> PaySigner = { PayKeyVault() }
+    /// Pip's payment PIN, for when Face ID cannot run in the keyboard. Tests pass one in memory.
+    var pin: () -> PayPINVault = { PayPINVault() }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

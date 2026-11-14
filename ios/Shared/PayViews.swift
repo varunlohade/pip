@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// Keyboard colors: light and dark. The app's views use the light-only Theme.Color.
+private typealias K = Theme.Color.Keyboard
+
 // Every Pip Pay and Private AI visual, in one file (design A), so a switch to design B changes only this file.
 // The views take plain values and closures; the logic lives in KeyboardModel+Pay and App/PayApproval.
 
@@ -37,7 +40,7 @@ struct PayBarRow: View {
     private var info: some View {
         HStack(spacing: 8) {
             Buddy(size: 22)
-            Text(item.title).font(.system(size: 14.5)).foregroundStyle(Theme.Color.text2).lineLimit(2).minimumScaleFactor(0.8)
+            Text(item.title).font(.system(size: 14.5)).foregroundStyle(K.ink2).lineLimit(2).minimumScaleFactor(0.8)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
@@ -49,15 +52,15 @@ struct PayBarRow: View {
         Button { perform(.pay) } label: {
             HStack(spacing: 8) {
                 Buddy(size: 22)
-                Text(item.title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                Text(item.title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(K.ink1)
                     .lineLimit(1).minimumScaleFactor(0.75)
-                Text("\u{00B7}").foregroundStyle(Theme.Color.text3)
-                Text(item.detail ?? "").font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.Color.skyDeep)
+                Text("\u{00B7}").foregroundStyle(K.ink3)
+                Text(item.detail ?? "").font(.system(size: 15.5, weight: .semibold)).foregroundStyle(K.link)
                     .lineLimit(1).fixedSize()
             }
             .padding(.horizontal, 12).frame(height: 38)
             .frame(maxWidth: .infinity)
-            .background(Capsule().fill(.white).shadow(color: .black.opacity(0.12), radius: 1.5, y: 1))
+            .background(Capsule().fill(K.key).shadow(color: K.shadow, radius: 1.5, y: 1))
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -69,7 +72,7 @@ struct PayBarRow: View {
     private var sent: some View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").font(.system(size: 22)).foregroundStyle(Theme.Color.success)
-            Text(item.title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(Theme.Color.text1)
+            Text(item.title).font(.system(size: 15.5, weight: .medium)).foregroundStyle(K.ink1)
                 .lineLimit(1).minimumScaleFactor(0.75)
             Spacer(minLength: 4)
             Button("Insert") { perform(.insertPaid) }
@@ -136,7 +139,10 @@ struct PayApprovalCard: View {
                         .minimumScaleFactor(0.5).lineLimit(1)
                     Text(i.token).font(.system(size: 30, weight: .semibold)).foregroundStyle(Theme.Color.text1)
                 }
-                if i.token == "USDC", let v = Double(i.amount) {
+                if let card = i.xchain {
+                    Text(XchainCardText(card).gets).font(.system(size: 18, weight: .semibold)).foregroundStyle(Theme.Color.text1)
+                        .lineLimit(2).minimumScaleFactor(0.7).accessibilityIdentifier("pay.xchainGets")
+                } else if i.token == "USDC", let v = Double(i.amount) {
                     Text("About \(v.formatted(.currency(code: "USD")))").font(.system(size: 18)).foregroundStyle(Theme.Color.text3)
                 }
             }
@@ -166,7 +172,7 @@ struct PayApprovalCard: View {
             }
             row("Network") {
                 HStack(spacing: 7) {
-                    Text("N").font(.system(size: 12, weight: .heavy)).foregroundStyle(.white).frame(width: 22, height: 22).background(.black, in: Circle())
+                    Text("N").font(.system(size: 12, weight: .heavy)).foregroundStyle(K.markInk).frame(width: 22, height: 22).background(K.mark, in: Circle())
                     Text("NEAR \(i.network)").font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.text1)
                 }
                 .padding(.leading, 6).padding(.trailing, 12).padding(.vertical, 6)
@@ -267,7 +273,7 @@ struct WalletCard: View {
     var body: some View {
         Button(action: tap) {
             HStack(spacing: 12) {
-                Text("N").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white).frame(width: 36, height: 36).background(.black, in: Circle())
+                Text("N").font(.system(size: 16, weight: .heavy)).foregroundStyle(K.markInk).frame(width: 36, height: 36).background(K.mark, in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Wallet \u{00B7} \(wallet.map { "NEAR \($0.network)" } ?? PayNetwork.label)").font(Theme.Font.label).foregroundStyle(Theme.Color.text3)
                     Text(line).font(.system(size: 16, weight: .medium)).foregroundStyle(lineColor)
@@ -431,12 +437,12 @@ struct PayPanelBar: View {
             Buddy(size: 24)
             let i = panel.intent
             Text(PayPanelBar.title(panel))
-                .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.text1).lineLimit(1).minimumScaleFactor(0.75)
+                .font(.system(size: 16, weight: .medium)).foregroundStyle(K.ink1).lineLimit(1).minimumScaleFactor(0.75)
             Spacer(minLength: 4)
             if panel.phase == .sent, panel.xchain == nil, let s = i.explorer, let url = URL(string: s) {
                 Link(destination: url) {
                     HStack(spacing: 4) { Text("View tx"); Image(systemName: "arrow.up.right.square") }
-                        .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.skyDeep)
+                        .font(.system(size: 16, weight: .medium)).foregroundStyle(K.link)
                 }
                 .accessibilityIdentifier("paycard.tx")
             }
@@ -462,9 +468,18 @@ struct PayKeyboardCard: View {
     let reject: () -> Void
     let insert: () -> Void
     var pick: (String) -> Void = { _ in }
+    var digit: (String) -> Void = { _ in }
+    var deleteDigit: () -> Void = {}
+    var openApp: () -> Void = {}
 
     var body: some View {
-        if let card = panel.xchain { XchainKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert, pick: pick) } else { plain }
+        if let pin = panel.pin {
+            PINPadCard(panel: panel, pin: pin, digit: digit, deleteDigit: deleteDigit, openApp: openApp, reject: reject)
+        } else if let card = panel.xchain {
+            XchainKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert, pick: pick, openApp: openApp)
+        } else {
+            plain
+        }
     }
 
     private var plain: some View {
@@ -476,14 +491,14 @@ struct PayKeyboardCard: View {
                         Text(i.amount).font(.system(size: 40, weight: .bold)).lineLimit(1).minimumScaleFactor(0.5)
                         Text(i.token).font(.system(size: 22, weight: .semibold))
                     }
-                    .foregroundStyle(Theme.Color.text1)
+                    .foregroundStyle(K.ink1)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("paycard.amount")
                     Spacer()
                     if panel.phase == .sent {
                         Label("Sent", systemImage: "checkmark.circle.fill").font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.Color.successInk)
-                            .padding(.horizontal, 12).padding(.vertical, 6).background(Theme.Color.successChip, in: Capsule())
+                            .foregroundStyle(K.successInk)
+                            .padding(.horizontal, 12).padding(.vertical, 6).background(K.successChip, in: Capsule())
                             .accessibilityIdentifier("paycard.sent")
                     } else {
                         networkBadge(i.network)
@@ -491,28 +506,28 @@ struct PayKeyboardCard: View {
                 }
                 if panel.phase == .sent {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Sent you \(i.amount) \(i.token) \u{2713}").font(.system(size: 15)).foregroundStyle(Theme.Color.text1)
+                        Text("Sent you \(i.amount) \(i.token) \u{2713}").font(.system(size: 15)).foregroundStyle(K.ink1)
                         if let s = i.explorer {
-                            Text(PayApprovalCard.shortTx(s)).font(.system(size: 15)).foregroundStyle(Theme.Color.skyDeep).lineLimit(1)
+                            Text(PayApprovalCard.shortTx(s)).font(.system(size: 15)).foregroundStyle(K.link).lineLimit(1)
                         }
                     }
                 } else {
                     HStack(spacing: 10) {
                         Text(String(i.recipient.prefix(2)).uppercased()).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                            .frame(width: 34, height: 34).background(Theme.Color.text3.opacity(0.7), in: Circle())
-                        Text(i.recipient).font(.system(size: 17)).foregroundStyle(Theme.Color.text1).lineLimit(1).minimumScaleFactor(0.7)
+                            .frame(width: 34, height: 34).background(K.ink3.opacity(0.7), in: Circle())
+                        Text(i.recipient).font(.system(size: 17)).foregroundStyle(K.ink1).lineLimit(1).minimumScaleFactor(0.7)
                             .accessibilityIdentifier("paycard.recipient")
                         Spacer(minLength: 4)
                         VStack(alignment: .trailing, spacing: 0) {
-                            Text("Network fee").font(.system(size: 12)).foregroundStyle(Theme.Color.text3)
-                            Text("< 0.001 NEAR").font(.system(size: 15)).foregroundStyle(Theme.Color.text1)
+                            Text("Network fee").font(.system(size: 12)).foregroundStyle(K.ink3)
+                            Text("< 0.001 NEAR").font(.system(size: 15)).foregroundStyle(K.ink1)
                         }
                         .fixedSize()
                     }
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(K.card))
 
             if panel.phase == .sent {
                 Button("Insert in chat", action: insert).buttonStyle(SkyPill(height: 50, font: .system(size: 18, weight: .semibold)))
@@ -520,26 +535,21 @@ struct PayKeyboardCard: View {
             } else if case .failed(let line) = panel.phase {
                 hint(line)
             } else {
+                // The note sits above the buttons, so a failure line is never pushed off the bottom of the keyboard.
+                if let note = panel.note {
+                    Text(note).font(.system(size: 14, weight: .medium)).foregroundStyle(K.warning).lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4)
+                        .accessibilityIdentifier("paycard.note")
+                }
                 HStack(spacing: 10) {
                     Button("Reject", action: reject).buttonStyle(FrostPill(height: 50, font: .system(size: 17, weight: .semibold)))
                         .frame(width: 120)
                         .accessibilityIdentifier("paycard.reject")
-                    Button(action: approve) {
-                        HStack(spacing: 8) {
-                            if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
-                            Text("Approve with Face ID")
-                        }
-                    }
-                    .buttonStyle(SkyPill(height: 50, font: .system(size: 17, weight: .semibold)))
-                    .disabled(!panel.canApprove)
-                    .accessibilityIdentifier("paycard.approve")
+                    ApproveButton(panel: panel, height: 50, approve: approve, openApp: openApp)
                 }
                 if let c = panel.confirm, !c.confirmed {
                     AddressConfirmRow(confirm: c, pick: pick)
-                }
-                if let note = panel.note {
-                    Text(note).font(.system(size: 14)).foregroundStyle(Theme.Color.warning).lineLimit(2).accessibilityIdentifier("paycard.note")
-                } else if panel.confirm == nil {
+                } else if panel.note == nil, panel.confirm == nil {
                     hint("You paid this account before. Your key signs it on this phone.")
                 }
             }
@@ -551,7 +561,7 @@ struct PayKeyboardCard: View {
     private func hint(_ text: String) -> some View {
         HStack(spacing: 6) {
             Buddy(size: 18)
-            Text(text).font(.system(size: 14)).foregroundStyle(Theme.Color.text2).lineLimit(2)
+            Text(text).font(.system(size: 14)).foregroundStyle(K.ink2).lineLimit(2)
         }
     }
 }
@@ -564,7 +574,7 @@ struct AddressConfirmRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("First time paying this address. Tap how it ends:", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.Color.warning).lineLimit(2)
+                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(K.warning).lineLimit(2)
                 .accessibilityIdentifier("paycard.firsttime")
             HStack(spacing: 8) {
                 ForEach(confirm.options, id: \.self) { end in
@@ -573,7 +583,7 @@ struct AddressConfirmRow: View {
                             .frame(maxWidth: .infinity).frame(height: 36)
                     }
                     .buttonStyle(FrostPill(height: 36, font: .system(size: 16, weight: .semibold, design: .monospaced)))
-                    .overlay(Capsule().stroke(confirm.picked == end ? Theme.Color.warning : .clear, lineWidth: 2))
+                    .overlay(Capsule().stroke(confirm.picked == end ? K.warning : .clear, lineWidth: 2))
                     .accessibilityIdentifier("paycard.end.\(end)")
                 }
             }
@@ -589,6 +599,7 @@ struct XchainKeyboardCard: View {
     let reject: () -> Void
     let insert: () -> Void
     let pick: (String) -> Void
+    var openApp: () -> Void = {}
 
     var body: some View {
         let t = XchainCardText(card)
@@ -597,12 +608,12 @@ struct XchainKeyboardCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     if panel.requoted, panel.phase != .sent {
                         Label("Price updated. Check it and approve again.", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.Color.warning)
+                            .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(K.warning)
                             .accessibilityIdentifier("xcard.requoted")
                     }
-                    Text(t.gets).font(.system(size: 19, weight: .bold)).foregroundStyle(Theme.Color.text1)
+                    Text(t.gets).font(.system(size: 19, weight: .bold)).foregroundStyle(K.ink1)
                         .lineLimit(2).minimumScaleFactor(0.7).accessibilityIdentifier("xcard.gets")
-                    Text(t.pays).font(.system(size: 14.5, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                    Text(t.pays).font(.system(size: 14.5, weight: .medium)).foregroundStyle(K.ink1)
                         .lineLimit(2).minimumScaleFactor(0.8).accessibilityIdentifier("xcard.pays")
                     if panel.phase == .sent, let s = panel.swap {
                         swapRow(s)
@@ -613,7 +624,7 @@ struct XchainKeyboardCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(K.card))
             }
             if panel.phase == .sent {
                 if case .delivered = panel.swap {
@@ -633,15 +644,7 @@ struct XchainKeyboardCard: View {
                     Button("Reject", action: reject).buttonStyle(FrostPill(height: 46, font: .system(size: 17, weight: .semibold)))
                         .frame(width: 110)
                         .accessibilityIdentifier("paycard.reject")
-                    Button(action: approve) {
-                        HStack(spacing: 8) {
-                            if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
-                            Text("Approve with Face ID")
-                        }
-                    }
-                    .buttonStyle(SkyPill(height: 46, font: .system(size: 17, weight: .semibold)))
-                    .disabled(!panel.canApprove)
-                    .accessibilityIdentifier("paycard.approve")
+                    ApproveButton(panel: panel, height: 46, approve: approve, openApp: openApp)
                 }
             }
         }
@@ -650,8 +653,8 @@ struct XchainKeyboardCard: View {
 
     private func detail(_ a: String, _ b: String, id: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(a).font(.system(size: 13)).foregroundStyle(Theme.Color.text2).lineLimit(1).minimumScaleFactor(0.75)
-            Text(b).font(.system(size: 13)).foregroundStyle(Theme.Color.text2).lineLimit(1).minimumScaleFactor(0.75)
+            Text(a).font(.system(size: 13)).foregroundStyle(K.ink2).lineLimit(1).minimumScaleFactor(0.75)
+            Text(b).font(.system(size: 13)).foregroundStyle(K.ink2).lineLimit(1).minimumScaleFactor(0.75)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier(id)
@@ -663,15 +666,15 @@ struct XchainKeyboardCard: View {
             switch s {
             case .swapping: ProgressView()
             case .delivered: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Color.success)
-            case .refunded, .failed: Image(systemName: "arrow.uturn.backward.circle.fill").foregroundStyle(Theme.Color.warning)
+            case .refunded, .failed: Image(systemName: "arrow.uturn.backward.circle.fill").foregroundStyle(K.warning)
             }
-            Text(s.line(chain: chain)).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.Color.text1).lineLimit(2)
+            Text(s.line(chain: chain)).font(.system(size: 15, weight: .semibold)).foregroundStyle(K.ink1).lineLimit(2)
                 .accessibilityIdentifier("xcard.status")
         }
         if case .delivered(let u?) = s, let url = URL(string: u) {
             Link(destination: url) {
                 HStack(spacing: 4) { Text("View on \(chain) explorer"); Image(systemName: "arrow.up.right.square") }
-                    .font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.Color.skyDeep)
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(K.link)
             }
             .accessibilityIdentifier("xcard.explorer")
         }
@@ -680,19 +683,127 @@ struct XchainKeyboardCard: View {
     private func quiet(_ text: String, warn: Bool) -> some View {
         HStack(spacing: 6) {
             Buddy(size: 18)
-            Text(text).font(.system(size: 13.5)).foregroundStyle(warn ? Theme.Color.warning : Theme.Color.text2).lineLimit(3)
+            Text(text).font(.system(size: 13.5)).foregroundStyle(warn ? K.warning : K.ink2).lineLimit(3)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
+/// "Approve with Face ID", or "Approve in Pip" once the keyboard cannot approve by itself.
+struct ApproveButton: View {
+    let panel: PayPanel
+    let height: CGFloat
+    let approve: () -> Void
+    let openApp: () -> Void
+
+    var body: some View {
+        if panel.offerApp {
+            Button(action: openApp) {
+                HStack(spacing: 8) { Image(systemName: "arrow.up.forward.app"); Text("Approve in \(AppConfig.displayName)") }
+            }
+            .buttonStyle(SkyPill(height: height, font: .system(size: 17, weight: .semibold)))
+            .disabled(panel.intent.id.isEmpty)
+            .accessibilityIdentifier("paycard.approveInApp")
+        } else {
+            Button(action: approve) {
+                HStack(spacing: 8) {
+                    if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
+                    Text("Approve with Face ID")
+                }
+            }
+            .buttonStyle(SkyPill(height: height, font: .system(size: 17, weight: .semibold)))
+            .disabled(!panel.canApprove)
+            .accessibilityIdentifier("paycard.approve")
+        }
+    }
+}
+
+/// Pip's own PIN pad, inside the keyboard card: what is being paid, six dots and the reason on the left; big digits on the right.
+struct PINPadCard: View {
+    let panel: PayPanel
+    let pin: String
+    let digit: (String) -> Void
+    let deleteDigit: () -> Void
+    let openApp: () -> Void
+    let reject: () -> Void
+
+    private static let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Enter your Pip PIN").font(.system(size: 17, weight: .semibold)).foregroundStyle(K.ink1)
+                Text(summary).font(.system(size: 13.5)).foregroundStyle(K.ink2).lineLimit(2).minimumScaleFactor(0.8)
+                HStack(spacing: 9) {
+                    ForEach(0..<PayPIN.length, id: \.self) { i in
+                        Circle().fill(i < pin.count ? K.ink1 : .clear)
+                            .overlay(Circle().strokeBorder(K.ink2, lineWidth: 1.5))
+                            .frame(width: 13, height: 13)
+                    }
+                    if panel.checkingPIN { ProgressView().controlSize(.small) }
+                }
+                .padding(.vertical, 4)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(pin.count) of \(PayPIN.length) digits")
+                .accessibilityIdentifier("pin.dots")
+                if let note = panel.note {
+                    Text(note).font(.system(size: 13.5, weight: .medium)).foregroundStyle(K.warning).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("paycard.note")
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 14) {
+                    Button("Cancel", action: reject).foregroundStyle(K.ink2).accessibilityIdentifier("pin.cancel")
+                    Button("Approve in \(AppConfig.displayName)", action: openApp).foregroundStyle(K.link).accessibilityIdentifier("paycard.approveInApp")
+                }
+                .font(.system(size: 14.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(K.card))
+
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(56), spacing: 6), count: 3), spacing: 6) {
+                ForEach(Self.keys, id: \.self) { k in key(k) }
+            }
+            .frame(width: 180)
+        }
+        .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 4)
+        .accessibilityIdentifier("pin.pad")
+    }
+
+    private var summary: String {
+        if let card = panel.xchain { return XchainCardText(card).gets }
+        return "\(panel.intent.amount) \(panel.intent.token) to \(panel.intent.recipient)"
+    }
+
+    @ViewBuilder private func key(_ k: String) -> some View {
+        if k.isEmpty {
+            Color.clear.frame(height: 42)
+        } else {
+            Button { k == "del" ? deleteDigit() : digit(k) } label: {
+                Group {
+                    if k == "del" { Image(systemName: "delete.left").font(.system(size: 19, weight: .medium)) } else { Text(k).font(.system(size: 24, weight: .medium)) }
+                }
+                .foregroundStyle(K.ink1)
+                .frame(maxWidth: .infinity).frame(height: 42)
+                .background(K.key, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .shadow(color: K.shadow, radius: 0.5, y: 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(panel.checkingPIN)
+            .accessibilityLabel(k == "del" ? "Delete" : k)
+            .accessibilityIdentifier("pin.\(k)")
+        }
+    }
+}
+
 private func networkBadge(_ network: String) -> some View {
     HStack(spacing: 6) {
-        Text("N").font(.system(size: 11, weight: .heavy)).foregroundStyle(.white).frame(width: 20, height: 20).background(.black, in: Circle())
-        Text("NEAR \(network)").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.Color.text1)
+        Text("N").font(.system(size: 11, weight: .heavy)).foregroundStyle(K.markInk).frame(width: 20, height: 20).background(K.mark, in: Circle())
+        Text("NEAR \(network)").font(.system(size: 14, weight: .medium)).foregroundStyle(K.ink1)
     }
     .padding(.leading, 5).padding(.trailing, 10).padding(.vertical, 5)
-    .background(Theme.Color.panel, in: Capsule())
+    .background(K.panel, in: Capsule())
     .accessibilityIdentifier("paycard.network")
 }
 
@@ -731,6 +842,9 @@ struct PaySetupView: View {
     var hasKey = false
     let setUp: () -> Void
     var remove: () -> Void = {}
+    /// The payment PIN row: "On", "Not set" or "Locked…", and its one action.
+    var pin: String? = nil
+    var pinAction: (String, () -> Void)? = nil
     @State private var confirmRemove = false
 
     /// "a1b2c3…d4e5f6": an implicit account id is 64 hex chars.
@@ -744,7 +858,7 @@ struct PaySetupView: View {
                 .font(Theme.Font.body).foregroundStyle(Theme.Color.text2).padding(.top, 8).fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 12) {
-                    Text("N").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white).frame(width: 24, height: 24).background(.black, in: Circle())
+                    Text("N").font(.system(size: 14, weight: .heavy)).foregroundStyle(K.markInk).frame(width: 24, height: 24).background(K.mark, in: Circle())
                         .frame(width: 42, height: 42).background(Theme.Color.iceSoft, in: RoundedRectangle(cornerRadius: 10))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(account.map(Self.short) ?? "No account yet").font(.system(size: 18, weight: .semibold, design: .monospaced))
@@ -797,6 +911,21 @@ struct PaySetupView: View {
                 .padding(.top, 14)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("pay.mainnetWarning")
+            }
+            if let pin {
+                HStack(spacing: 12) {
+                    Image(systemName: "circle.grid.3x3.fill").foregroundStyle(Theme.Color.skyDeep)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Payment PIN").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.Color.text1)
+                        Text(pin).font(.system(size: 14)).foregroundStyle(Theme.Color.text3).accessibilityIdentifier("pay.pinState")
+                    }
+                    Spacer()
+                    if let (title, run) = pinAction {
+                        Button(title, action: run).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.Color.skyDeep)
+                            .disabled(busy).accessibilityIdentifier("pay.pinAction")
+                    }
+                }
+                .padding(.horizontal, 16).frame(height: 60).ringCard().padding(.top, 14)
             }
             Spacer(minLength: 24)
             if let error { Text(error).font(.system(size: 14)).foregroundStyle(Theme.Color.warning).frame(maxWidth: .infinity) }
