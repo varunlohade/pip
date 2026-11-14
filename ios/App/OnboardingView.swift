@@ -59,8 +59,10 @@ struct OnboardingView: View {
         }
         #endif
         // RootView checks the keyboard each time the app comes back from Settings.
+        // Added with Full Access and first in the list: nothing is left to set, so the default step ticks and moves on.
         .onChange(of: setup.state) { _, state in
             if step == .keyboard, state != .notAdded, !checked { Task { await complete(.keyboard) } }
+            if step == .makeDefault, state == .ready, !checked { Task { await complete(.makeDefault) } }
         }
     }
 
@@ -230,7 +232,7 @@ struct OnboardingView: View {
     private func next(after done: Step) -> Step? {
         switch done {
         case .intro: Self.keyboardStep
-        case .keyboard: .makeDefault
+        case .keyboard: KeyboardSetup.shared.state == .ready ? Self.afterKeyboard : .makeDefault
         case .makeDefault: Self.afterKeyboard
         case .calendar: .start
         case .start: nil
@@ -240,8 +242,15 @@ struct OnboardingView: View {
     /// The calendar step shows only while Calendar or Reminders has never been asked.
     @MainActor static var afterKeyboard: Step { CalendarModel.shared.neverAsked ? .calendar : .start }
 
-    /// The default step always shows once the keyboard is added: iOS cannot tell the app the keyboard's place in the list.
-    @MainActor static var keyboardStep: Step { KeyboardSetup.shared.state == .notAdded ? .keyboard : .makeDefault }
+    /// Skips what is already done: the add step once the keyboard is added, and both keyboard steps once it is ready
+    /// (added, Full Access seen, first in the list).
+    @MainActor static var keyboardStep: Step {
+        switch KeyboardSetup.shared.state {
+        case .notAdded: .keyboard
+        case .ready: afterKeyboard
+        case .needsFullAccess, .notFirst: .makeDefault
+        }
+    }
 }
 
 /// One dot per step. The current one is a longer pill.

@@ -5,7 +5,9 @@ import WebKit
 /// The keyboard runs `wipeProcess` itself the next time it appears, because its caches live in its own sandbox.
 enum LocalWipe {
     /// What the app and the keyboard share: the Keychain group, every App Group file and every App Group default,
-    /// except the NEAR pay key (Keychain) and its public key (App Group). `PayKeyVault.forget` removes those.
+    /// except the NEAR pay key (Keychain), its public key (App Group) and the keyboard heartbeat (App Group).
+    /// `PayKeyVault.forget` removes the pay key. The heartbeat is the phone's, not the person's: onboarding after logout
+    /// reads it to see the keyboard is already on with Full Access.
     /// Ends by writing a new account epoch, which tells the keyboard to drop what it holds in memory.
     static func wipeShared() {
         // Take the refresh lock when it is free within a second, so a refresh cannot write the last person's tokens back
@@ -18,6 +20,7 @@ enum LocalWipe {
     private static func wipeSharedLocked() {
         // The NEAR pay key and its public key stay: losing them loses the money in the account.
         let payKey = SharedStore.payPublicKey
+        let keyboardLastSeen = SharedStore.keyboardLastSeen
         Keychain.deleteAllButPayKey()
         if let root = SharedStore.container {
             // Library/Preferences holds the App Group defaults, cleared below key by key. The lock file stays: deleting a file
@@ -33,6 +36,7 @@ enum LocalWipe {
         }
         SharedStore.defaults?.set(true, forKey: StoreKey.installed.rawValue)
         SharedStore.payPublicKey = payKey
+        SharedStore.keyboardLastSeen = keyboardLastSeen
         SharedStore.accountEpoch = UUID().uuidString
     }
 

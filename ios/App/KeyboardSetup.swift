@@ -77,21 +77,31 @@ struct KeyboardDefaultGuide: View {
     @ObservedObject var setup = KeyboardSetup.shared
     @State private var tryText = ""
 
-    private var lines: [String] {
-        var l = ["Open Settings › General › Keyboard › Keyboards."]
-        if setup.state == .notAdded { l.append("Tap Add New Keyboard. Pick \(AppConfig.displayName).") }
-        l.append("Tap Edit. Drag \(AppConfig.displayName) to the top.")
-        l.append("Tap \(AppConfig.displayName). Turn on Allow Full Access.")
+    /// Each step and whether the app can already see it done. A done step shows a check in place of its number.
+    private var lines: [(text: String, done: Bool)] {
+        let s = setup.state
+        var l = [("Open Settings › General › Keyboard › Keyboards.", s != .notAdded)]
+        if s == .notAdded { l.append(("Tap Add New Keyboard. Pick \(AppConfig.displayName).", false)) }
+        l.append(("Tap Edit. Drag \(AppConfig.displayName) to the top.", s == .ready))
+        l.append(("Tap \(AppConfig.displayName). Turn on Allow Full Access.", s.isOn))
         return l
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
-            ForEach(Array(lines.enumerated()), id: \.offset) { i, text in
+            ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
                 HStack(spacing: Theme.Space.s) {
-                    Text("\(i + 1)").font(Theme.Font.count).foregroundStyle(Theme.Color.text1)
-                        .frame(width: Theme.Space.xl, height: Theme.Space.xl).background(Theme.Color.button, in: Circle())
-                    Text(text).font(Theme.Font.body).foregroundStyle(Theme.Color.text1)
+                    Group {
+                        if line.done {
+                            Image(systemName: "checkmark").font(Theme.Font.count).foregroundStyle(Theme.Color.successInk)
+                                .frame(width: Theme.Space.xl, height: Theme.Space.xl).background(Theme.Color.successChip, in: Circle())
+                        } else {
+                            Text("\(i + 1)").font(Theme.Font.count).foregroundStyle(Theme.Color.text1)
+                                .frame(width: Theme.Space.xl, height: Theme.Space.xl).background(Theme.Color.button, in: Circle())
+                        }
+                    }
+                    .accessibilityIdentifier(line.done ? "keyboard.step.done" : "keyboard.step.todo")
+                    Text(line.text).font(Theme.Font.body).foregroundStyle(line.done ? Theme.Color.text2 : Theme.Color.text1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -116,9 +126,9 @@ struct KeyboardDefaultGuide: View {
                 .modifier(FieldStyle())
                 .accessibilityIdentifier("keyboard.tryit")
         }
-        // The keyboard can appear while the app stays open, so look for its heartbeat each second until it lands.
+        // The keyboard can appear while the app stays open, so look for its heartbeat and its place each second until ready.
         .task(id: setup.state) {
-            while !setup.state.isOn, !Task.isCancelled {
+            while setup.state != .ready, !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 setup.refresh()
             }

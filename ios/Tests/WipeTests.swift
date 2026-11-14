@@ -17,6 +17,8 @@ final class WipeTests: XCTestCase {
         d.set("left by an older build \(mark)", forKey: "some_old_key")
         // The pay public key is the phone's, not the person's, and stays (see testLogoutKeepsThePayKey).
         d.set(String(repeating: "ab", count: 32), forKey: StoreKey.payPublicKey.rawValue)
+        // The keyboard heartbeat is the phone's too: it says the keyboard is on with Full Access.
+        SharedStore.keyboardLastSeen = Date(timeIntervalSince1970: 1_800_000_000)
         SharedStore.notes = [Note(text: "Ana's pin is in the drawer \(mark)", trigger: ";pin")]
         SharedStore.appointments = [Appointment(start: Date(), end: Date().addingTimeInterval(600), title: "Dentist \(mark)")]
         SharedStore.actionShortcuts = ActionShortcut.defaults
@@ -103,9 +105,11 @@ final class WipeTests: XCTestCase {
         for s in Secret.allCases where s != .deviceID { XCTAssertNil(Keychain.get(s), "Keychain \(s)") }
         XCTAssertFalse(SharedStore.signedIn)
         let d = try XCTUnwrap(SharedStore.defaults)
-        // Three keys stay on purpose: the new epoch, the install marker and the pay public key (none holds data about the person).
-        for k in StoreKey.allCases where ![.accountEpoch, .installed, .payPublicKey].contains(k) { XCTAssertNil(d.object(forKey: k.rawValue), "App Group default \(k)") }
+        // Four keys stay on purpose: the new epoch, the install marker, the pay public key and the keyboard heartbeat
+        // (none holds data about the person). The heartbeat lets onboarding after logout see the keyboard is already on.
+        for k in StoreKey.allCases where ![.accountEpoch, .installed, .payPublicKey, .keyboardLastSeen].contains(k) { XCTAssertNil(d.object(forKey: k.rawValue), "App Group default \(k)") }
         XCTAssertEqual(SharedStore.payPublicKey, String(repeating: "ab", count: 32))
+        XCTAssertEqual(SharedStore.keyboardLastSeen, Date(timeIntervalSince1970: 1_800_000_000))
         XCTAssertNil(d.object(forKey: "some_old_key"), "an unknown App Group default")
         XCTAssertNotNil(SharedStore.accountEpoch)
         XCTAssertNotEqual(SharedStore.accountEpoch, oldEpoch, "a new epoch tells the keyboard")
