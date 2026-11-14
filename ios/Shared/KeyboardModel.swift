@@ -849,7 +849,7 @@ final class KeyboardModel: ObservableObject {
     }
 
     /// The report the app's Keyboard status screen reads. Only lands in the App Group with Full Access.
-    func beat(call: String? = nil) {
+    func beat(call: String? = nil, payAuth: String? = nil, pinReady: Bool? = nil, pinStatus: OSStatus? = nil) {
         let now = deps.now()
         var h = deps.store.heartbeat ?? KeyboardHeartbeat(at: now, fullAccess: false, hasToken: false, build: "")
         h.at = now
@@ -857,6 +857,8 @@ final class KeyboardModel: ObservableObject {
         h.hasToken = deps.store.signedIn
         h.build = KeyboardHeartbeat.thisBuild
         if let call { h.lastCall = call; h.lastCallAt = now }
+        if let payAuth { h.payAuth = payAuth; h.payAuthAt = now }
+        if let pinReady { h.pinReady = pinReady; h.pinStatus = pinReady ? nil : pinStatus }
         deps.store.heartbeat = h
     }
 

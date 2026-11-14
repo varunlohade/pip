@@ -1,5 +1,11 @@
 # Pip build notes
 
+## 0.7 (10)
+
+What to Test:
+
+1. Keyboard payments now use your Pip PIN directly (Face ID only in the app). If it says set a PIN, open Pip > Pip Pay > Payment PIN.
+
 ## 0.5 (7)
 
 What to Test:
@@ -87,3 +93,13 @@ Pip 0.6
 2. Payments: typing or pasting an account like name.testnet no longer flips to "Sensitive text detected". Try: send 0.02 near to pipfundmwg9zj4l.testnet
 3. A wrong ending like .mainnet now says: NEAR accounts end in .near (mainnet) or .testnet.
 4. Passwords and keys still turn AI off (the lock shows after you finish the word).
+## 0.7
+
+Pip 0.7: approve payments in the keyboard
+
+1. Open Pip > Pip Pay > Payment PIN. Set a 6-digit PIN (asks Face ID in the app).
+2. In Messages: send 0.02 near to pipfundmwg9zj4l.testnet (paste the address). Tap Approve.
+3. If Face ID can't run in the keyboard, the card says why and shows Pip's PIN pad. Enter your PIN to send.
+4. Or tap "Approve in Pip" to approve in the app with Face ID.
+5. Payment card and Sent screen are readable in dark mode now.
+6. If it still fails: Pip > Account > Keyboard status, screenshot it.

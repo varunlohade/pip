@@ -25,7 +25,8 @@ struct KeyboardView: View {
                 .padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if let pay = model.payPanel {
                 PayKeyboardCard(panel: pay, approve: model.approvePayInKeyboard, reject: model.rejectPayInKeyboard,
-                                insert: model.insertKeyboardSent, pick: model.pickAddressEnd)
+                                insert: model.insertKeyboardSent, pick: model.pickAddressEnd,
+                                digit: model.typePINDigit, deleteDigit: model.deletePINDigit, openApp: model.approvePayInApp)
                     .padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if let c = model.calendar {
                 CalendarPanelView(model: model, panel: c, palette: p).padding(.top, M.barHeight).padding(.bottom, M.bottomInset)

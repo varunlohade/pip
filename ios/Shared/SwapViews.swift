@@ -4,13 +4,14 @@ import SwiftUI
 // change without touching these.
 
 /// A swap, or any cross-chain card that is only a preview: what you get, what you spend, slippage, fee, the Intents route,
-/// and (on a preview) what is missing. Approve stays off on a preview: there is no intent and nothing to sign.
+/// and (on a preview) what is missing. Approve with PIN stays off on a preview: there is no intent and nothing to sign.
 struct SwapKeyboardCard: View {
     let panel: PayPanel
     let card: XchainCard
     let approve: () -> Void
     let reject: () -> Void
     let insert: () -> Void
+    var openApp: () -> Void = {}
 
     var body: some View {
         let t = XchainCardText(card)
@@ -58,15 +59,8 @@ struct SwapKeyboardCard: View {
                         .buttonStyle(FrostPill(height: 46, font: .system(size: 17, weight: .semibold)))
                         .frame(width: 110)
                         .accessibilityIdentifier("paycard.reject")
-                    Button(action: approve) {
-                        HStack(spacing: 8) {
-                            if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
-                            Text("Approve with Face ID")
-                        }
-                    }
-                    .buttonStyle(SkyPill(height: 46, font: .system(size: 17, weight: .semibold)))
-                    .disabled(!panel.canApprove)
-                    .accessibilityIdentifier("paycard.approve")
+                    // The same PIN path as every payment; a preview keeps it off (canApprove is false).
+                    ApproveButton(panel: panel, height: 46, approve: approve, openApp: openApp)
                 }
             }
         }

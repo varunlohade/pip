@@ -1,3 +1,4 @@
+import CryptoKit
 import WebKit
 import XCTest
 @testable import Pip
@@ -151,7 +152,15 @@ final class WipeTests: XCTestCase {
         XCTAssertEqual(Keychain.count(), 1, "only the pay key is left in the shared group")
         XCTAssertTrue(PayKeychain().exists(), "the pay key stays")
         XCTAssertEqual(vault.accountID(), pk, "and its account id")
-        guard case .signed = await vault.sign(Data(repeating: 1, count: 32), prompt: "t") else { return XCTFail("the kept key still signs") }
+        // The bytes are still there and still this account's key. (A real sign now runs LocalAuthentication first, and the
+        // simulator has no enrolled face in unit tests; the simulator does not enforce the item's access control, so read it.)
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: PayKeychain.service,
+                                kSecAttrAccount as String: PayKeychain.account, kSecAttrAccessGroup as String: AppConfig.keychainGroup,
+                                kSecReturnData as String: true]
+        var out: CFTypeRef?
+        XCTAssertEqual(SecItemCopyMatching(q as CFDictionary, &out), errSecSuccess)
+        let raw = try XCTUnwrap(out as? Data)
+        XCTAssertEqual(PayKey.accountID(try Curve25519.Signing.PrivateKey(rawRepresentation: raw).publicKey), pk, "the kept key still signs for its account")
     }
 
     /// The keyboard runs in its own process. It sees the new epoch the next time it appears and drops the last person's state.

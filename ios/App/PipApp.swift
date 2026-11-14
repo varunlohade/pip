@@ -32,6 +32,8 @@ final class Session: ObservableObject {
     @Published var account = 0
     /// A payment waiting on the approval card: from a pip://approve/<id> link, or left by the keyboard in the App Group.
     @Published var approval: PayApprovalRequest?
+    /// pip://pin-setup from the keyboard's "Set a payment PIN in Pip": Pip Pay opens and asks for the PIN.
+    @Published var pinSetup = false
     private var rejected: AnyCancellable?
     private var signingOut = false
 
@@ -229,6 +231,10 @@ final class Session: ObservableObject {
             approval = PayApprovalRequest(id: id)
             return
         }
+        if url.scheme == "pip", url.host == "pin-setup" {
+            pinSetup = true
+            return
+        }
         #if DEBUG
         guard url.scheme == "pip-dev", url.host == "pair",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
@@ -264,6 +270,7 @@ struct RootView: View {
             }
         }
         .sheet(item: $session.approval) { r in ApprovalSheet(model: ApprovalModel.live(id: r.id)) }
+        .sheet(isPresented: $session.pinSetup) { NavigationStack { PaySetup() } }
         .task { await session.migrateLegacyToken() }
     }
 }

@@ -306,6 +306,9 @@ struct KeyboardStatusView: View {
                         line("Keyboard has sign-in", beat.map { $0.hasToken ? "yes" : "no" } ?? "unknown")
                         line("Last server call", beat?.lastCall ?? "none")
                         line("Call time", Self.when(beat?.lastCallAt))
+                        line("Last Face ID error", beat?.payAuth ?? "none")
+                        line("Face ID error time", Self.when(beat?.payAuthAt))
+                        line("Keyboard PIN ready", beat?.pinReady.map { $0 ? "true" : "false" + (beat?.pinStatus.map { " (OSStatus \($0))" } ?? "") } ?? "not checked")
                     }
                 }
                 .accessibilityIdentifier("keyboardStatus.card")

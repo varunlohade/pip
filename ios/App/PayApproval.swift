@@ -132,12 +132,25 @@ final class ApprovalModel: ObservableObject {
         note = nil
         do {
             let u = try await api.unsignedPay(i, approverKey: try await PayApprover.key(api: api, keys: keys))
-            guard case .success(let ok) = PayTxCheck.check(u, intent: i, account: account) else {
+            if u.requoted == true {
+                // Cross-chain: a new price. Show it; the owner approves again.
+                guard let card = u.xchain, card.approvable else {
+                    phase = .failed("The new price could not be checked. Nothing was sent.")
+                    return
+                }
+                var next = u.intent(updating: i)
+                next.xchain = card
+                intent = next
+                phase = .ready
+                note = "Price updated. Check it and approve again."
+                return
+            }
+            guard case .success(let ok) = PayTxCheck.check(u, intent: i, account: account, xchain: i.xchain) else {
                 phase = .failed(PayTxCheck.refusedLine)
                 _ = try? await api.rejectPay(i.id)
                 return
             }
-            switch await signer.sign(ok.hash, prompt: "Send \(i.amount) \(i.token) to \(i.recipient)") {
+            switch await signer.sign(ok.hash, prompt: PayPanel(intent: i, xchain: i.xchain).prompt) {
             case .signed(let sig):
                 let done = try await api.submitPay(i.id, signature: sig)
                 intent = done
@@ -203,6 +216,7 @@ struct WalletSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
             WalletCard(row: model.row, create: { Task { await model.setUp() } }, retry: { Task { await model.retry() } })
+                .sheet(isPresented: $model.askPIN) { PaymentPINSheet(save: model.savePIN) }
             NavigationLink { PaySetup() } label: {
                 HStack {
                     Image(systemName: "key.fill").foregroundStyle(Theme.Color.skyDeep)
@@ -255,17 +269,55 @@ final class PaySetupModel: ObservableObject {
     @Published private(set) var loaded = false
     /// The network the server last confirmed.
     private var confirmed = PayNetwork.name
+    /// The payment PIN's state, and the setup sheet: wallet creation ends with it, and a wallet without a PIN asks on open.
+    @Published private(set) var pinState: PINState = .notSet
+    @Published var askPIN = false
+
+    enum PINState: Equatable { case notSet, on, locked }
 
     private let api: PayAPI
     private let vault: PayKeyVault
     private let keys: ApproverKeys
+    private let pin: PayPINVault
     private let saveNetwork: (String) -> Void
 
-    init(api: PayAPI, vault: PayKeyVault, keys: ApproverKeys, saveNetwork: @escaping (String) -> Void) {
+    init(api: PayAPI, vault: PayKeyVault, keys: ApproverKeys, pin: PayPINVault = PayPINVault(), saveNetwork: @escaping (String) -> Void) {
         self.api = api
         self.vault = vault
         self.keys = keys
+        self.pin = pin
         self.saveNetwork = saveNetwork
+    }
+
+    func refreshPIN() {
+        pinState = !pin.isSet ? .notSet : pin.isLocked ? .locked : .on
+        if account != nil, pinState == .notSet { askPIN = true }
+    }
+
+    /// Sets (or, after "Forgot PIN", replaces) the payment PIN. Face ID in the app reads the key, which is sealed under the new
+    /// PIN and wiped from memory. Nil when it worked, else the line to show.
+    func savePIN(_ code: String) async -> String? {
+        guard PayPIN.isValid(code) else { return "Use 6 digits." }
+        var read = await vault.rawKey(prompt: "Set your Pip payment PIN")
+        defer { if let n = read.raw?.count { read.raw?.resetBytes(in: 0..<n) } }
+        guard let raw = read.raw else { return read.issue.declined ? "Face ID is needed to set a PIN." : "Face ID is not available. (\(read.issue.code))" }
+        guard pin.set(pin: code, raw: raw) else { return "Pip could not save the PIN. Try again." }
+        askPIN = false
+        refreshPIN()
+        return nil
+    }
+
+    /// After five wrong PINs in the keyboard: Face ID here turns keyboard payments back on.
+    func unlockPIN() async {
+        var read = await vault.rawKey(prompt: "Unlock payments in the keyboard")
+        defer { if let n = read.raw?.count { read.raw?.resetBytes(in: 0..<n) } }
+        guard read.raw != nil else {
+            error = read.issue.declined ? "Face ID is needed to unlock payments." : "Face ID is not available. (\(read.issue.code))"
+            return
+        }
+        pin.resetTries()
+        pin.faceFailedLast = false
+        refreshPIN()
     }
 
     static func live() -> PaySetupModel {
@@ -278,6 +330,7 @@ final class PaySetupModel: ObservableObject {
         do {
             show(try await api.payNetwork())
             if account == nil, let pk = vault.accountID() { await register(pk) } else { await refreshWallet() }
+            refreshPIN()
         } catch {
             self.error = Self.line(error, doing: "Could not reach your wallet.")
         }
@@ -292,6 +345,7 @@ final class PaySetupModel: ObservableObject {
             return
         }
         await register(pk)
+        refreshPIN()
     }
 
     var hasKey: Bool { vault.accountID() != nil }
@@ -315,6 +369,8 @@ final class PaySetupModel: ObservableObject {
     /// "Remove wallet from this phone", after the owner confirmed the balance warning. The key is gone for good.
     func removeWallet() {
         vault.forget()
+        pin.remove()
+        pinState = .notSet
         account = nil
         wallet = nil
     }
@@ -377,7 +433,17 @@ struct PaySetup: View {
         PaySetupView(account: model.account, wallet: model.wallet,
                      network: Binding(get: { model.network }, set: { n in model.network = n; Task { await model.switchTo(n) } }),
                      mainnetEnabled: model.mainnetEnabled, busy: model.busy, error: model.error, hasKey: model.hasKey,
-                     setUp: { Task { await model.setUp() } }, remove: { model.removeWallet() })
+                     setUp: { Task { await model.setUp() } }, remove: { model.removeWallet() },
+                     pin: model.account == nil ? nil : model.pinState.line,
+                     pinAction: model.account == nil ? nil : pinAction)
             .task { await model.load() }
+            .sheet(isPresented: $model.askPIN) { PaymentPINSheet(save: model.savePIN) }
+    }
+
+    /// Locked: Face ID unlocks. Otherwise set the PIN, or replace a forgotten one (Face ID, then a new PIN).
+    private var pinAction: (String, () -> Void) {
+        let m = model
+        if m.pinState == .locked { return ("Unlock", { Task { await m.unlockPIN() } }) }
+        return (m.pinState == .on ? "Forgot PIN" : "Set PIN", { m.askPIN = true })
     }
 }

@@ -1,4 +1,5 @@
 import CryptoKit
+import LocalAuthentication
 import UIKit
 @testable import Pip
 
@@ -266,16 +267,47 @@ final class FakeSigner: PaySigner, @unchecked Sendable {
         asks += 1
         prompts.append(prompt)
         switch answer {
-        case .denied?: return .denied
-        case .unavailable?: return .unavailable
+        case .denied?: return .failed(PayAuthIssue(status: errSecAuthFailed, la: LAError.userCancel.rawValue))
+        case .unavailable?: return .failed(PayAuthIssue(status: errSecAuthFailed, la: LAError.notInteractive.rawValue))
         default: return .ready { [key] h in try? key.signature(for: h) }
         }
     }
+
+    static let pin = "482915"
+
+    /// A vault with `FakeSigner.pin` already sealed, as after the app's PIN setup.
+    func readyPINVault(_ store: MemoryPINStore = MemoryPINStore()) -> PayPINVault {
+        let v = pinVault(store)
+        v.set(pin: Self.pin, raw: key.rawRepresentation)
+        return v
+    }
+
+    /// A payment PIN vault for this key, in memory, with no pause after a wrong try.
+    func pinVault(_ store: MemoryPINStore = MemoryPINStore()) -> PayPINVault {
+        PayPINVault(store: store, accountID: { [weak self] in self?.accountID() }, wrongDelay: .zero, rounds: 1_000)
+    }
+}
+
+extension KeyboardModel {
+    /// "Approve with PIN", then the PIN typed on the pad.
+    func approveWithPIN(_ pin: String = FakeSigner.pin) {
+        approvePayInKeyboard()
+        for d in pin { typePINDigit(String(d)) }
+    }
+}
+
+/// The PIN's Keychain items, in memory.
+final class MemoryPINStore: PayPINStore {
+    var items: [PayPINItem: Data] = [:]
+    func get(_ item: PayPINItem) -> Data? { items[item] }
+    func set(_ item: PayPINItem, _ value: Data?) -> OSStatus { items[item] = value; return errSecSuccess }
+    func status(_ item: PayPINItem) -> OSStatus { items[item] == nil ? errSecItemNotFound : errSecSuccess }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.
 final class FakeStore: KeyboardStore {
     var signedIn = true
+    var heartbeat: KeyboardHeartbeat?
     var accountEpoch: String?
     var keyboardSeenEpoch: String?
     /// How many times the keyboard wiped its own process caches.
@@ -417,13 +449,14 @@ final class FakeSpeaker: Speaker {
 extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
                      clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker(),
-                     haptics: HapticSpy = HapticSpy(), signer: FakeSigner = FakeSigner()) -> KeyboardDeps {
+                     haptics: HapticSpy = HapticSpy(), signer: FakeSigner = FakeSigner(), pin: PayPINVault? = nil) -> KeyboardDeps {
         // The model tests cover the 0.6 router path; RouterFlagOffTests covers 0.5 with it off.
         Flags.router = true; Flags.memory = true; Flags.dollarPay = true
         return KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
                      sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
-                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, signer: { signer })
+                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, signer: { signer },
+                     pin: { [pin = pin ?? signer.readyPINVault()] in pin })
     }
 }
 
