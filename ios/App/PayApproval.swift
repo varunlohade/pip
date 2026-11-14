@@ -197,12 +197,12 @@ struct ApprovalSheet: View {
 
 /// Home's wallet row and the Private AI proof link.
 struct WalletSection: View {
-    @State private var wallet: PayWallet?
-    @State private var failed = false
+    @StateObject private var model = PaySetupModel.live()
+    private var wallet: PayWallet? { model.wallet }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.xs) {
-            WalletCard(wallet: wallet, failed: failed)
+            WalletCard(row: model.row, create: { Task { await model.setUp() } }, retry: { Task { await model.retry() } })
             NavigationLink { PaySetup() } label: {
                 HStack {
                     Image(systemName: "key.fill").foregroundStyle(Theme.Color.skyDeep)
@@ -222,7 +222,7 @@ struct WalletSection: View {
         .padding(.horizontal, Theme.Metric.cardInset + 8)
         .task {
             await PayApprover.ensure(api: APIClient.shared(), keys: ApproverKeychain())
-            do { wallet = try await APIClient.shared().payWallet() } catch { failed = true }
+            await model.load()
         }
     }
 }
@@ -249,6 +249,8 @@ final class PaySetupModel: ObservableObject {
     @Published var mainnetEnabled = false
     @Published var busy = false
     @Published var error: String?
+    /// The first load has finished.
+    @Published private(set) var loaded = false
     /// The network the server last confirmed.
     private var confirmed = PayNetwork.name
 
@@ -270,11 +272,12 @@ final class PaySetupModel: ObservableObject {
 
     /// The key outlives a logout, so after the next sign-in its same public key is registered for the new session.
     func load() async {
+        defer { loaded = true }
         do {
             show(try await api.payNetwork())
             if account == nil, let pk = vault.accountID() { await register(pk) } else { await refreshWallet() }
         } catch {
-            self.error = plainLine(error)
+            self.error = Self.line(error, doing: "Could not reach your wallet.")
         }
     }
 
@@ -290,6 +293,22 @@ final class PaySetupModel: ObservableObject {
     }
 
     var hasKey: Bool { vault.accountID() != nil }
+
+    /// Home's wallet row, from real state: a wallet, a create offer when this phone has none, or what failed.
+    var row: WalletRow {
+        if let wallet { return .ready(wallet) }
+        if busy { return .creating }
+        if let error { return .failed(error) }
+        if !loaded { return .loading }
+        return account == nil ? .create : .loading
+    }
+
+    /// Retry after a failure: sets up the key when there is none yet, else loads and registers again.
+    func retry() async {
+        error = nil
+        wallet = nil
+        if hasKey { await load() } else { await setUp() }
+    }
 
     /// "Remove wallet from this phone", after the owner confirmed the balance warning. The key is gone for good.
     func removeWallet() {
@@ -322,8 +341,14 @@ final class PaySetupModel: ObservableObject {
             account = r.account_id == pk ? pk : nil
             await refreshWallet()
         } catch {
-            self.error = plainLine(error)
+            self.error = Self.line(error, doing: "Could not create your wallet.")
         }
+    }
+
+    /// The server's own words when it sent some (such as "could not send test money; try again"), else what failed.
+    static func line(_ error: Error, doing: String) -> String {
+        if case APIError.http(let code, let body) = error, code != 401, let words = serverWords(body) { return words }
+        return "\(doing) \(plainLine(error))"
     }
 
     private func show(_ info: PayNetworkInfo) {
@@ -336,7 +361,10 @@ final class PaySetupModel: ObservableObject {
 
     private func refreshWallet() async {
         guard account != nil else { return }
-        wallet = try? await api.payWallet()
+        do { wallet = try await api.payWallet() } catch {
+            wallet = nil
+            self.error = Self.line(error, doing: "Could not load your wallet.")
+        }
     }
 }
 

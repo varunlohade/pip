@@ -244,32 +244,81 @@ enum PayPhase: Equatable { case loading, ready, approving, sent, rejected, faile
 
 // MARK: app: Home wallet row and the Private AI proof
 
+/// Home's wallet row. Each state says what it is; the empty and failed ones are one tap.
+enum WalletRow: Equatable { case loading, create, creating, ready(PayWallet), failed(String) }
+
 struct WalletCard: View {
-    let wallet: PayWallet?
-    let failed: Bool
+    let row: WalletRow
+    var create: () -> Void = {}
+    var retry: () -> Void = {}
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("N").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white).frame(width: 36, height: 36).background(.black, in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Wallet \u{00B7} \(wallet.map { "NEAR \($0.network)" } ?? PayNetwork.label)").font(Theme.Font.label).foregroundStyle(Theme.Color.text3)
-                Text(wallet?.account_id ?? (failed ? "Wallet not ready. Pull to try again." : "Getting your wallet\u{2026}"))
-                    .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.text1).lineLimit(1).truncationMode(.middle)
-            }
-            Spacer(minLength: 8)
-            if let b = wallet?.balances {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("\(b["USDC"] ?? "0") USDC").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.Color.text1)
-                    Text("\(b["NEAR"] ?? "0") NEAR").font(.system(size: 13)).foregroundStyle(Theme.Color.text3)
+        Button(action: tap) {
+            HStack(spacing: 12) {
+                Text("N").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white).frame(width: 36, height: 36).background(.black, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Wallet \u{00B7} \(wallet.map { "NEAR \($0.network)" } ?? PayNetwork.label)").font(Theme.Font.label).foregroundStyle(Theme.Color.text3)
+                    Text(line).font(.system(size: 16, weight: .medium)).foregroundStyle(lineColor)
+                        .lineLimit(wallet == nil ? 2 : 1).truncationMode(wallet == nil ? .tail : .middle)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .fixedSize()
+                Spacer(minLength: 8)
+                if let b = wallet?.balances {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(b["USDC"] ?? "0") USDC").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.Color.text1)
+                        Text("\(b["NEAR"] ?? "0") NEAR").font(.system(size: 13)).foregroundStyle(Theme.Color.text3)
+                    }
+                    .fixedSize()
+                } else if let action = actionTitle {
+                    Text(action).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 14).frame(height: 34).background(Theme.Color.skyDeep, in: Capsule())
+                        .fixedSize()
+                } else if row == .creating || row == .loading {
+                    ProgressView()
+                }
             }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .ringCard()
+            .contentShape(Rectangle())
         }
-        .padding(16)
-        .frame(maxWidth: .infinity)
-        .ringCard()
+        .buttonStyle(.plain)
+        .disabled(actionTitle == nil)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("home.wallet")
+    }
+
+    private var wallet: PayWallet? { if case .ready(let w) = row { return w }; return nil }
+
+    private var line: String {
+        switch row {
+        case .loading: "Getting your wallet\u{2026}"
+        case .create: "Create your NEAR wallet"
+        case .creating: "Creating your wallet\u{2026}"
+        case .ready(let w): w.account_id
+        case .failed(let s): s
+        }
+    }
+
+    private var lineColor: Color {
+        if case .failed = row { return Theme.Color.warning }
+        return Theme.Color.text1
+    }
+
+    private var actionTitle: String? {
+        switch row {
+        case .create: "Create"
+        case .failed: "Retry"
+        default: nil
+        }
+    }
+
+    private func tap() {
+        switch row {
+        case .create: create()
+        case .failed: retry()
+        default: break
+        }
     }
 }
 

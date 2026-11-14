@@ -195,6 +195,8 @@ final class FakePayAPI: PayAPI {
     private(set) var registered = 0
     private(set) var keys: [(network: String, key: String)] = []
     private(set) var rejected = 0
+    var walletError: Error?
+    var registerError: Error?
     func payIntent(_ id: String) async throws -> PayIntent { intent }
     func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned {
         unsignedWith.append(approverKey)
@@ -207,7 +209,10 @@ final class FakePayAPI: PayAPI {
     }
     func rejectPay(_ id: String) async throws -> PayIntent { rejected += 1; return intent }
     func registerApprover(current: String?) async throws -> String { registered += 1; return "pap_new_key" }
-    func payWallet() async throws -> PayWallet { PayWallet(account_id: account, status: "ready", network: info.network, balances: ["NEAR": "0.2", "USDC": "0"]) }
+    func payWallet() async throws -> PayWallet {
+        if let walletError { throw walletError }
+        return PayWallet(account_id: account, status: "ready", network: info.network, balances: ["NEAR": "0.2", "USDC": "0"])
+    }
     func aiAttestation() async throws -> AIAttestation { AIAttestation(isPrivate: true, attested: true) }
     func payNetwork() async throws -> PayNetworkInfo { info }
     func setPayNetwork(_ network: String, approverKey: String) async throws -> PayNetworkInfo {
@@ -215,6 +220,7 @@ final class FakePayAPI: PayAPI {
         return info
     }
     func registerPayKey(_ publicKeyHex: String, approverKey: String) async throws -> PayRegistered {
+        if let registerError { throw registerError }
         keys.append((info.network, publicKeyHex))
         return PayRegistered(account_id: publicKeyHex, network: info.network, status: "ready")
     }
@@ -424,6 +430,37 @@ final class PaySetupModelTests: XCTestCase {
         XCTAssertEqual(m.account, id)
         XCTAssertEqual(api.keys.map(\.network), ["testnet"])
         XCTAssertEqual(PaySetupView.short(id), "\(id.prefix(6))\u{2026}\(id.suffix(6))")
+    }
+
+    /// TestFlight 0.2 (3): Home said "Wallet not ready. Pull to try again." for a person who had no wallet yet.
+    /// No key: the row offers to create one. One tap makes the key, registers it and shows the funded wallet.
+    func testHomeRowOffersCreateThenShowsTheWallet() async {
+        let api = FakePayAPI()
+        let (m, _) = model(api)
+        XCTAssertEqual(m.row, .loading)
+        await m.load()
+        XCTAssertEqual(m.row, .create)
+        await m.setUp()
+        guard case .ready(let w) = m.row else { return XCTFail("no wallet: \(m.row)") }
+        XCTAssertEqual(w.balances?["NEAR"], "0.2")
+        XCTAssertEqual(api.keys.count, 1)
+    }
+
+    /// A real failure says what failed, in the server's words, and Retry runs it again.
+    func testHomeRowSaysWhatFailedAndRetries() async {
+        let api = FakePayAPI()
+        api.registerError = APIError.http(502, #"{"error":"could not send test money; try again"}"#)
+        let (m, _) = model(api)
+        await m.load()
+        await m.setUp()
+        XCTAssertEqual(m.row, .failed("Could not send test money; try again"))
+        api.registerError = nil
+        await m.retry()
+        guard case .ready = m.row else { return XCTFail("retry did not finish: \(m.row)") }
+
+        api.walletError = URLError(.notConnectedToInternet)
+        await m.retry()
+        XCTAssertEqual(m.row, .failed("Could not load your wallet. No connection. Try again."))
     }
 
     func testMainnetSwitchRegistersTheSameKeyAndNeedsTheServerToAllowIt() async {
