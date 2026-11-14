@@ -44,8 +44,19 @@ struct XchainCard: Decodable, Equatable {
     var destination: Destination?
     var deposit_address: String?
     var refund_to: String?
+    /// A swap from the user's NEAR wallet to their own account or saved address.
+    var swap = false
+    /// A live dry quote with every check run, shown when Pip cannot send it (testnet, or too little in the wallet). Never approvable.
+    var preview = false
+    /// What a preview needs before it can send, in the server's words: "Need 0.8 more NEAR".
+    var action: String?
+    var slippageBps: Int?
+    /// "NEAR in your NEAR wallet", "NEAR Intents solvers", "USDC on NEAR".
+    var routePath: [String] = []
 
-    enum CodingKeys: String, CodingKey { case verified, not_verified, numbers, destination, deposit_address, refund_to, error }
+    enum CodingKeys: String, CodingKey {
+        case verified, not_verified, numbers, destination, deposit_address, refund_to, error, swap, preview, action, slippage_bps, route_path
+    }
 
     init(verified: Bool, notVerified: [String] = [], numbers: XchainNumbers?, destination: Destination?, deposit_address: String?, refund_to: String?) {
         self.verified = verified
@@ -66,10 +77,15 @@ struct XchainCard: Decodable, Equatable {
         destination = try c.decodeIfPresent(Destination.self, forKey: .destination)
         deposit_address = try c.decodeIfPresent(String.self, forKey: .deposit_address)
         refund_to = try c.decodeIfPresent(String.self, forKey: .refund_to)
+        swap = try c.decodeIfPresent(Bool.self, forKey: .swap) ?? false
+        preview = try c.decodeIfPresent(Bool.self, forKey: .preview) ?? false
+        action = try c.decodeIfPresent(String.self, forKey: .action)
+        slippageBps = try c.decodeIfPresent(Int.self, forKey: .slippage_bps)
+        routePath = try c.decodeIfPresent([String].self, forKey: .route_path) ?? []
     }
 
-    /// Approve needs a verified card with numbers and a deposit account.
-    var approvable: Bool { verified && numbers != nil && deposit_address != nil && destination != nil }
+    /// Approve needs a verified card with numbers and a deposit account, and never a preview.
+    var approvable: Bool { verified && !preview && numbers != nil && deposit_address != nil && destination != nil }
     var firstTime: Bool { destination?.first_time ?? true }
 }
 
@@ -118,10 +134,16 @@ enum XchainOffer: Equatable {
     case refused(String, trigger: String)
     /// An 0x address fits many chains: the bar offers one chip per chain, and a tap adds "on base" to the text.
     case whichChain(trigger: String)
+    /// "swap 1 near to usdc": tap for a checked quote (a live preview when Pip cannot send it).
+    case swap(XchainParsed, trigger: String)
+    /// "request 5 usdc on base" or "top up my pip with 20 usdc from base": tap for a checked deposit address. Pip moves no money.
+    case request(XchainParsed, trigger: String)
+    /// A request with no chain: "Which chain will they pay from?" and one chip per chain.
+    case chainChoice(prompt: String, chains: [ChainChoice], trigger: String)
 
     var trigger: String {
         switch self {
-        case .ready(_, let t), .needsMainnet(let t), .refused(_, let t), .whichChain(let t): t
+        case .ready(_, let t), .needsMainnet(let t), .refused(_, let t), .whichChain(let t), .swap(_, let t), .request(_, let t), .chainChoice(_, _, let t): t
         }
     }
 
@@ -143,6 +165,7 @@ enum XchainDetect {
     /// The words to send to /v1/pay/xchain/parse, or nil. A plain NEAR send (PayDetect) is never a cross-chain ask.
     static func candidate(_ text: String) -> String? {
         guard PayDetect.detect(text) == nil else { return nil }
+        if let w = IntentsDetect.candidate(text) { return w }
         let ns = text as NSString
         guard let m = re.matches(in: text, range: NSRange(location: 0, length: ns.length)).last else { return nil }
         // "$5 to …" has no token: the server reads the $ as USDC. Without a $, a token is needed.
@@ -165,20 +188,38 @@ struct XchainCardText: Equatable {
     let route: String
     let eta: String
     let refund: String
+    /// "Slippage: up to 1%"
+    let slippage: String
+    let intents = "Routed by NEAR Intents solvers"
+    /// "NEAR in your NEAR wallet → NEAR Intents solvers → USDC on NEAR"
+    let path: String
+    /// "Live NEAR Intents quote · preview" on a preview, else nil.
+    let previewTag: String?
     /// Why Approve is off, or nil.
     let blocked: String?
+
+    static let previewTitle = "Live NEAR Intents quote \u{00B7} preview"
 
     init(_ card: XchainCard) {
         let n = card.numbers, d = card.destination
         let who = d.map { Self.short($0.recipient) } ?? "The recipient"
         let chain = d?.chain_name ?? "the other chain"
         if let n {
-            if n.mode == "exact_in", let min = n.min_amount_out {
-                gets = "\(who) gets at least \(min.text) \(min.symbol) on \(chain)"
+            let verb = n.mode == "exact_in" ? "exactly" : "at most"
+            if card.swap {
+                // A swap lands with the owner: on NEAR in their own account, elsewhere at their saved address.
+                let at = chain == "NEAR" ? "" : " on \(chain)"
+                let out = n.min_amount_out ?? n.amount_out
+                gets = "You get at least \(out.text) \(out.symbol)\(at)"
+                pays = "You swap \(verb) \(n.max_amount_in.text) \(Self.origin(n.max_amount_in.symbol)) from your NEAR wallet"
             } else {
-                gets = "\(who) gets exactly \(n.amount_out.text) \(n.amount_out.symbol) on \(chain)"
+                if n.mode == "exact_in", let min = n.min_amount_out {
+                    gets = "\(who) gets at least \(min.text) \(min.symbol) on \(chain)"
+                } else {
+                    gets = "\(who) gets exactly \(n.amount_out.text) \(n.amount_out.symbol) on \(chain)"
+                }
+                pays = "You pay \(verb) \(n.max_amount_in.text) \(Self.origin(n.max_amount_in.symbol)) from your NEAR wallet"
             }
-            pays = "You pay at most \(n.max_amount_in.text) \(Self.origin(n.max_amount_in.symbol)) from your NEAR wallet"
             fee = "Fee \(n.fee.in_origin.text) \(Self.origin(n.fee.in_origin.symbol))" + (n.fee.usd.map { " ($\($0))" } ?? "")
             rate = n.rate.text
             eta = Self.eta(n.eta_seconds)
@@ -191,7 +232,13 @@ struct XchainCardText: Equatable {
         }
         route = "via NEAR Intents"
         refund = "Refunds go to " + (card.refund_to.map { Self.short($0) } ?? "your NEAR wallet")
-        if !card.verified {
+        slippage = "Slippage: up to " + Self.percent(card.slippageBps ?? 100)
+        path = card.routePath.joined(separator: " \u{2192} ")
+        previewTag = card.preview ? Self.previewTitle : nil
+        if card.preview {
+            blocked = card.verified ? (card.action ?? "Preview only. Nothing can be sent from here.")
+                : "Pip could not check this price: " + (card.notVerified.isEmpty ? "no reason given" : card.notVerified.joined(separator: "; "))
+        } else if !card.verified {
             blocked = "Pip could not check this price: " + (card.notVerified.isEmpty ? "no reason given" : card.notVerified.joined(separator: "; "))
         } else if !card.approvable {
             blocked = "This quote is missing details, so Pip will not send it."
@@ -207,6 +254,13 @@ struct XchainCardText: Equatable {
 
     /// 1Click names wrapped NEAR "wNEAR"; the owner holds NEAR.
     static func origin(_ symbol: String) -> String { symbol.uppercased() == "WNEAR" ? "NEAR" : symbol }
+
+    /// Basis points as a percent, with integer math only: 100 -> "1%", 50 -> "0.5%", 125 -> "1.25%".
+    static func percent(_ bps: Int) -> String {
+        let whole = bps / 100, frac = bps % 100
+        if frac == 0 { return "\(whole)%" }
+        return frac % 10 == 0 ? "\(whole).\(frac / 10)%" : "\(whole).\(frac < 10 ? "0" : "")\(frac)%"
+    }
 
     static func eta(_ s: Int) -> String {
         if s <= 0 { return "Time not given" }
@@ -298,12 +352,16 @@ extension APIClient {
         try await send(request("POST", "/v1/pay/xchain/parse", body: ["text": text]), as: XchainParsed.self)
     }
 
-    /// A checked quote, exact output by default. A 422 refusal comes back as an unverified card with the server's reason.
+    /// A checked quote, exact output by default. A swap is exact input to the owner's own account (POST /swap).
+    /// A 422 refusal comes back as an unverified card with the server's reason. On testnet the server answers a live preview.
     func quoteXchain(_ p: XchainParsed) async throws -> XchainQuote {
-        var body = ["amount": p.amount ?? "", "token": p.token ?? "", "chain": p.chain ?? "", "recipient": p.recipient ?? ""]
+        let swap = p.kind == "swap"
+        var body = swap ? ["amount": p.amount ?? "", "token": p.token ?? "", "chain": p.chain ?? "near"]
+            : ["amount": p.amount ?? "", "token": p.token ?? "", "chain": p.chain ?? "", "recipient": p.recipient ?? ""]
         if let f = p.from { body["from"] = f }
         do {
-            return try await send(request("POST", "/v1/pay/xchain/quote", body: body, tap: true, timeout: 40), as: XchainQuote.self)
+            return try await send(request("POST", swap ? "/v1/pay/xchain/swap" : "/v1/pay/xchain/quote", body: body, tap: true, timeout: 40),
+                                  as: XchainQuote.self)
         } catch APIError.http(422, let raw) {
             let card = try JSONDecoder().decode(XchainCard.self, from: Data(raw.utf8))
             return XchainQuote(card: card, intent: nil)

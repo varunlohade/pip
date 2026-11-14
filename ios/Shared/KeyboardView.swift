@@ -87,7 +87,13 @@ struct SuggestionBar: View {
                 statusRow(first)
             } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "pay" || first.id == "paid" {
                 dismissButton
-                if case .whichChain = model.xchainOffer { whichChainRow } else { PayBarRow(item: first, perform: model.perform) }
+                if case .whichChain = model.xchainOffer {
+                    whichChainRow
+                } else if case .chainChoice(let prompt, let chains, _) = model.xchainOffer {
+                    ChainChoiceRow(prompt: prompt, chains: chains, pick: model.pickChain)
+                } else {
+                    PayBarRow(item: first, perform: model.perform)
+                }
             } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "explain" || first.id == "draw" {
                 dismissButton
                 explainRow(items.first { $0.id == "explain" }, draw: items.first { $0.id == "draw" })

@@ -12,8 +12,8 @@ import { PINS, checkPin } from '../src/pay/xchain/pins.ts';
 import { convertBits } from '../src/pay/xchain/addresses.ts';
 import { keccak256 } from '../src/pay/xchain/eip55.ts';
 import { agreedPrice, checkQuote, defaultLimits, quoteRequest, typedUnits, type Prices } from '../src/pay/xchain/check.ts';
-import { parseXchain } from '../src/pay/xchain/parse.ts';
-import { mapStatus } from '../src/pay/xchain/routes.ts';
+import { parseAny, parseRequest, parseSwap, parseXchain } from '../src/pay/xchain/parse.ts';
+import { mapStatus, requestStatus } from '../src/pay/xchain/routes.ts';
 import { type OneClick, type OneClickQuote, type OneClickStatus, type PriceSource } from '../src/pay/xchain/sources.ts';
 import { buildDeposit } from '../src/pay/xchain/tx.ts';
 import { approvalMessage, sha256 } from '../src/pay/phone/tx.ts';
@@ -28,6 +28,7 @@ const TRON_ADDR = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const EVM = '0xd8da6bf26964af9d7eed9e10c19b4ae4ff1b9da3';
 const BLOCK = 'GJ8ThW5tGmvBbGr8Kto6Ahtv1mhK5cXhkRMdNsJxbVkK';
 const DEPOSIT = 'ab'.repeat(32);
+const EVM_DEPOSIT = '0x' + '7a'.repeat(20);
 
 // ---- parse
 test('xchain parse: "$" with a dollar stablecoin is the unit; the chain comes from the address; 0x asks which chain', () => {
@@ -174,7 +175,7 @@ function fakeQuote(req: Record<string, unknown>, o: { feeBps?: bigint; now?: num
     quote: {
       amountIn: aIn.toString(), amountInFormatted: fromBase(aIn, oT.decimals), amountInUsd: usdText(usdValue(aIn, oT.decimals, pIn)), minAmountIn: minIn.toString(),
       amountOut: aOut.toString(), amountOutFormatted: fromBase(aOut, dT.decimals), amountOutUsd: usdText(usdValue(aOut, dT.decimals, pOut)), minAmountOut: minOut.toString(),
-      timeEstimate: 22, ...(req.dry ? {} : { depositAddress: DEPOSIT, deadline: new Date((o.now ?? Date.now()) + 30 * 60_000).toISOString() }),
+      timeEstimate: 22, ...(req.dry ? {} : { depositAddress: oT.blockchain === 'near' ? DEPOSIT : EVM_DEPOSIT, deadline: new Date((o.now ?? Date.now()) + 30 * 60_000).toISOString() }),
     },
     quoteRequest: { ...req }, signature: 'ed25519:sig', timestamp: new Date().toISOString(), correlationId: 'c-1',
   };
@@ -320,7 +321,7 @@ function fakeChain(): { chain: PhoneChain; sent: Uint8Array[] } {
   };
 }
 
-function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tokens?: TokenRow[] } = {}) {
+function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tokens?: TokenRow[]; balance?: bigint } = {}) {
   let feeBps = o.feeBps;
   let clock = Date.parse('2026-11-14T15:00:00Z');
   const now = () => clock;
@@ -328,14 +329,15 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tok
   const quotes: Record<string, unknown>[] = [];
   const deposits: unknown[] = [];
   let ocStatus: OneClickStatus['status'] = 'PROCESSING';
+  let statusOverride: OneClickStatus | null = null;
   const oneclick: OneClick = {
     async tokens() { return o.tokens ?? TOKENS; },
     async quote(req) {
       quotes.push(req);
       const n = quotes.length;
-      return fakeQuote(req, { feeBps, now: clock, tweak: (q) => { if (q.quote.depositAddress && n > 1) q.quote.depositAddress = 'ef'.repeat(32); } });
+      return fakeQuote(req, { feeBps, now: clock, tweak: (q) => { if (q.quote.depositAddress === DEPOSIT && n > 1) q.quote.depositAddress = 'ef'.repeat(32); } });
     },
-    async status() { return { status: ocStatus, swapDetails: { destinationChainTxHashes: ocStatus === 'SUCCESS' ? [{ hash: '0xdead', explorerUrl: 'https://basescan.org/tx/0xdead' }] : [] } }; },
+    async status() { if (statusOverride) return statusOverride; return { status: ocStatus, swapDetails: { destinationChainTxHashes: ocStatus === 'SUCCESS' ? [{ hash: '0xdead', explorerUrl: 'https://basescan.org/tx/0xdead' }] : [] } }; },
     async submitDeposit(b) { deposits.push(b); },
   };
   const prices: PriceSource[] = [
@@ -343,7 +345,9 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tok
     { name: 'relay', price: async (_t, pin) => (o.relayDown ? null : PRICE[pin.coingeckoId] ?? null) },
   ];
   const registered = new Set<string>();
-  const views = { async storageRegistered(_c: string, a: string) { return registered.has(a); }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a: string) { return a === 'ana.near'; } };
+  const views = { async storageRegistered(_c: string, a: string) { return registered.has(a); }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a: string) { return a === 'ana.near'; },
+    async balance(c: string | null, a: string) { balanceReads.push({ c, a }); return o.balance ?? 10n ** 30n; } };
+  const balanceReads: { c: string | null; a: string }[] = [];
   const mainnet = { ...mainnetConfig, enabled: o.mainnet ?? true };
   const s = setup({ now, pay: { config: { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:x' }, phone: { chains: { testnet: fake.chain, mainnet: fake.chain }, mainnet }, xchain: { oneclick, prices, chainDecimals: async (t) => t.decimals, views, limits: defaultLimits({}) } } });
   const { token } = s.device();
@@ -357,20 +361,39 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tok
     assert.equal((await call('POST', '/v1/pay/register', { publicKey: keyHex }, true)).status, 200);
   };
   const signHash = (hex: string, k: KeyObject = privateKey) => sign(null, Buffer.from(hex, 'hex'), k).toString('base64');
-  return { s, token, privateKey, fake, call, start, quotes, deposits, keyHex, signHash, tick: (ms: number) => { clock += ms; }, setFee: (f: bigint) => { feeBps = f; }, setStatus: (st: OneClickStatus['status']) => { ocStatus = st; } };
+  return { s, token, privateKey, fake, call, start, quotes, deposits, balanceReads, setOcStatus: (st: OneClickStatus) => { statusOverride = st; }, keyHex, signHash, tick: (ms: number) => { clock += ms; }, setFee: (f: bigint) => { feeBps = f; }, setStatus: (st: OneClickStatus['status']) => { ocStatus = st; } };
 }
 
 const quoteBody = { amount: '5', token: 'USDC', chain: 'base', recipient: EVM };
 
-test('xchain route: testnet users are refused before any 1Click call; a server with mainnet off cannot reach it', async () => {
+test('xchain preview: on testnet a real dry quote shows the full card; no intent, no deposit address, nothing to sign', async () => {
   const t = world();
   await t.start('testnet');
   const r = await t.call('POST', '/v1/pay/xchain/quote', quoteBody);
-  assert.equal(r.status, 409);
-  assert.match((await r.json()).error, /mainnet only/);
-  assert.equal(t.quotes.length, 0);
+  assert.equal(r.status, 200, await r.clone().text());
+  const q = await r.json();
+  assert.equal(q.preview, true);
+  assert.equal(q.preview_reason, 'testnet');
+  assert.equal(q.verified, true, 'every check still ran');
+  assert.equal(q.intent, null);
+  assert.equal(q.deposit_address, undefined);
+  assert.equal(q.numbers.amount_out.text, '5');
+  assert.equal(q.numbers.max_amount_in.text, '5.055');
+  assert.equal(q.action, 'Switch to Mainnet and add 5.055 USDC to send');
+  assert.equal(q.slippage_bps, 100);
+  assert.deepEqual(q.route_path, ['USDC in your NEAR wallet', 'NEAR Intents solvers', 'USDC on Base']);
+  assert.equal(t.quotes.length, 1);
+  assert.equal(t.quotes[0].dry, true, 'a preview only ever asks for a dry quote');
+  assert.equal(t.quotes[0].refundTo, t.keyHex, 'the implicit id is the same on mainnet');
+  assert.equal(t.balanceReads.length, 0);
+  const hist = await (await t.call('GET', '/v1/pay/history')).json();
+  assert.equal(hist.payments.length, 0, 'no phone intent, so no /unsigned or /submit can reach it');
+  // No Pip Pay key at all: nothing to preview with.
   const off = world({ mainnet: false });
-  assert.equal((await off.call('POST', '/v1/pay/xchain/quote', quoteBody)).status, 409, 'testnet by default');
+  const none = await off.call('POST', '/v1/pay/xchain/quote', quoteBody);
+  assert.equal(none.status, 409);
+  assert.match((await none.json()).error, /set up Pip Pay/);
+  assert.equal(off.quotes.length, 0);
 });
 
 test('xchain route: quote -> phone intent -> exact deposit tx -> submit -> deposit notice once -> status', async () => {
@@ -718,4 +741,227 @@ test('top tokens: a tagged XRP payment is blocked at quote', async () => {
   assert.equal(r.status, 400);
   assert.match((await r.json()).error, /tags are not supported/);
   assert.equal(w.quotes.length, 0);
+});
+
+// ---- swap, saved addresses, preview, receive (build 0.8)
+test('swap parse: 18 cases', () => {
+  const ok = (text: string, want: Record<string, unknown>) => {
+    const r = parseSwap(text);
+    assert.ok(r.valid, `${text}: ${!r.valid && r.reason}`);
+    for (const [k, v] of Object.entries(want)) assert.equal((r as Record<string, unknown>)[k], v, `${text} ${k}`);
+  };
+  const bad = (text: string, reason: RegExp) => {
+    const r = parseSwap(text);
+    assert.equal(r.valid, false, text);
+    assert.match((r as { reason: string }).reason, reason, text);
+  };
+  ok('swap 1 near to usdc', { amount: '1', from: 'NEAR', token: 'USDC', chain: 'near' });
+  ok('swap 5 usdc to usdt', { amount: '5', from: 'USDC', token: 'USDT', chain: 'near' });
+  ok('convert 0.5 near into usdc', { amount: '0.5', from: 'NEAR', token: 'USDC', chain: 'near' });
+  ok('swap 10 usdc to eth on base', { amount: '10', from: 'USDC', token: 'ETH', chain: 'base' });
+  ok('Swap 2 USDT for USDC', { from: 'USDT', token: 'USDC', chain: 'near' });
+  ok('exchange 3 near to usdt', { from: 'NEAR', token: 'USDT' });
+  ok('can you swap my 1.50 near to usdc pls', { amount: '1.5', from: 'NEAR' });
+  ok('swap $5 usdc to usdt', { amount: '5', from: 'USDC', token: 'USDT' });
+  ok('swap 2 usdc to near', { token: 'WNEAR', chain: 'near' });
+  ok('swap 1 wnear to usdc', { from: 'NEAR', token: 'USDC' });
+  ok('swap 20 usdc to sol on solana', { token: 'SOL', chain: 'sol' });
+  ok('swap 5 usdt to usdt on tron', { from: 'USDT', token: 'USDT', chain: 'tron' });
+  ok('trade 0.000001 usdc to usdt', { amount: '0.000001' });
+  bad('swap 1 near to near', /same token/);
+  bad('swap 5 usdc to usdc', /same token/);
+  bad('swap 1 sol to usdc', /from NEAR, USDC or USDT/);
+  bad('swap 1 near to usdc on mars', /does not swap to mars/);
+  bad('swap 0 near to usdc', /plain number above zero/);
+  bad('swap 1 near to usdc and swap 2 usdc to usdt', /more than one/);
+  bad('let us meet at the swap meet', /no swap found/);
+  // The keyboard's one parse: payments first, then swaps.
+  assert.equal((parseAny('send 5 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72 on base') as { kind: string }).kind, 'xchain');
+  assert.equal((parseAny('swap 1 near to usdc') as { kind: string }).kind, 'swap');
+});
+
+test('swap check: exact input spends exactly the typed amount; the minimum received sits on the slippage boundary', () => {
+  const dest = tok('USDC', 'near');
+  const at = judge({ mode: 'exact_in', amount: '1', from: 'NEAR', dest, tweak: (q) => { q.quote.minAmountOut = ((BigInt(q.quote.amountOut) * 9_900n) / 10_000n).toString(); } });
+  assert.ok(at.ok, !at.ok ? String(at.refused ?? at.not_verified) : '');
+  assert.equal(at.numbers.amount_in.units, (10n ** 24n).toString(), 'exactly 1 NEAR, 24 decimals');
+  assert.equal(at.numbers.mode, 'exact_in');
+  const below = judge({ mode: 'exact_in', amount: '1', from: 'NEAR', dest, tweak: (q) => { q.quote.minAmountOut = ((BigInt(q.quote.amountOut) * 9_900n) / 10_000n - 1n).toString(); } });
+  assert.equal(below.ok, false);
+  assert.match(String(!below.ok && below.refused), /minimum output is more than 100 bps below/);
+  const more = judge({ mode: 'exact_in', amount: '1', from: 'NEAR', dest, tweak: (q) => { q.quote.amountIn = (10n ** 24n + 1n).toString(); q.quote.amountInFormatted = fromBase(10n ** 24n + 1n, 24); } });
+  assert.match(String(!more.ok && more.refused), /does not spend the exact amount/);
+});
+
+test('swap route: NEAR -> USDC to the own account, exact input, no address to confirm; cross-chain needs a saved address', async () => {
+  const w = world();
+  await w.start();
+  const r = await w.call('POST', '/v1/pay/xchain/swap', { amount: '1', from: 'NEAR', token: 'USDC' });
+  assert.equal(r.status, 201, await r.clone().text());
+  const q = await r.json();
+  assert.equal(q.swap, true);
+  assert.equal(q.destination.chain, 'near');
+  assert.equal(q.destination.recipient, w.keyHex, 'the swap lands in the user\'s own account');
+  assert.equal(q.destination.first_time, false);
+  assert.equal(q.mode, 'exact_in');
+  assert.equal(q.max_amount_in.units, (10n ** 24n).toString());
+  assert.equal(q.slippage_bps, 100);
+  assert.deepEqual(q.route_path, ['NEAR in your NEAR wallet', 'NEAR Intents solvers', 'USDC on NEAR']);
+  assert.equal(w.quotes[0].swapType, 'EXACT_INPUT');
+  assert.equal(w.quotes[0].recipient, w.keyHex);
+  assert.equal(w.quotes[0].dry, false);
+  assert.deepEqual(w.balanceReads[0], { c: null, a: w.keyHex }, 'NEAR is read as the native balance');
+
+  const none = await w.call('POST', '/v1/pay/xchain/swap', { amount: '10', from: 'USDC', token: 'ETH', chain: 'base' });
+  assert.equal(none.status, 400);
+  const nb = await none.json();
+  assert.equal(nb.needs, 'address');
+  assert.match(nb.error, /Add your Base address/);
+  assert.equal(w.quotes.length, 1, 'no quote without an address');
+  assert.equal((await w.call('PUT', '/v1/pay/addresses', { chain: 'base', address: EVM }, true)).status, 200);
+  const x = await w.call('POST', '/v1/pay/xchain/swap', { amount: '5', from: 'USDC', token: 'ETH', chain: 'base' });
+  assert.equal(x.status, 201, await x.clone().text());
+  const xq = await x.json();
+  assert.equal(xq.destination.recipient, EVM);
+  assert.equal(xq.destination.first_time, false);
+  assert.equal(w.quotes[1].recipient, EVM);
+  assert.deepEqual(w.balanceReads[1], { c: ORIGINS.USDC.contract, a: w.keyHex });
+});
+
+test('swap preview: on mainnet with too little, the checked card says what is missing and makes no intent', async () => {
+  const w = world({ balance: 2n * 10n ** 23n });
+  await w.start();
+  const r = await w.call('POST', '/v1/pay/xchain/swap', { amount: '1', from: 'NEAR', token: 'USDC' });
+  assert.equal(r.status, 200);
+  const q = await r.json();
+  assert.equal(q.preview, true);
+  assert.equal(q.preview_reason, 'balance');
+  assert.equal(q.verified, true);
+  assert.equal(q.intent, null);
+  assert.equal(q.action, 'Need 0.8 more NEAR');
+  assert.deepEqual(q.need, { units: (8n * 10n ** 23n).toString(), text: '0.8', symbol: 'NEAR' });
+  const hist = await (await w.call('GET', '/v1/pay/history')).json();
+  assert.equal(hist.payments.length, 0, 'nothing to approve, sign or submit');
+  // Testnet swap preview: dry, own implicit account.
+  const t = world();
+  await t.start('testnet');
+  const p = await (await t.call('POST', '/v1/pay/xchain/swap', { amount: '0.5', from: 'NEAR', token: 'USDC' })).json();
+  assert.equal(p.preview_reason, 'testnet');
+  assert.equal(p.action, 'Switch to Mainnet and add 0.5 NEAR to send');
+  assert.equal(t.quotes[0].dry, true);
+  assert.equal(t.quotes[0].recipient, t.keyHex);
+});
+
+test('my addresses: each chain\'s validator; only the app changes them; NEAR is not a saved chain', async () => {
+  const w = world();
+  await w.start();
+  const put = (chain: string, address: string, app = true) => w.call('PUT', '/v1/pay/addresses', { chain, address }, app);
+  assert.equal((await put('base', EVM, false)).status, 403, 'the keyboard cannot change where swaps land');
+  assert.equal((await put('base', EVM)).status, 200);
+  assert.equal((await put('sol', SOL_ADDR)).status, 200);
+  assert.equal((await put('tron', TRON_ADDR)).status, 200);
+  const bad = async (chain: string, address: string, reason: RegExp) => {
+    const r = await put(chain, address);
+    assert.equal(r.status, 400, `${chain} ${address}`);
+    assert.match((await r.json()).error, reason);
+  };
+  await bad('base', '0xD8DA6BF26964AF9D7EED9E10C19B4AE4FF1B9DA3'.slice(0, 41), /not a Base address/);
+  await bad('eth', '0xd8dA6BF26964aF9D7eEd9e10C19B4AE4fF1B9DA3', /checksum/);
+  await bad('base', '0x' + '0'.repeat(40), /not a Base address/);
+  await bad('sol', EVM, /not a Solana address/);
+  await bad('tron', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6x', /not a Tron address/);
+  await bad('near', 'ana.near', /does not support/);
+  await bad('mars', EVM, /does not support/);
+  const list = await (await w.call('GET', '/v1/pay/addresses')).json();
+  assert.deepEqual(list.addresses.map((a: { chain: string }) => a.chain), ['base', 'sol', 'tron']);
+  assert.equal(list.addresses[0].chain_name, 'Base');
+  assert.ok(list.chains.some((c: { id: string }) => c.id === 'eth') && !list.chains.some((c: { id: string }) => c.id === 'near'));
+  assert.equal((await put('base', '0x8ba1f109551bD432803012645Ac136ddd64DBA72')).status, 200, 'saving again replaces it');
+  assert.equal((await w.call('DELETE', '/v1/pay/addresses/sol', undefined, false)).status, 403);
+  assert.equal((await w.call('DELETE', '/v1/pay/addresses/sol', undefined, true)).status, 200);
+  const after = await (await w.call('GET', '/v1/pay/addresses')).json();
+  assert.deepEqual(after.addresses.map((a: { chain: string; address: string }) => [a.chain, a.address]), [['base', '0x8ba1f109551bD432803012645Ac136ddd64DBA72'], ['tron', TRON_ADDR]]);
+});
+
+test('request parse: requests and top-ups, with the chain asked for when missing', () => {
+  const r = (t: string) => parseRequest(t) as Record<string, unknown>;
+  assert.deepEqual(r('request 5 usdc on base'), { valid: true, kind: 'request', amount: '5', token: 'USDC', chain: 'base' });
+  assert.deepEqual(r('ask ana for 5 usdc on base'), { valid: true, kind: 'request', amount: '5', token: 'USDC', chain: 'base' });
+  assert.equal(r('request 5 usdc from base').chain, 'base');
+  assert.equal(r('charge raj 12 usdt on tron').chain, 'tron');
+  assert.deepEqual(r('request 5 usdc'), { valid: false, kind: 'request', reason: 'Which chain will they pay from?', needs: 'chain', amount: '5', token: 'USDC' });
+  assert.equal(r('request 5 usdc from ana').needs, 'chain', 'a name after "from" is the payer');
+  assert.match(String(r('request 5 eth on base').reason), /USDC or USDT/);
+  assert.match(String(r('request 5 usdc on near').reason), /share your Pip account/);
+  assert.deepEqual(r('top up my pip with 20 usdc from base'), { valid: true, kind: 'topup', amount: '20', token: 'USDC', chain: 'base' });
+  assert.equal(r('topup my wallet with 5 usdt on tron').chain, 'tron');
+  assert.deepEqual(r('top up my pip from base'), { valid: false, kind: 'topup', reason: 'say how much, like "top up my pip with 20 usdc from base"', needs: 'amount', chain: 'base' });
+  assert.equal((parseAny('request 5 usdc on base') as { kind: string }).kind, 'request');
+  assert.equal(requestStatus(null, 1000, 999), 'waiting_for_payment');
+  assert.equal(requestStatus('PENDING_DEPOSIT', 1000, 1001), 'expired');
+  assert.equal(requestStatus('SUCCESS', 1000, 5000), 'received');
+  assert.equal(requestStatus('REFUNDED', 1000, 5000), 'refunded');
+});
+
+test('request route: a checked deposit address on Base that delivers to the own NEAR account; refunds to the own Intents balance; tracked to "received"', async () => {
+  const w = world();
+  await w.start();
+  const r = await w.call('POST', '/v1/pay/xchain/request', { amount: '5', token: 'USDC', chain: 'base' });
+  assert.equal(r.status, 201, await r.clone().text());
+  const q = await r.json();
+  assert.equal(q.verified, true);
+  assert.equal(q.kind, 'request');
+  assert.equal(q.deposit_address, EVM_DEPOSIT);
+  assert.equal(q.recipient, w.keyHex);
+  assert.equal(q.refund_type, 'INTENTS');
+  assert.match(q.refund_note, /not to the payer/);
+  assert.equal(q.numbers.amount_in.text, '5');
+  assert.equal(q.origin.chain_name, 'Base');
+  assert.deepEqual(q.route_path, ['USDC on Base', 'NEAR Intents solvers', 'USDC in your Pip wallet']);
+  assert.ok(Date.parse(q.valid_until) < Date.parse(q.deadline));
+  const sent = w.quotes[0];
+  assert.equal(sent.swapType, 'EXACT_INPUT');
+  assert.equal(sent.originAsset, tok('USDC', 'base').assetId);
+  assert.equal(sent.destinationAsset, ORIGINS.USDC.assetId);
+  assert.equal(sent.recipient, w.keyHex);
+  assert.equal(sent.refundTo, w.keyHex);
+  assert.equal(sent.refundType, 'INTENTS');
+  assert.equal(sent.dry, false);
+  assert.equal(w.fake.sent.length, 0, 'Pip broadcasts nothing');
+  assert.equal(w.balanceReads.length, 0);
+  assert.equal((await (await w.call('GET', '/v1/pay/history')).json()).payments.length, 0, 'no phone intent');
+
+  w.setOcStatus({ status: 'PENDING_DEPOSIT' });
+  const s1 = await (await w.call('GET', `/v1/pay/xchain/requests/${q.request.id}`)).json();
+  assert.equal(s1.status, 'waiting_for_payment');
+  w.setOcStatus({ status: 'SUCCESS', swapDetails: { amountOut: '4994000' } });
+  w.tick(6_000);
+  const s2 = await (await w.call('GET', `/v1/pay/xchain/requests/${q.request.id}`)).json();
+  assert.equal(s2.status, 'received');
+  assert.deepEqual(s2.received, { text: '4.994', symbol: 'USDC' });
+
+  // Top-up is the same flow; a deposit address that is not on the payer's chain is refused.
+  const top = await (await w.call('POST', '/v1/pay/xchain/request', { amount: '20', token: 'USDC', chain: 'base', kind: 'topup' })).json();
+  assert.equal(top.kind, 'topup');
+  assert.equal(top.deposit_address, EVM_DEPOSIT);
+  const sol = await w.call('POST', '/v1/pay/xchain/request', { amount: '5', token: 'USDC', chain: 'sol' });
+  assert.equal(sol.status, 422, 'the fake deposit is an EVM address, not a Solana one');
+  const sb = await sol.json();
+  assert.match(sb.error, /deposit address is not a sol address/);
+  assert.equal(sb.deposit_address, undefined);
+});
+
+test('request preview: on testnet a dry quote, no deposit address, no request row', async () => {
+  const t = world();
+  await t.start('testnet');
+  const r = await t.call('POST', '/v1/pay/xchain/request', { amount: '5', token: 'USDC', chain: 'base' });
+  assert.equal(r.status, 200);
+  const q = await r.json();
+  assert.equal(q.preview, true);
+  assert.equal(q.verified, true);
+  assert.equal(q.request, null);
+  assert.equal(q.deposit_address, undefined);
+  assert.equal(q.action, 'Switch to Mainnet to get a real deposit address');
+  assert.equal(t.quotes[0].dry, true);
+  assert.equal((await t.call('POST', '/v1/pay/xchain/request', { amount: '5', token: 'USDC', chain: 'near' })).status, 400);
 });

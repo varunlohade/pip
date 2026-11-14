@@ -1282,7 +1282,7 @@ final class KeyboardModel: ObservableObject {
             guard explainOffer == nil, drawTopic == nil else { return }
             routed = (sentence, res.label)
             updateExplain(typed)
-        case "pay", "xchain_pay":
+        case "pay", "xchain_pay", "swap", "request_pay":
             routeToPay(sentence, label: res.label)
         default:
             break

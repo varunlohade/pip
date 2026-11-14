@@ -160,6 +160,18 @@ final class FakeAPI: KeyboardAPI {
         calls.append("xstatus")
         return statusReplies.count > 1 ? statusReplies.removeFirst() : (statusReplies.first ?? XchainStatus(status: "swapping"))
     }
+    // Receive.
+    var requestReply: RequestCard?
+    var requestStatusReplies: [RequestStatus] = []
+    private(set) var requested: [XchainParsed] = []
+    func requestPay(_ p: XchainParsed) async throws -> RequestCard {
+        calls.append("xrequest"); requested.append(p)
+        return requestReply ?? TestXchain.request()
+    }
+    func requestStatus(_ id: String) async throws -> RequestStatus {
+        calls.append("rstatus")
+        return requestStatusReplies.count > 1 ? requestStatusReplies.removeFirst() : (requestStatusReplies.first ?? RequestStatus(status: "waiting_for_payment"))
+    }
     func submitPay(_ id: String, signature: Data) async throws -> PayIntent {
         calls.append("submit")
         submitted.append((id, signature, Data(SHA256.hash(data: built[id] ?? Data()))))

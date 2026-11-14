@@ -239,15 +239,12 @@ final class KeyboardXchainTests: XCTestCase {
         XCTAssertNil(model.payItem?.action)
     }
 
-    func testTestnetSaysMainnetIsNeededAndAsksNothing() async {
+    func testTestnetAsksTheServerForALivePreview() async {
         SharedStore.payNetwork = "testnet"
         XCTAssertEqual(PayNetwork.name, "testnet")
-        XCTAssertNotNil(XchainDetect.candidate("pay 10 usdt on tron to TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"))
         set("pay 10 usdt on tron to TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t")
-        XCTAssertEqual(model.payItem?.title, "Cross-chain pay needs Mainnet. Switch in Pip Pay.")
-        XCTAssertNil(model.payItem?.action)
-        for _ in 0..<50 { await Task.yield() }
-        XCTAssertEqual(api.parsed, [])
+        await until("the chip") { model.payItem?.detail == "Review" }
+        XCTAssertEqual(api.parsed, ["pay 10 usdt on tron to TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"])
     }
 
     func testFirstTimeAddressNeedsItsEndingThenOneFaceIDThenSwapStatus() async throws {

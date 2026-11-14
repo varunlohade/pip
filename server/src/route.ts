@@ -2,7 +2,7 @@
 // The phone's own parsers then read the details (amounts, dates, addresses). Never stored; only the label and timings are logged.
 
 export const ROUTE_LABELS = [
-  'calendar_event', 'reminder', 'note', 'pay', 'xchain_pay', 'understand', 'chart', 'rewrite', 'translate', 'calc_convert', 'saved_detail_request', 'none',
+  'calendar_event', 'reminder', 'note', 'pay', 'xchain_pay', 'swap', 'request_pay', 'understand', 'chart', 'rewrite', 'translate', 'calc_convert', 'saved_detail_request', 'none',
 ] as const;
 export type RouteLabel = (typeof ROUTE_LABELS)[number];
 
@@ -12,6 +12,8 @@ export const ROUTE_CRITERIA: Record<RouteLabel, string> = {
   note: 'The person states a fact worth keeping: a code, an address, a price, a number or a detail to remember.',
   pay: 'The person wants to send or pay money or a token to a NEAR account (name.near, name.testnet) or to a person, right now, on the same chain.',
   xchain_pay: 'The person wants to send money or a token to a wallet address on another blockchain: an 0x, T..., bc1 or Solana address, or a named chain such as Base, Tron, Solana or Ethereum.',
+  swap: 'The person wants to swap, convert or exchange one token for another in their own wallet, such as NEAR to USDC, USDC to USDT, or USDC to ETH on Base.',
+  request_pay: 'The person asks someone to pay them a token amount, or wants to top up their own wallet from another chain such as Base, Solana or Tron.',
   understand: 'The person asks to learn or understand something: what a term, idea or acronym means, how something works, why something happens in general, ' +
     'the difference between things, the steps to do something, or a comparison.',
   chart: 'The person asks for a chart, graph or plot of numbers or of a function.',

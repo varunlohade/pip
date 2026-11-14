@@ -215,6 +215,8 @@ struct WalletSection: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home.keyboardPay")
+            intentsLink("Top up from another chain", icon: "arrow.down.circle", id: "home.topup") { TopUpView() }
+            intentsLink("My addresses", icon: "list.bullet.rectangle", id: "home.addresses") { OwnAddressesView() }
             NavigationLink { AttestationScreen() } label: { PrivateAIRow() }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("home.privateAI")

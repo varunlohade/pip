@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAi } from '../src/ai.ts';
 import { config } from '../src/config.ts';
+import { ROUTE_LABELS } from '../src/route.ts';
 import { CANVAS, ExplanationSchema, LIMITS, SceneSchema, type SceneShape } from '../src/explain.ts';
 import { setup } from './helpers.ts';
 import logScene from './fixtures/log-scene.json' with { type: 'json' };
@@ -197,6 +198,8 @@ test('route: a label at or above its confidence; low confidence, a failure and p
   for (const [route, want] of [
     [{ label: 'understand', confidence: 0.95 }, 'understand'],
     [{ label: 'xchain_pay', confidence: config.jev.routeMin.default }, 'xchain_pay'],
+    [{ label: 'swap', confidence: 0.9 }, 'swap'],
+    [{ label: 'request_pay', confidence: 0.9 }, 'request_pay'],
     [{ label: 'calendar_event', confidence: 0.47 }, 'none'],
     [{ label: 'none', confidence: 0.99 }, 'none'],
     [new Error('jev down'), 'none'],
@@ -243,7 +246,7 @@ test('route: jev on NEAR AI Cloud first, TypeSafe direct when NEAR fails; one ch
     urls.push(u);
     bodies.push(JSON.parse(String(init.body)));
     if (u.includes('near.ai') && !nearUp) return new Response('down', { status: 503 });
-    return new Response(JSON.stringify({ answers: { q: { choice: 6, confidence: 0.93 } } }), { status: 200 });
+    return new Response(JSON.stringify({ answers: { q: { choice: ROUTE_LABELS.indexOf('understand') + 1, confidence: 0.93 } } }), { status: 200 });
   }) as typeof globalThis.fetch;
   try {
     const ai = createAi({ typesafeKey: 'k', openrouterKey: 'o', nearaiKey: 'n' });
@@ -256,6 +259,7 @@ test('route: jev on NEAR AI Cloud first, TypeSafe direct when NEAR fails; one ch
   assert.match(urls[0], /cloud-api\.near\.ai\/v1\/systemone$/);
   assert.equal(bodies[0].model, config.jev.nearModel);
   assert.equal(bodies[0].state.context, 'EARLIER: earlier line\nTYPING: steps to file gst');
-  assert.equal(Object.keys(bodies[0].questions.q.criteria).length, 12);
+  assert.equal(Object.keys(bodies[0].questions.q.criteria).length, ROUTE_LABELS.length);
+  assert.equal(ROUTE_LABELS.length, 14);
   assert.equal(urls.at(-1), config.jev.url);
 });
