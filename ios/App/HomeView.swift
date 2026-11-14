@@ -29,7 +29,7 @@ struct HomeView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 ZStack(alignment: .top) {
-                    CloudSky(clouds: CloudSky.home).frame(height: 300).frame(maxWidth: .infinity)
+                    SkyGradient().frame(height: 300).frame(maxWidth: .infinity)
                     VStack(alignment: .leading, spacing: 0) {
                         header
                         Text(headline).font(Theme.Font.title).tracking(Theme.Tracking.title).foregroundStyle(Theme.Color.text1)

@@ -104,7 +104,7 @@ struct OnboardingView: View {
             // B2: the sky stays on onboarding, fading to white behind the steps.
             ZStack(alignment: .top) {
                 Theme.Color.bg
-                CloudSky(clouds: CloudSky.home).frame(height: 300)
+                SkyGradient().frame(height: 300)
             }
             .ignoresSafeArea()
         }

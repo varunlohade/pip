@@ -13,7 +13,7 @@ struct Card<Content: View>: View {
     }
 }
 
-/// A 40 pt frosted circle with a line icon, as the profile button in the B2 mocks.
+/// A 40 pt white circle with a line icon, styled like the cards.
 struct IconCircle: View {
     let systemImage: String
     var size: CGFloat = 40
@@ -23,9 +23,8 @@ struct IconCircle: View {
             .font(.system(size: size * 0.4, weight: .regular))
             .foregroundStyle(Theme.Color.text1)
             .frame(width: size, height: size)
-            .background(Circle().fill(.white.opacity(0.72)).background(.ultraThinMaterial, in: Circle()))
-            .overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1))
-            .shadow(color: .black.opacity(0.06), radius: 1.5, y: 1)
+            .background(Circle().fill(Theme.Color.card).shadow(color: .black.opacity(0.1), radius: 1.5, y: 1))
+            .overlay(Circle().strokeBorder(Theme.Color.ring, lineWidth: 0.5))
     }
 }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Pip's B2 look, shared by the app and the keyboard: the buddy, the wordmark, sky and frosted pills, ring cards and the cloud sky.
+// Pip's B2 look, shared by the app and the keyboard: the buddy, the wordmark, sky and frosted pills, ring cards and the sky gradient.
 // Values come from the B2 mocks (pip-design/src/pip.html, style E).
 
 /// Pip's buddy: a sky-blue teardrop whose tip is a pen nib, with two white eyes. Drawn as a vector, never a bitmap.
@@ -154,54 +154,16 @@ extension View {
     }
 }
 
-/// The painted sky with soft cumulus clouds that fades to white. Onboarding and the top of Home only.
-struct CloudSky: View {
-    /// Each cloud: x, y and width in points, and opacity, as in the mocks.
-    var clouds: [(x: CGFloat, y: CGFloat, w: CGFloat, o: Double)]
-
+/// The painted sky that fades to the page. Onboarding and the top of Home only.
+struct SkyGradient: View {
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            LinearGradient(stops: [
-                .init(color: Color(hex: 0x8FD3FF), location: 0),
-                .init(color: Color(hex: 0xB9E4FF), location: 0.40),
-                .init(color: Color(hex: 0xE3F5FF), location: 0.72),
-                .init(color: .white, location: 1),
-            ], startPoint: .top, endPoint: .bottom)
-            ForEach(Array(clouds.enumerated()), id: \.offset) { _, c in
-                CloudPuff(width: c.w).opacity(c.o).offset(x: c.x, y: c.y)
-            }
-        }
-        .clipped()
-        // The clouds melt into the white page instead of ending at the edge of the sky.
-        .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.8), .init(color: .clear, location: 1)],
-                             startPoint: .top, endPoint: .bottom))
+        LinearGradient(stops: [
+            .init(color: Theme.Color.skyTop, location: 0),
+            .init(color: Theme.Color.skyMid, location: 0.40),
+            .init(color: Theme.Color.skyLow, location: 0.72),
+            .init(color: Theme.Color.bg, location: 1),
+        ], startPoint: .top, endPoint: .bottom)
         .accessibilityHidden(true)
-    }
-
-    static let onboarding: [(x: CGFloat, y: CGFloat, w: CGFloat, o: Double)] =
-        [(250, 96, 130, 0.9), (-40, 128, 120, 0.8), (-70, 330, 240, 1), (220, 300, 230, 1), (70, 380, 260, 1), (-60, 440, 300, 1), (180, 450, 320, 1)]
-    static let home: [(x: CGFloat, y: CGFloat, w: CGFloat, o: Double)] =
-        [(240, 40, 120, 0.75), (-60, 170, 220, 1), (130, 190, 240, 1), (280, 150, 180, 1), (-20, 240, 260, 1), (200, 250, 280, 1)]
-}
-
-/// One cumulus: five round puffs over a flat base, white fading to ice, with a soft blue shadow.
-struct CloudPuff: View {
-    let width: CGFloat
-
-    var body: some View {
-        let parts: [(x: CGFloat, y: CGFloat, r: CGFloat)] = [(0, 0.5, 0.36), (0.16, 0.22, 0.48), (0.42, 0.02, 0.56), (0.68, 0.26, 0.44), (0.84, 0.5, 0.32)]
-        let puff = RadialGradient(colors: [.white, .white, Color(hex: 0xE2F2FD)], center: UnitPoint(x: 0.45, y: 0.3), startRadius: 0, endRadius: width * 0.3)
-        ZStack(alignment: .topLeading) {
-            ForEach(Array(parts.enumerated()), id: \.offset) { _, p in
-                Circle().fill(puff).frame(width: p.r * width, height: p.r * width).offset(x: p.x * width, y: p.y * width * 0.6)
-            }
-            RoundedRectangle(cornerRadius: 0.1 * width)
-                .fill(LinearGradient(colors: [.white, Color(hex: 0xE4F3FD)], startPoint: .top, endPoint: .bottom))
-                .frame(width: width * 0.86, height: 0.2 * width).offset(x: 0.08 * width, y: 0.42 * width)
-        }
-        .frame(width: width, height: width * 0.62, alignment: .topLeading)
-        .blur(radius: 1.2)
-        .shadow(color: Color(red: 60 / 255, green: 140 / 255, blue: 200 / 255).opacity(0.18), radius: 5, y: 6)
     }
 }
 
