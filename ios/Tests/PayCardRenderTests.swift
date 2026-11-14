@@ -21,12 +21,12 @@ final class PayCardRenderTests: XCTestCase {
     private var draft: PayDraft { PayDraft(amount: "5", token: "USDC", recipient: "ana.testnet", trigger: "") }
 
     func testRenderPayCards() throws {
-        let card = PayPanel(intent: .fake(draft))
+        var card = PayPanel(intent: .fake(draft))
+        card.pinReady = true
         var sent = PayPanel(intent: .fake(draft, status: "sent"))
         sent.phase = .sent
         var pin = card
         pin.pin = "48"
-        pin.note = PayFallback.usePIN
         var fail = card
         fail.note = PayFallback.useApp
         fail.offerApp = true

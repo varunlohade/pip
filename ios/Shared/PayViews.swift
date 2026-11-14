@@ -566,7 +566,7 @@ struct PayKeyboardCard: View {
     }
 }
 
-/// "First time paying this address": the owner taps how it ends, one of three, before Face ID.
+/// "First time paying this address": the owner taps how it ends, one of three, before approving.
 struct AddressConfirmRow: View {
     let confirm: AddressConfirm
     let pick: (String) -> Void
@@ -689,7 +689,8 @@ struct XchainKeyboardCard: View {
     }
 }
 
-/// "Approve with Face ID", or "Approve in Pip" once the keyboard cannot approve by itself.
+/// "Approve with PIN" when the keyboard can read the PIN-sealed key, else "Set a payment PIN in Pip". "Approve in Pip" once
+/// the PIN is locked. Never Face ID: in a keyboard it hangs or does nothing on a real phone.
 struct ApproveButton: View {
     let panel: PayPanel
     let height: CGFloat
@@ -707,13 +708,13 @@ struct ApproveButton: View {
         } else {
             Button(action: approve) {
                 HStack(spacing: 8) {
-                    if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
-                    Text("Approve with Face ID")
+                    if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: panel.pinReady ? "lock.fill" : "key.fill") }
+                    Text(panel.pinReady ? "Approve with PIN" : "Set a payment PIN in \(AppConfig.displayName)").lineLimit(1).minimumScaleFactor(0.75)
                 }
             }
             .buttonStyle(SkyPill(height: height, font: .system(size: 17, weight: .semibold)))
             .disabled(!panel.canApprove)
-            .accessibilityIdentifier("paycard.approve")
+            .accessibilityIdentifier(panel.pinReady ? "paycard.approve" : "paycard.pinSetup")
         }
     }
 }

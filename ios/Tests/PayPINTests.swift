@@ -1,9 +1,10 @@
 import CryptoKit
+import Security
 import SwiftUI
 import XCTest
 @testable import Pip
 
-/// The payment PIN: sealing, wrong tries, the lock, reset, and the keyboard's PIN pad when Face ID fails.
+/// The payment PIN: sealing, wrong tries, the lock, reset, and the keyboard's PIN pad (the keyboard never tries Face ID).
 final class PayPINTests: XCTestCase {
     private let signer = FakeSigner()
 
@@ -104,11 +105,12 @@ final class KeyboardPINTests: XCTestCase {
 
     private func type(_ pin: String) { for d in pin { model.typePINDigit(String(d)) } }
 
-    func testThePadShowsWhenFaceIDFailsAndTheRightPINSends() async throws {
+    func testApproveOpensThePadWithNoFaceIDAndTheRightPINSends() async throws {
         signer.answer = .unavailable
+        XCTAssertEqual(model.payPanel?.pinReady, true, "the card says Approve with PIN")
         model.approvePayInKeyboard()
-        await until("the pad") { model.payPanel?.pin != nil }
-        XCTAssertEqual(model.payPanel?.note, PayFallback.usePIN, "the card says why")
+        XCTAssertEqual(model.payPanel?.pin, "", "the pad, straight away")
+        XCTAssertEqual(signer.asks, 0, "no Face ID try in the keyboard")
         XCTAssertEqual(api.calls.filter { $0 == "unsigned" }.count, 0)
         type("48291")
         model.deletePINDigit()
@@ -117,27 +119,12 @@ final class KeyboardPINTests: XCTestCase {
         await until("sent") { model.payPanel?.phase == .sent }
         let s = try XCTUnwrap(api.submitted.first)
         XCTAssertTrue(signer.key.publicKey.isValidSignature(s.signature, for: s.hash), "the PIN's key signed the checked tx")
-    }
-
-    func testAfterAFailureTheNextApproveGoesStraightToThePad() async {
-        signer.answer = .unavailable
-        model.approvePayInKeyboard()
-        await until("the pad") { model.payPanel?.pin != nil }
-        let asks = signer.asks
-        model.closePayPanel()
-        host.text = "send 5 USDC to ana.testnet"
-        model.textChanged()
-        model.perform(.pay)
-        await until("the card") { model.payPanel != nil }
-        model.approvePayInKeyboard()
-        XCTAssertEqual(model.payPanel?.pin, "", "the pad, no second Face ID try")
-        XCTAssertEqual(signer.asks, asks)
+        XCTAssertEqual(signer.asks, 0)
     }
 
     func testFiveWrongPINsLockAndOfferTheApp() async {
-        signer.answer = .unavailable
         model.approvePayInKeyboard()
-        await until("the pad") { model.payPanel?.pin != nil }
+        XCTAssertEqual(model.payPanel?.pin, "")
         for n in 1...4 {
             type("000000")
             await until("wrong \(n)") { model.payPanel?.checkingPIN == false && model.payPanel?.pin == "" && model.payPanel?.note?.hasPrefix("Wrong PIN") == true }
@@ -149,16 +136,59 @@ final class KeyboardPINTests: XCTestCase {
         XCTAssertEqual(model.payPanel?.offerApp, true)
         XCTAssertEqual(api.submitted.count, 0)
         XCTAssertEqual(String(decoding: pinStore.items[.tries] ?? Data(), as: UTF8.self), "5", "tries live in the Keychain store")
+        XCTAssertEqual(signer.asks, 0)
     }
 
-    func testNoPINAndNoFaceIDOffersTheApp() async {
+    func testNoPINOpensPINSetupNotFaceID() async throws {
         signer.pinVault(pinStore).remove()
-        signer.answer = .unavailable
+        host.canOpen = true
         model.approvePayInKeyboard()
-        await until("the note") { model.payPanel?.note != nil }
+        XCTAssertEqual(host.opened, [try XCTUnwrap(URL(string: PayFallback.pinSetupLink))])
         XCTAssertNil(model.payPanel?.pin)
-        XCTAssertEqual(model.payPanel?.note, PayFallback.useApp)
-        XCTAssertEqual(model.payPanel?.offerApp, true)
+        XCTAssertEqual(model.payPanel?.pinReady, false, "the card now says Set a payment PIN in Pip")
+        XCTAssertEqual(signer.asks, 0)
+        host.canOpen = false
+        model.approvePayInKeyboard()
+        XCTAssertEqual(model.payPanel?.note, PayFallback.setPIN, "never silent when the link cannot open")
+    }
+}
+
+/// The app's PIN setup writes the sealed key where the keyboard looks: the shared group, readable while unlocked, no Face ID flag.
+@MainActor
+final class PINSetupKeychainTests: XCTestCase {
+    private let keychain = PINKeychain()
+    override func tearDown() { for item in PayPINItem.allCases { keychain.set(item, nil) } }
+
+    func testSavePINWritesASealedKeyTheKeyboardCanRead() async throws {
+        let storage = MemoryKeyStorage()
+        var pub: String?
+        let vault = PayKeyVault(storage: storage, publicKeyHex: { pub }, setPublicKeyHex: { pub = $0 })
+        let pin = PayPINVault(store: keychain, accountID: { pub }, wrongDelay: .zero, rounds: 1_000)
+        let m = PaySetupModel(api: FakePayAPI(), vault: vault, keys: MemoryKeys(), pin: pin, saveNetwork: { _ in })
+        await m.setUp()
+        let account = try XCTUnwrap(pub)
+        let failed = await m.savePIN("482915")
+        XCTAssertNil(failed, "the sheet closes only when the key was sealed")
+        XCTAssertEqual(m.pinState, .on)
+
+        // What the keyboard does: a fresh reader of the same group.
+        let reader = PayPINVault(store: PINKeychain(), accountID: { account }, wrongDelay: .zero)
+        XCTAssertEqual(reader.sealedStatus, errSecSuccess)
+        XCTAssertTrue(reader.isSet)
+        var out: CFTypeRef?
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: PINKeychain.service,
+                                kSecAttrAccount as String: PayPINItem.sealed.rawValue, kSecAttrAccessGroup as String: AppConfig.keychainGroup,
+                                kSecReturnAttributes as String: true]
+        XCTAssertEqual(SecItemCopyMatching(q as CFDictionary, &out), errSecSuccess)
+        let attrs = try XCTUnwrap(out as? [String: Any])
+        XCTAssertEqual(attrs[kSecAttrAccessible as String] as? String, kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+        XCTAssertEqual(attrs[kSecAttrAccessGroup as String] as? String, AppConfig.keychainGroup)
+        XCTAssertTrue(AppConfig.keychainGroup.hasSuffix(".com.orseliyas.pip.shared"), AppConfig.keychainGroup)
+        guard case .ready(let key) = await reader.unlock("482915") else { return XCTFail("the keyboard opens the sealed key") }
+        let hash = Data(SHA256.hash(data: Data("tx".utf8)))
+        let sig = try XCTUnwrap(key.sign(hash))
+        let pk = try Curve25519.Signing.PublicKey(rawRepresentation: XCTUnwrap(Data(hexString: account)))
+        XCTAssertTrue(pk.isValidSignature(sig, for: hash), "the PIN flow signs with the phone key")
     }
 }
 

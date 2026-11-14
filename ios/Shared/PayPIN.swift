@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 import Security
 
-/// Pip's own 6-digit payment PIN: the keyboard's way to approve when it cannot show Face ID.
+/// Pip's own 6-digit payment PIN: the keyboard's only way to approve (Face ID in a keyboard hangs or does nothing on a real phone).
 /// The PIN is never stored. PBKDF2-HMAC-SHA256 turns it into an AES-GCM key that seals the raw signing key; the sealed copy sits
 /// in the shared Keychain group without a biometry flag, so the keyboard can read it. Five wrong PINs lock it until Face ID in the app.
 enum PayPIN {
@@ -80,6 +80,8 @@ final class PINKey {
 protocol PayPINStore {
     func get(_ item: PayPINItem) -> Data?
     @discardableResult func set(_ item: PayPINItem, _ value: Data?) -> OSStatus
+    /// The Keychain's answer for the item, for Keyboard status: errSecSuccess, errSecItemNotFound, or why it could not look.
+    func status(_ item: PayPINItem) -> OSStatus
 }
 
 enum PayPINItem: String, CaseIterable { case sealed, tries, faceFailed }
@@ -100,6 +102,14 @@ struct PINKeychain: PayPINStore {
         q[kSecMatchLimit as String] = kSecMatchLimitOne
         var out: CFTypeRef?
         return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess ? out as? Data : nil
+    }
+
+    func status(_ item: PayPINItem) -> OSStatus {
+        var q = query(item)
+        q[kSecReturnAttributes as String] = true
+        q[kSecMatchLimit as String] = kSecMatchLimitOne
+        var out: CFTypeRef?
+        return SecItemCopyMatching(q as CFDictionary, &out)
     }
 
     func set(_ item: PayPINItem, _ value: Data?) -> OSStatus {
@@ -125,8 +135,12 @@ struct PayPINVault {
     var accountID: () -> String? = { SharedStore.payPublicKey }
     /// The pause after a wrong PIN. Tests make it zero.
     var wrongDelay: Duration = .seconds(1)
+    /// PBKDF2 rounds for a new seal. Tests make it small.
+    var rounds: UInt32 = PayPIN.rounds
 
     var isSet: Bool { sealed != nil }
+    /// The Keychain's answer for the sealed key, for Keyboard status.
+    var sealedStatus: OSStatus { store.status(.sealed) }
     var tries: Int { store.get(.tries).flatMap { Int(String(decoding: $0, as: UTF8.self)) } ?? 0 }
     var isLocked: Bool { tries >= PayPIN.maxTries }
 
@@ -142,7 +156,7 @@ struct PayPINVault {
     @discardableResult
     func set(pin: String, raw: Data) -> Bool {
         guard let account = accountID(), PINKey(raw).publicKeyHex() == account,
-              let s = PayPIN.seal(raw, pin: pin, account: account),
+              let s = PayPIN.seal(raw, pin: pin, account: account, rounds: rounds),
               let data = try? JSONEncoder().encode(s), store.set(.sealed, data) == errSecSuccess else { return false }
         resetTries()
         return true

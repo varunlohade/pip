@@ -8,17 +8,19 @@ struct PayPanel: Equatable {
     var note: String?
     /// Cross-chain: the checked quote the card shows.
     var xchain: XchainCard?
-    /// First time paying this address: the owner taps how it ends before Face ID.
+    /// First time paying this address: the owner taps how it ends before the PIN.
     var confirm: AddressConfirm?
-    /// A re-quote's transaction, built and waiting for a second Face ID on the new card.
+    /// A re-quote's transaction, built and waiting for the PIN again on the new card.
     var pending: PayUnsigned?
     /// Cross-chain, after the deposit landed.
     var swap: SwapState?
-    /// Face ID could not run here: Pip's own PIN pad, with the digits typed so far.
+    /// Pip's own PIN pad, with the digits typed so far.
     var pin: String?
+    /// The keyboard can read a PIN-sealed key: "Approve with PIN". Else "Set a payment PIN in Pip".
+    var pinReady = false
     /// The PIN is being checked (PBKDF2 takes a moment).
     var checkingPIN = false
-    /// "Approve in Pip": no PIN on this phone, or too many wrong tries.
+    /// "Approve in Pip": too many wrong tries.
     var offerApp = false
 
     init(intent: PayIntent, xchain: XchainCard? = nil) {
@@ -46,7 +48,7 @@ struct PayPanel: Equatable {
 }
 
 /// Type-to-pay in the keyboard (design C). Every payment, same-chain or cross-chain, to a known or a new recipient, is approved
-/// here with Face ID. One Face ID reads the phone key once: it signs a proof over the intent (the server needs it for a new
+/// here with Pip's payment PIN. The PIN opens the phone key once: it signs a proof over the intent (the server needs it for a new
 /// recipient), then the transaction, after the phone has checked it against the card. The server keeps the caps.
 extension KeyboardModel {
     /// How often a sent cross-chain payment is checked. Tests make it short.
@@ -215,6 +217,10 @@ extension KeyboardModel {
     }
 
     private func showPanel(_ p: PayPanel) {
+        var p = p
+        let pinVault = deps.pin()
+        p.pinReady = pinVault.isSet
+        beat(pinReady: p.pinReady, pinStatus: pinVault.sealedStatus)
         bar = .idle
         notesOpen = false
         writeOpen = false
@@ -238,51 +244,23 @@ extension KeyboardModel {
         payPanel = p
     }
 
-    /// "Approve with Face ID": one Face ID, a proof for the server, then the checked transaction is signed. When Face ID cannot
-    /// run here, the card says why and offers Pip's PIN pad, or "Approve in Pip". It never stays silent.
+    /// "Approve with PIN": the PIN pad opens straight away. The keyboard never tries Face ID (on a real phone it hangs or does
+    /// nothing there). No PIN on this phone yet: "Set a payment PIN in Pip" opens the app's PIN setup.
     func approvePayInKeyboard() {
         guard var p = payPanel, p.canApprove, p.pin == nil else { return }
         host?.playClick()
         let pinVault = deps.pin()
-        if pinVault.faceFailedLast, pinVault.isSet, !pinVault.isLocked {
-            p.pin = ""
-            p.note = "Enter your Pip PIN to approve."
-            payPanel = p
-            return
-        }
-        p.phase = .approving
-        p.note = nil
+        p.pinReady = pinVault.isSet
         p.offerApp = false
-        payPanel = p
-        let signer = deps.signer()
-        payTask = Task { [weak self] in
-            let session = await signer.session(prompt: p.prompt)
-            guard let self, !Task.isCancelled else { return }
-            switch session {
-            case .ready(let sign):
-                pinVault.faceFailedLast = false
-                await self.send(p, sign: sign)
-            case .failed(let issue):
-                self.beat(payAuth: "Face ID: \(issue.code)")
-                if !issue.declined { pinVault.faceFailedLast = true }
-                self.faceIDFailed(issue, pinVault)
-            }
-        }
-    }
-
-    /// The fallback line and control after Face ID did not give the key.
-    private func faceIDFailed(_ issue: PayAuthIssue, _ pinVault: PayPINVault) {
-        guard var p = payPanel else { return }
-        p.phase = .ready
-        if pinVault.isLocked {
+        if !p.pinReady {
+            let opened = URL(string: PayFallback.pinSetupLink).map { host?.open($0) ?? false } ?? false
+            p.note = opened ? nil : PayFallback.setPIN
+        } else if pinVault.isLocked {
             p.note = PayFallback.locked
             p.offerApp = true
-        } else if pinVault.isSet {
-            p.pin = ""
-            p.note = issue.declined ? "Face ID didn't match. Enter your Pip PIN." : PayFallback.usePIN
         } else {
-            p.note = issue.declined ? "Not approved. Nothing was sent." : PayFallback.useApp
-            p.offerApp = !issue.declined
+            p.pin = ""
+            p.note = nil
         }
         payPanel = p
     }
@@ -348,7 +326,7 @@ extension KeyboardModel {
         bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Open \(AppConfig.displayName) to approve this payment")
     }
 
-    /// The proof for the server, then the checked transaction, signed with `sign` (Face ID's key or the PIN's).
+    /// The proof for the server, then the checked transaction, signed with `sign` (the PIN's key).
     private func send(_ p: PayPanel, sign: @escaping (Data) -> Data?) async {
         let api = deps.api(), signer = deps.signer()
         guard let account = signer.accountID() else {
@@ -494,9 +472,10 @@ extension KeyboardModel {
     }
 }
 
-/// The card's lines when Face ID cannot give the key in the keyboard.
+/// The card's lines when the keyboard cannot approve by itself.
 enum PayFallback {
-    static let usePIN = "Face ID isn't available in the keyboard. Enter your Pip PIN."
-    static let useApp = "Face ID isn't available in the keyboard. Approve in \(AppConfig.displayName)."
+    static let useApp = "Approve this payment in \(AppConfig.displayName)."
+    static let setPIN = "Set a payment PIN in \(AppConfig.displayName): Pip Pay > Payment PIN."
+    static let pinSetupLink = "pip://pin-setup"
     static let locked = "Too many tries. Open \(AppConfig.displayName) to unlock."
 }

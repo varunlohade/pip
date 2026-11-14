@@ -250,7 +250,7 @@ final class KeyboardXchainTests: XCTestCase {
         XCTAssertEqual(api.parsed, [])
     }
 
-    func testFirstTimeAddressNeedsItsEndingThenOneFaceIDThenSwapStatus() async throws {
+    func testFirstTimeAddressNeedsItsEndingThenOnePINThenSwapStatus() async throws {
         api.statusReplies = [XchainStatus(status: "swapping"),
                              XchainStatus(status: "delivered", delivered_tx: [.init(hash: "0xfa4e", explorerUrl: "https://basescan.org/tx/0xfa4e")])]
         await card()
@@ -260,10 +260,10 @@ final class KeyboardXchainTests: XCTestCase {
         XCTAssertFalse(p.canApprove)
         confirmEnd()
         XCTAssertTrue(model.payPanel!.canApprove)
-        model.approvePayInKeyboard()
+        XCTAssertEqual(model.payPanel?.prompt, "Send 5 USDC on Base to 0xd8da\u{2026}9da3")
+        model.approveWithPIN()
         await until("swapping") { model.payPanel?.swap != nil }
-        XCTAssertEqual(signer.asks, 1)
-        XCTAssertEqual(signer.prompts, ["Send 5 USDC on Base to 0xd8da\u{2026}9da3"])
+        XCTAssertEqual(signer.asks, 0, "no Face ID in the keyboard")
         let proof = try XCTUnwrap(api.proofs.first ?? nil)
         XCTAssertTrue(signer.key.publicKey.isValidSignature(proof, for: PayApproval.proofHash(TestXchain.intent())))
         let s = try XCTUnwrap(api.submitted.first)
@@ -286,7 +286,7 @@ final class KeyboardXchainTests: XCTestCase {
         api.statusReplies = [XchainStatus(status: "refunded", refund_reason: "the price moved")]
         await card()
         confirmEnd()
-        model.approvePayInKeyboard()
+        model.approveWithPIN()
         await until("refunded") { model.payPanel?.swap == .refunded("the price moved") }
         XCTAssertEqual(PayPanelBar.title(model.payPanel!), "Refunded. The money is back in your NEAR wallet. (the price moved)")
     }
@@ -305,9 +305,9 @@ final class KeyboardXchainTests: XCTestCase {
         XCTAssertEqual(api.calls.filter { $0 == "unsigned" }.count, 0)
     }
 
-    /// The price moved: /unsigned re-quotes onto a new deposit account. The new card shows, Face ID runs again, and the phone
+    /// The price moved: /unsigned re-quotes onto a new deposit account. The new card shows, the PIN is asked again, and the phone
     /// checks the transaction against the NEW card.
-    func testRequoteShowsTheNewCardAndNeedsFaceIDAgain() async throws {
+    func testRequoteShowsTheNewCardAndNeedsThePINAgain() async throws {
         let account = api.account
         let fresh = TestXchain.cardJSON(maxText: "5.06", maxUnits: "5060000", deposit: TestXchain.newDeposit, refund: account)
         api.unsignedXchain = { i in
@@ -321,16 +321,16 @@ final class KeyboardXchainTests: XCTestCase {
         }
         await card()
         confirmEnd()
-        model.approvePayInKeyboard()
+        model.approveWithPIN()
         await until("the new card") { model.payPanel?.requoted == true && model.payPanel?.phase == .ready }
         XCTAssertEqual(PayPanelBar.title(model.payPanel!), "Price updated")
         XCTAssertEqual(XchainCardText(model.payPanel!.xchain!).pays, "You pay at most 5.06 USDC from your NEAR wallet")
         XCTAssertEqual(model.payPanel?.intent.recipient, TestXchain.newDeposit)
-        XCTAssertEqual(api.submitted.count, 0, "nothing is signed on the old Face ID")
-        XCTAssertEqual(signer.asks, 1)
-        model.approvePayInKeyboard()
+        XCTAssertEqual(api.submitted.count, 0, "nothing is signed on the old PIN")
+        XCTAssertNil(model.payPanel?.pin)
+        model.approveWithPIN()
         await until("sent") { model.payPanel?.phase == .sent }
-        XCTAssertEqual(signer.asks, 2, "Face ID again for the new price")
+        XCTAssertEqual(signer.asks, 0)
         XCTAssertEqual(api.calls.filter { $0 == "unsigned" }.count, 1, "the re-quoted bytes are used, not rebuilt")
         let s = try XCTUnwrap(api.submitted.first)
         XCTAssertEqual(s.hash, Data(SHA256.hash(data: TestXchain.usdcDeposit(signer: account, to: TestXchain.newDeposit, units: "5060000"))))
@@ -348,9 +348,9 @@ final class KeyboardXchainTests: XCTestCase {
         }
         await card()
         confirmEnd()
-        model.approvePayInKeyboard()
+        model.approveWithPIN()
         await until("the new card") { model.payPanel?.requoted == true && model.payPanel?.phase == .ready }
-        model.approvePayInKeyboard()
+        model.approveWithPIN()
         await until("refused") { model.payPanel?.phase == .failed(PayTxCheck.refusedLine) }
         XCTAssertEqual(api.submitted.count, 0)
     }

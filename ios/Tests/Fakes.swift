@@ -261,9 +261,26 @@ final class FakeSigner: PaySigner, @unchecked Sendable {
         }
     }
 
+    static let pin = "482915"
+
+    /// A vault with `FakeSigner.pin` already sealed, as after the app's PIN setup.
+    func readyPINVault(_ store: MemoryPINStore = MemoryPINStore()) -> PayPINVault {
+        let v = pinVault(store)
+        v.set(pin: Self.pin, raw: key.rawRepresentation)
+        return v
+    }
+
     /// A payment PIN vault for this key, in memory, with no pause after a wrong try.
     func pinVault(_ store: MemoryPINStore = MemoryPINStore()) -> PayPINVault {
-        PayPINVault(store: store, accountID: { [weak self] in self?.accountID() }, wrongDelay: .zero)
+        PayPINVault(store: store, accountID: { [weak self] in self?.accountID() }, wrongDelay: .zero, rounds: 1_000)
+    }
+}
+
+extension KeyboardModel {
+    /// "Approve with PIN", then the PIN typed on the pad.
+    func approveWithPIN(_ pin: String = FakeSigner.pin) {
+        approvePayInKeyboard()
+        for d in pin { typePINDigit(String(d)) }
     }
 }
 
@@ -272,6 +289,7 @@ final class MemoryPINStore: PayPINStore {
     var items: [PayPINItem: Data] = [:]
     func get(_ item: PayPINItem) -> Data? { items[item] }
     func set(_ item: PayPINItem, _ value: Data?) -> OSStatus { items[item] = value; return errSecSuccess }
+    func status(_ item: PayPINItem) -> OSStatus { items[item] == nil ? errSecItemNotFound : errSecSuccess }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.
@@ -426,7 +444,7 @@ extension KeyboardDeps {
                      now: { MainActor.assumeIsolated { clock.now } },
                      sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
                      wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, signer: { signer },
-                     pin: { [pin = pin ?? signer.pinVault()] in pin })
+                     pin: { [pin = pin ?? signer.readyPINVault()] in pin })
     }
 }
 
