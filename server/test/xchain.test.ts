@@ -30,6 +30,25 @@ const BLOCK = 'GJ8ThW5tGmvBbGr8Kto6Ahtv1mhK5cXhkRMdNsJxbVkK';
 const DEPOSIT = 'ab'.repeat(32);
 
 // ---- parse
+test('xchain parse: "$" with a dollar stablecoin is the unit; the chain comes from the address; 0x asks which chain', () => {
+  const read = (text: string) => parseXchain(text) as Record<string, unknown>;
+  for (const [text, amount, token, chain] of [
+    [`send $0.02 USDT to ${TRON_ADDR}`, '0.02', 'USDT', 'tron'],
+    [`send 0.02 usdt to ${TRON_ADDR}`, '0.02', 'USDT', 'tron'],
+    [`send $5 to ${SOL_ADDR}`, '5', 'USDC', 'sol'],
+    [`send 5 bucks of usdc to ${SOL_ADDR}`, '5', 'USDC', 'sol'],
+    ['send $ 3 usdc to ana.near', '3', 'USDC', 'near'],
+  ] as const) {
+    const r = read(text);
+    assert.equal(r.valid, true, `${text}: ${r.reason}`);
+    assert.deepEqual([r.amount, r.token, r.chain], [amount, token, chain], text);
+  }
+  const evm = read(`send $0.02 USDT to ${EVM}`);
+  assert.equal(evm.valid, false);
+  assert.equal(evm.needs, 'chain');
+  assert.equal(read(`send $5 ETH to ${EVM} on base`).valid, false);
+});
+
 test('xchain parse: 24 cases', () => {
   const ok = (text: string, want: Record<string, unknown>) => {
     const r = parseXchain(text);

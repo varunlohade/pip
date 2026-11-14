@@ -92,7 +92,11 @@ extension KeyboardModel {
     /// True when the sentence is an explain question.
     @discardableResult
     func updateExplain(_ text: String) -> Bool {
-        if let chart = Chart.detect(text) {
+        // The router's "understand" or "chart" stays while the owner types on in that sentence.
+        let sentence = SmartDetect.lastSentence(text)
+        if let r = routed, !SuggestPolicy.continues(sentence, asked: r.sentence) { routed = nil }
+        if let chart = Chart.detect(text) ?? (routed?.label == "chart" ? .unclear(sentence) : nil) {
+            if drawTopic != nil { drawTopic = nil }
             explainTask?.cancel()
             explainPending = nil
             let offer = Self.chartOffer(chart)
@@ -100,6 +104,7 @@ extension KeyboardModel {
             return true
         }
         if let (ask, trigger) = Calc.read(text) {
+            if drawTopic != nil { drawTopic = nil }
             explainTask?.cancel()
             explainPending = nil
             if ask.needsRates { refreshRates() }
@@ -107,32 +112,41 @@ extension KeyboardModel {
             if explainOffer != offer { explainOffer = offer }
             return true
         }
-        guard let ask = Explain.detect(text) else { clearExplainOffer(); return false }
+        // Everything below may ask the server, so a line with a secret stops here.
+        guard !secretLine, let ask = Explain.detect(text) ?? routedAsk(sentence) else { clearExplainOffer(); return false }
         if ask.kind == .term, let m = ExplainDictionary.shared.lookup(ask.subject) {
+            if drawTopic != nil { drawTopic = nil }
             explainTask?.cancel()
             explainPending = nil
             if explainOffer != .meaning(m) { explainOffer = .meaning(m) }
             return true
         }
         let key = ask.question.lowercased()
+        // A topic offers "Draw it" once the fingers settle, beside the answer when it comes. A changed topic takes its place at once.
+        let draws = paired && ask.kind == .topic
+        if !draws || (drawTopic != nil && drawTopic?.subject != ask.subject) { drawTopic = nil }
         if case .answer(let s, _)? = explainOffer, s == ask.subject { return true }
         explainOffer = nil
-        if let r = explainCache[key] { explainOffer = .answer(subject: ask.subject, r); return true }
-        guard paired, ask.kind == .topic || ask.askServerOnMiss, SecretScan.scan(ask.question) == .clean else { return true }
+        if let r = explainCache[key] { explainOffer = .answer(subject: ask.subject, r); if draws { drawTopic = ask }; return true }
+        guard paired, ask.kind == .topic || ask.askServerOnMiss, !SecretFilter.isSecret(ask.question) else { return true }
         guard explainPending != key else { return true }
         explainTask?.cancel()
         explainPending = key
         let sleep = deps.sleep
+        // The router already waited for the pause; a keyword ask waits here. "Draw it" shows with the server ask.
+        let waits = routed == nil
         explainTask = Task { [weak self] in
-            try? await sleep(Self.explainDebounce)
+            if waits { try? await sleep(Self.explainDebounce) }
             guard let self, !Task.isCancelled else { return }
+            if draws { self.drawTopic = ask }
             let res = try? await self.deps.api().explain(ask.question)
             guard !Task.isCancelled, self.explainPending == key else { return }
             self.explainPending = nil
             guard let res else { return }
             self.explainCache[key] = res
             // Only while the field still asks the same thing.
-            guard Explain.detect(self.typed)?.subject == ask.subject else { return }
+            let now = SmartDetect.lastSentence(self.typed)
+            guard (Explain.detect(self.typed) ?? self.routedAsk(now))?.subject == ask.subject else { return }
             self.explainOffer = .answer(subject: ask.subject, res)
         }
         return true
@@ -142,6 +156,34 @@ extension KeyboardModel {
         explainTask?.cancel()
         explainPending = nil
         if explainOffer != nil { explainOffer = nil }
+        if drawTopic != nil { drawTopic = nil }
+    }
+
+    /// The router said "understand" for this sentence: the topic is the sentence itself, cleaned. The server reads typos.
+    func routedAsk(_ sentence: String) -> Explain.Ask? {
+        guard let r = routed, r.label == "understand", SuggestPolicy.continues(sentence, asked: r.sentence) else { return nil }
+        let core = Explain.core(r.sentence)
+        let subject = core.count <= 40 ? core : String(core.prefix(40)).trimmingCharacters(in: .whitespaces) + "\u{2026}"
+        return subject.isEmpty ? nil : Explain.Ask(kind: .topic, subject: subject, question: r.sentence)
+    }
+
+    /// "Draw it" on the bar: the drawing panel opens at once and the server draws the topic. The text card is skipped.
+    func tapDraw() {
+        guard let ask = drawTopic else { return }
+        host?.playClick()
+        notesOpen = false
+        writeOpen = false
+        closeCalendar()
+        var summary = ask.subject
+        if case .answer(let s, let r)? = explainOffer, s == ask.subject { summary = r.short }
+        deps.store.recordLearned(Learned(subject: ask.subject, line: summary, kind: .chart, date: deps.now()))
+        openVisual(subject: ask.subject, summary: summary, scene: nil, ask: ask.subject)
+    }
+
+    var drawItem: BarItems.Item? {
+        guard let ask = drawTopic else { return nil }
+        // Beside the answer chip the topic is already quoted; alone, "Draw it" says what it draws.
+        return BarItems.Item(id: "draw", title: "Draw it", action: .draw, trigger: explainOffer == nil ? ask.subject : nil)
     }
 
     /// A chart offer: the subject the bar quotes and, when the phone could read the data, the scene.

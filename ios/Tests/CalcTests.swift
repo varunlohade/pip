@@ -165,7 +165,7 @@ final class CalcModelTests: XCTestCase {
         XCTAssertEqual(model.explainItem?.title, "= 60")
         for _ in 0..<20 { await Task.yield() }
         XCTAssertFalse(api.calls.contains("explain"))
-        XCTAssertFalse(api.calls.contains("suggest"))
+        XCTAssertFalse(api.calls.contains("route"))
     }
 
     func testCurrencyFetchesRatesOnceThenWorksFromTheCache() async {

@@ -3,7 +3,7 @@ import { CHAINS, ORIGINS, addressChain, chainByName, checkAddress, type Origin }
 export type XchainPayment = { amount: string; token: string; chain: string; recipient: string; from: Origin | null; tag: string | null };
 export type XchainParse =
   | ({ valid: true; kind: 'near' | 'xchain' } & XchainPayment)
-  | { valid: false; reason: string };
+  | { valid: false; reason: string; needs?: 'chain' };
 
 const VERB = String.raw`(?:send|pay|transfer|give)`;
 const ON = String.raw`(?:\s+(?:on|via)\s+(?:the\s+)?([a-z]+)(?:\s+(?:chain|network))?)?`;
@@ -13,9 +13,19 @@ const END = String.raw`(?=[\s,;!?]|\.(?:\s|$)|$)`;
 // "send 20 USDT on solana to <addr> from my NEAR", "pay 0.01 ETH to 0x… on base". One shape; nothing is guessed.
 const SHAPE = new RegExp(String.raw`\b${VERB}\s+(\S+?)\s*([a-z][a-z0-9]{1,9})${ON}\s+to\s+(@?[^\s,;!?]+?)${TAG}${ON}${FROM}${END}`, 'gi');
 
+// "$" with a dollar stablecoin is only the unit: "$0.02 USDT" is "0.02 USDT", "5 bucks of usdc" is "5 USDC", and a bare "$5" is "5 USDC".
+// The number itself is never touched (docs/XCHAIN-NUMBERS.md). "$5 ETH" stays as typed, so it fails as before: dollars or ETH is unclear.
+const DOLLAR_TOKENS = 'usdc|usdt|dai|usd1|pyusd|fdusd|usde|usds';
+export function dollarsAsUnit(text: string): string {
+  return text
+    .replace(new RegExp(String.raw`\$\s?(\d[\d.]*)\s*(${DOLLAR_TOKENS})\b`, 'gi'), '$1 $2')
+    .replace(new RegExp(String.raw`\b(\d[\d.]*)\s+(?:bucks|dollars|usd)\s+(?:of|in|worth\s+of)\s+(${DOLLAR_TOKENS})\b`, 'gi'), '$1 $2')
+    .replace(new RegExp(String.raw`\b(${VERB})\s+\$\s?(\d[\d.]*)(?=\s+to\s)`, 'gi'), '$1 $2 USDC');
+}
+
 /** Reads one any-token, any-chain payment from a line of text. Pure: no network. Decimals are checked later against the token list. */
 export function parseXchain(text: string): XchainParse {
-  const found = [...text.matchAll(SHAPE)];
+  const found = [...dollarsAsUnit(text).matchAll(SHAPE)];
   if (found.length === 0) return { valid: false, reason: 'no payment found; try "send 5 USDC to 0x… on base"' };
   if (found.length > 1) return { valid: false, reason: 'more than one payment in the text; send one at a time' };
   const [, amountRaw, tokenRaw, on1, targetRaw, tagRaw, on2, fromRaw] = found[0];
@@ -32,7 +42,7 @@ export function parseXchain(text: string): XchainParse {
   if ((chain === null || chain === 'near') && recipient !== recipient.toLowerCase() && addressChain(recipient.toLowerCase()) === 'near') return { valid: false, reason: 'NEAR account ids are lower case' };
   if (!chain) {
     const found = addressChain(recipient);
-    if (found === 'evm' || found === 'ambiguous') return { valid: false, reason: 'say which chain, like "on base" or "on ethereum"' };
+    if (found === 'evm' || found === 'ambiguous') return { valid: false, reason: 'say which chain, like "on base" or "on ethereum"', needs: 'chain' };
     if (!found) return { valid: false, reason: 'not an address Pip knows' };
     chain = found;
   }

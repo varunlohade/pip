@@ -1,6 +1,6 @@
 // A local stand-in Pip server for the iOS app and UI tests: fake AI, in-memory DB, no network.
 // usage: npm run fake   (PORT=0 picks a free port; the first line printed names it)
-// Debug routes: GET /_log, GET /_mail (the stub mail, with codes, for sign-up tests), POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}, "explain": {...}, "visual": {...}}
+// Debug routes: GET /_log, GET /_mail (the stub mail, with codes, for sign-up tests), POST /_reset, POST /_next {"device": {"kind", "confidence"}, "write": "text", "tone": {"tone", "calm"}, "explain": {...}, "visual": {...}, "route": {"label", "confidence"}}
 // explain and visual take raw model JSON; with none, they answer with the log-function fixtures in test/fixtures.
 // Each /_next value answers the next matching model call once.
 // Pay runs the phone-signed flow on a fake NEAR testnet and mainnet in memory (ana/bob .testnet and .near exist; mainnet is on,
@@ -14,6 +14,7 @@ import type { DeviceAction, ToneCheck } from '../src/ai.ts';
 import { config } from '../src/config.ts';
 import { randomToken, sha256 } from '../src/crypto.ts';
 import type { AttestationSnapshot } from '../src/nearai.ts';
+import type { RouteLabel } from '../src/route.ts';
 import { SignedTransaction } from 'near-api-js';
 import type { Chain } from '../src/pay/chain.ts';
 import { payConfig } from '../src/pay/config.ts';
@@ -41,7 +42,7 @@ const INNER_TOKEN = 'pat_fake_local_only_access_token';
 // UI tests sign up and start over many times from one address.
 for (const k of ['deviceAuth', 'auth', 'emailAuth', 'mailPerEmail'] as const) config.rateLimit[k].limit = 1000;
 
-type Next = { device?: { kind?: DeviceAction; confidence?: number }; write?: string; tone?: ToneCheck; explain?: unknown; visual?: unknown };
+type Next = { device?: { kind?: DeviceAction; confidence?: number }; write?: string; tone?: ToneCheck; explain?: unknown; visual?: unknown; route?: { label?: RouteLabel; confidence?: number } };
 type LogEntry = { method: string; path: string; status: number; body: unknown };
 
 /** A NEAR testnet stand-in: two known accounts, fixed balances that go down with each send, no network. */
@@ -162,6 +163,7 @@ function build() {
     get tone() { return take('tone'); },
     get explain() { return take('explain'); },
     get visual() { return take('visual'); },
+    get route() { return take('route'); },
     now,
     apple: async () => { throw new Error('no Sign in with Apple on the fake server'); },
     pay: {
@@ -206,6 +208,7 @@ fake.post('/_next', async (c) => {
   if (b.tone) state.next.tone = b.tone;
   if (b.explain) state.next.explain = b.explain;
   if (b.visual) state.next.visual = b.visual;
+  if (b.route) state.next.route = b.route;
   return c.json({ ok: true, next: state.next });
 });
 

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { config, type Tone } from './config.ts';
 import { clean } from './text.ts';
 import { log } from './log.ts';
+import { ROUTE_CRITERIA, ROUTE_LABELS, ROUTE_QUESTION, routeContext, type RouteLabel } from './route.ts';
 import { createNear, noteServed, type AttestationSnapshot } from './nearai.ts';
 import { EXPLAIN_SYSTEM, ExplanationSchema, SceneSchema, VISUAL_SYSTEM, type Explanation, type Scene } from './explain.ts';
 
@@ -17,6 +18,8 @@ export type Ai = {
   explain(text: string): Promise<Explanation>;
   /** A topic drawn as 2-4 steps of shapes, already clamped to the board. */
   visual(topic: string): Promise<Scene>;
+  /** A typed sentence (and up to 3 earlier lines): which bar action fits it. One jev question, on NEAR AI Cloud first. */
+  route(text: string, context?: string[]): Promise<{ label: RouteLabel; confidence: number; via: string }>;
   /** NEAR AI attestation for the demo screen; undefined when NEAR AI is off. */
   attestation?(): Promise<AttestationSnapshot>;
 };
@@ -30,7 +33,6 @@ const DEVICE_CRITERIA: Record<DeviceAction, string> = {
   followup: 'The person should get back to someone later: follow up, check in, or answer a question they cannot answer now.',
   none: 'Ordinary chat with nothing to add to a calendar, a reminder or a note.',
 };
-
 const REFINE: Record<Tone, string> = {
   polite: 'more polite and gentle, with please and thank you where they fit',
   professional: 'more professional and businesslike',
@@ -194,15 +196,17 @@ export function createAi(env: { typesafeKey: string; openrouterKey?: string; nea
   }
 
   // One jev choice question: which criterion (0-based index) fits the context best.
-  async function choose(context: string, question: string, criteria: string[]): Promise<{ index: number; confidence: number }> {
+  async function choose(context: string, question: string, criteria: string[],
+    at = { url: config.jev.url, key: env.typesafeKey, model: config.jev.model }): Promise<{ index: number; confidence: number }> {
     const body = {
-      model: config.jev.model,
+      model: at.model,
       state: { context },
       questions: { q: { type: 'choice', criteria: Object.fromEntries(criteria.map((c, i) => [String(i + 1), c])), instructions: { question } } },
     };
-    const ans = (await postJson(config.jev.url, env.typesafeKey, body, config.jev.timeoutMs))?.answers?.q;
+    const ans = (await postJson(at.url, at.key, body, config.jev.timeoutMs))?.answers?.q;
+    if (!ans) throw new Error('jev gave no answer');
     // jev runs outside a TEE, so a reply that used it is not private.
-    noteServed({ model: config.jev.model, private: false, attested: false });
+    noteServed({ model: at.model, private: false, attested: false });
     return { index: Number(ans?.choice) - 1, confidence: Number(ans?.confidence ?? 0) };
   }
 
@@ -240,6 +244,22 @@ export function createAi(env: { typesafeKey: string; openrouterKey?: string; nea
       const { index, confidence } = await choose(text.slice(0, config.maxTextChars),
         'Someone is typing this chat message. Which thing should their phone offer to do?', DEVICE_ACTIONS.map((k) => DEVICE_CRITERIA[k]));
       return { kind: DEVICE_ACTIONS[index] ?? 'none', confidence };
+    },
+
+    // jev on NEAR AI Cloud first (listed there, not attested), then TypeSafe direct. Neither runs in a TEE.
+    async route(text, context = []) {
+      const ctx = routeContext(text.slice(0, config.maxExplainChars), context);
+      const criteria = ROUTE_LABELS.map((l) => ROUTE_CRITERIA[l]);
+      let via = 'near-jev';
+      let picked;
+      try {
+        if (!env.nearaiKey) throw new Error('no NEAR key');
+        picked = await choose(ctx, ROUTE_QUESTION, criteria, { url: `${config.nearai.url}/systemone`, key: env.nearaiKey, model: config.jev.nearModel });
+      } catch {
+        via = 'jev';
+        picked = await choose(ctx, ROUTE_QUESTION, criteria);
+      }
+      return { label: ROUTE_LABELS[picked.index] ?? 'none', confidence: picked.confidence, via };
     },
   };
 }

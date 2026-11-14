@@ -70,7 +70,7 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertEqual(item?.title, "Send 5 USDC to ana.testnet")
         XCTAssertFalse(model.showsWordSlots)
         for _ in 0..<50 { await Task.yield() }
-        XCTAssertFalse(api.calls.contains("suggest"))
+        XCTAssertFalse(api.calls.contains("route"))
     }
 
     func testKnownRecipientIsSignedInTheKeyboardAfterFaceID() async throws {

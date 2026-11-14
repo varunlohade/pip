@@ -65,6 +65,18 @@ final class FakeAPI: KeyboardAPI {
         return suggestReply
     }
 
+    var routeReply = RouteResponse(label: "none", confidence: 0.9, chips: [])
+    var routeFails = false
+    private(set) var routed: [(text: String, context: [String])] = []
+    /// When set, route() runs this before it answers, so a test can change the text mid-request.
+    var duringRoute: (() -> Void)?
+    func route(_ text: String, context: [String]) async throws -> RouteResponse {
+        calls.append("route"); routed.append((text, context))
+        duringRoute?()
+        if routeFails { throw URLError(.notConnectedToInternet) }
+        return routeReply
+    }
+
     func fix(_ text: String) async throws -> WriteResponse { calls.append("fix"); return writeReply }
     /// Each rewrite call, and the stream the test feeds with send(_:) and end().
     private(set) var rewrites: [(text: String, tones: [String])] = []
@@ -394,7 +406,9 @@ extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
                      clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker(),
                      haptics: HapticSpy = HapticSpy(), signer: FakeSigner = FakeSigner()) -> KeyboardDeps {
-        KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
+        // The model tests cover the 0.6 router path; RouterFlagOffTests covers 0.5 with it off.
+        Flags.router = true; Flags.memory = true; Flags.dollarPay = true
+        return KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
                      sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
                      wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, signer: { signer })

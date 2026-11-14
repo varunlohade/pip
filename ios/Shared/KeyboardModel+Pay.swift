@@ -62,7 +62,7 @@ extension KeyboardModel {
 
     /// Cross-chain: a cheap regex decides when to ask; the server's parse decides what the payment is.
     private func updateXchain(_ text: String, quiet: Bool) -> Bool {
-        let words = quiet || payPanel != nil ? nil : XchainDetect.candidate(text)
+        let words = quiet || secretLine || payPanel != nil ? nil : XchainDetect.candidate(text)
         if words == nil, !xchainDone.isEmpty { xchainDone = [] }
         guard let words, !xchainDone.contains(words) else {
             xchainTask?.cancel()
@@ -85,13 +85,45 @@ extension KeyboardModel {
             guard !Task.isCancelled else { return }
             let parsed = try? await api.parseXchain(words)
             guard let self, !Task.isCancelled, self.xchainAsked == words else { return }
-            switch parsed {
-            case .some(let p) where p.valid && p.kind == "xchain": self.xchainOffer = .ready(p, trigger: words)
-            case .some(let p) where !p.valid: self.xchainOffer = .refused(p.reason ?? "Pip cannot send this yet", trigger: words)
-            default: self.xchainOffer = nil
-            }
+            self.xchainOffer = Self.offer(parsed, words: words)
         }
         return true
+    }
+
+    /// The bar's reading of the server's parse: a payment to review, "Which chain?" for an 0x address, or the reason it cannot run.
+    static func offer(_ parsed: XchainParsed?, words: String) -> XchainOffer? {
+        switch parsed {
+        case .some(let p) where p.valid && p.kind == "xchain": .ready(p, trigger: words)
+        case .some(let p) where !p.valid && p.needs == "chain" && Flags.dollarPay: .whichChain(trigger: words)
+        case .some(let p) where !p.valid: .refused(p.reason ?? "Pip cannot send this yet", trigger: words)
+        default: nil
+        }
+    }
+
+    /// The router said "pay" or "xchain_pay" but the phone's regex read no payment: the server's parse reads the sentence.
+    /// On testnet a cross-chain ask shows the "needs Mainnet" line, never nothing.
+    func routeToPay(_ sentence: String, label: String) {
+        guard payOffer == nil, xchainOffer == nil, payPanel == nil, !secretLine else { return }
+        if PayNetwork.name != "mainnet" {
+            if label == "xchain_pay" { xchainOffer = .needsMainnet(trigger: sentence) }
+            return
+        }
+        xchainAsked = sentence
+        xchainTask?.cancel()
+        let api = deps.api()
+        xchainTask = Task { [weak self] in
+            let parsed = try? await api.parseXchain(sentence)
+            guard let self, !Task.isCancelled, self.xchainAsked == sentence else { return }
+            self.xchainOffer = Self.offer(parsed, words: sentence)
+        }
+    }
+
+    /// A "Which chain?" chip: " on base" goes after the typed words, and the payment is read again with the chain named.
+    func pickChain(_ words: String) {
+        host?.playClick()
+        let before = host?.contextBeforeInput ?? ""
+        host?.insert((before.last?.isWhitespace ?? true ? "" : " ") + "on \(words)")
+        textChanged()
     }
 
     var payItem: BarItems.Item? {
@@ -104,6 +136,8 @@ extension KeyboardModel {
             return BarItems.Item(id: "pay", title: XchainOffer.mainnetLine, tone: .secondary, trigger: t)
         case .refused(let why, let t):
             return BarItems.Item(id: "pay", title: why, tone: .secondary, trigger: t)
+        case .whichChain(let t):
+            return BarItems.Item(id: "pay", title: "Which chain?", tone: .secondary, trigger: t)
         case nil:
             return nil
         }

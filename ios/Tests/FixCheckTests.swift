@@ -131,9 +131,13 @@ final class FixModelTests: XCTestCase {
         XCTAssertEqual(model.fixPlan?.title, "Fix 2 typos")
         model.fix()
         XCTAssertEqual(host.text, "Can you send the bill?")
-        XCTAssertEqual(model.barItems.first?.title, "Fixed 2 typos \u{2713}")
+        // TestFlight 0.4: no line says the typo was fixed. Backspace right after puts the typed text back.
+        XCTAssertFalse(model.barItems.contains { $0.title.hasPrefix("Fixed") }, "\(model.barItems.map(\.title))")
+        XCTAssertNil(model.undo)
         XCTAssertFalse(api.calls.contains("fix"))
-        model.perform(.undo)
+        let f = ObjectIdentifier(NSObject())
+        model.touchBegan(f, KeyCap(id: "delete", kind: .delete, frame: .zero, a11y: "delete"))
+        model.touchEnded(f)
         XCTAssertEqual(host.text, "can u send teh bill ")
         await typeAndSettle(host.text)
         XCTAssertNil(model.fixPlan, "Fix is not offered again for text the owner kept")
@@ -147,7 +151,7 @@ final class FixModelTests: XCTestCase {
         model.fix()
         XCTAssertEqual(host.text, chip?.fixed)
         XCTAssertTrue(host.text.contains("tomorow"), "the word being typed is left alone: \(host.text)")
-        XCTAssertEqual(model.barItems.first?.title, "Fixed 2 typos \u{2713}")
+        XCTAssertFalse(model.barItems.contains { $0.title.hasPrefix("Fixed") })
     }
 
     func testCleanShortTextHasNoChip() {

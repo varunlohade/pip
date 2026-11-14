@@ -51,6 +51,13 @@ struct SuggestResponse: Decodable {
     let timings: [String: Int]?
 }
 
+/// POST /v1/route: what the bar should offer for the sentence, and the device chips for a calendar, reminder or note label.
+struct RouteResponse: Decodable, Equatable {
+    let label: String
+    let confidence: Double
+    let chips: [Chip]
+}
+
 struct WriteResponse: Decodable { let text: String; let changed: Bool? }
 /// One line of POST /v1/write/rewrite: a version (`tone` and `text`), a skipped one (`error`), or the end (`done`).
 struct RewriteLine: Decodable, Equatable {
@@ -188,6 +195,12 @@ struct APIClient {
         if let context { body["context"] = context }
         // A suggestion is only worth it while the sentence is fresh; a failure stays silent.
         return try await send(request("POST", "/v1/suggest", body: body, timeout: 4), as: SuggestResponse.self)
+    }
+
+    /// One jev question per typing pause. `context`: up to 3 earlier lines, already through the secret filter.
+    func route(_ text: String, context: [String]) async throws -> RouteResponse {
+        struct Body: Encodable { let text: String; let context: [String] }
+        return try await send(request("POST", "/v1/route", body: Body(text: text, context: Array(context.suffix(3))), timeout: 3), as: RouteResponse.self)
     }
 
     // Writing help. Each call starts from a tap, and the server refuses it without the tap header.

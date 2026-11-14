@@ -195,6 +195,14 @@ final class KeyboardModel: ObservableObject {
     @Published var fieldEmpty = true
     /// A meaning or an answer for what the last sentence asks ("what does btw mean"). See KeyboardModel+Explain.
     @Published var explainOffer: ExplainOffer? { didSet { noteChipsShown() } }
+    /// A topic the bar offers to draw ("explain compound interest", or what the router called "understand"). See KeyboardModel+Explain.
+    @Published var drawTopic: Explain.Ask? { didSet { noteChipsShown() } }
+    /// The router's last reading that the bar keeps while the owner types on in that sentence: an "understand" or "chart" ask.
+    var routed: (sentence: String, label: String)?
+    /// The current line holds a secret (a key, a seed phrase, a password, a code). No AI for that line; the bar says so quietly.
+    @Published var secretLine = false
+    /// The lines typed in this conversation, in memory only, for the router's context.
+    private(set) var memory = TypingMemory()
     /// "send 5 USDC to ana.testnet": the chip that proposes it for approval in the app. See KeyboardModel+Pay.
     @Published var payOffer: PayDraft? { didSet { noteChipsShown() } }
     /// A payment the app sent: the bar offers its Insert line.
@@ -240,6 +248,12 @@ final class KeyboardModel: ObservableObject {
     var suggestsWhileTyping = true
     let deps: KeyboardDeps
     private var suggestTask: Task<Void, Never>?
+    /// The one router call in flight; new keys cancel it.
+    private var routeTask: Task<Void, Never>?
+    /// The text before the cursor on the last edit, to keep the line that was just sent or ended.
+    private var lastBefore = ""
+    /// The last Fix, kept quietly: backspace right after it puts the typed text back. No line says it was fixed.
+    private var quietFixUndo: WriteUndo?
     private var lastSent = ""
     private var suggest = SuggestPolicy()
     private var actions: [ActionShortcut] = ActionShortcut.defaults
@@ -298,7 +312,7 @@ final class KeyboardModel: ObservableObject {
         paired = hasFullAccess && deps.store.signedIn
         returnStyle = ReturnStyle(host?.returnKeyType ?? .default)
         let kind = FieldKind(keyboardType: host?.keyboardType ?? .default, contentType: host?.textContentType)
-        if kind != field { field = kind; layout = kind.layout }
+        if kind != field { field = kind; layout = kind.layout; memory.clear() }
         let empty = (host?.contextBeforeInput ?? "").isEmpty && (host?.contextAfterInput ?? "").isEmpty
         returnEnabled = !(host?.enablesReturnKeyAutomatically == true && empty)
     }
@@ -696,7 +710,7 @@ final class KeyboardModel: ObservableObject {
     /// The three word slots own the bar while a word is half typed, and after a space when no chip shows.
     /// An answer chip (a sum, a meaning) always wins over them. The tool icons step aside for the slots.
     var showsWordSlots: Bool {
-        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, payOffer == nil, xchainOffer == nil, paySent == nil, payPanel == nil, undo == nil else { return false }
+        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, drawTopic == nil, payOffer == nil, xchainOffer == nil, paySent == nil, payPanel == nil, undo == nil else { return false }
         if case .idle = bar {} else { return false }
         return words.midWord || barItems.isEmpty
     }
@@ -738,6 +752,14 @@ final class KeyboardModel: ObservableObject {
     }
 
     private func deleteOnce() {
+        if let u = quietFixUndo {
+            quietFixUndo = nil
+            if replace(u.replacement, with: u.original) {
+                lastFixed = u.original.trimmingCharacters(in: .whitespaces)
+                afterEdit()
+                return
+            }
+        }
         if revertCorrection() { wordTaps = [] } else { host?.deleteBackward(); _ = wordTaps.popLast() }
         correction = nil
         unlearned = nil
@@ -863,7 +885,10 @@ final class KeyboardModel: ObservableObject {
     func forgetMemory() {
         closeExplain()
         resetWriting()
-        for t in [suggestTask, smartTask, addedTask, explainTask, fixTask, copiedTask] { t?.cancel() }
+        for t in [suggestTask, routeTask, smartTask, addedTask, explainTask, fixTask, copiedTask] { t?.cancel() }
+        memory.clear()
+        drawTopic = nil
+        routed = nil
         explainTask = nil
         explainPending = nil
         explainCache = [:]
@@ -915,6 +940,9 @@ final class KeyboardModel: ObservableObject {
         closeCalendar()
         closeExplain()
         resetWriting()
+        routeTask?.cancel()
+        memory.clear()
+        lastBefore = ""
         if case .working = bar { bar = .idle }
     }
 
@@ -961,9 +989,15 @@ final class KeyboardModel: ObservableObject {
         refreshAccess()
         updateAutoShift()
         let text = typed
+        let before = host?.contextBeforeInput ?? ""
+        if Flags.memory { rememberLine(before) }
+        let line = before.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+        let secret = Flags.router && !line.isEmpty && SecretFilter.isSecret(line)
+        if secretLine != secret { secretLine = secret }
+        if let u = quietFixUndo, !before.hasSuffix(u.replacement) { quietFixUndo = nil }
         typedPast(text)
         let quiet = chipsQuiet(text)
-        updateFixable(quiet: quiet)
+        updateFixable(quiet: quiet || secret)
         scheduleWordSlots()
         if let u = undo, !(host?.contextBeforeInput ?? "").hasSuffix(u.replacement) { undo = nil }
         // The dictionary needs no pairing and no network, so a meaning shows even before pairing.
@@ -985,7 +1019,20 @@ final class KeyboardModel: ObservableObject {
         bar = .idle
         // Typing ends the copied-text offer.
         if !text.isEmpty, copiedAvailable { endCopied() }
-        if !quiet, !explaining, !paying, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
+        routeTask?.cancel()
+        if !Flags.router {
+            if !quiet, !explaining, !paying, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
+        } else if !quiet, !secret, !explaining, !paying, let sentence = suggest.route(text, clear: clear, field: field) {
+            requestRoute(sentence, typed: text)
+        }
+    }
+
+    /// Keeps a line in the typing memory once it is done: the field emptied (sent) or a new line started.
+    private func rememberLine(_ before: String) {
+        defer { lastBefore = before }
+        let last = lastBefore.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
+        guard !last.isEmpty else { return }
+        if before.isEmpty || (before.hasSuffix("\n") && before.count > lastBefore.count) { memory.add(last) }
     }
 
     // MARK: chip life: ✕, cooldowns, typed past
@@ -1015,7 +1062,7 @@ final class KeyboardModel: ObservableObject {
 
     /// Notes when a chip about the typing first shows, so typing on past it can be counted.
     private func noteChipsShown() {
-        let visible = !smart.isEmpty || explainOffer != nil || payOffer != nil || xchainOffer != nil
+        let visible = !smart.isEmpty || explainOffer != nil || drawTopic != nil || payOffer != nil || xchainOffer != nil
         if !visible { chipSeen = nil } else if chipSeen == nil { chipSeen = (deps.now(), ChipTiming.words(typed)) }
     }
 
@@ -1132,6 +1179,45 @@ final class KeyboardModel: ObservableObject {
         }
     }
 
+    /// The router: once the fingers settle (0.4 s, or 1 s mid-word), the sentence and the last 3 lines in memory go to
+    /// /v1/route. One call in flight; new keys cancel it. A failure or "none" shows nothing new, and the phone's own detectors stay.
+    private func requestRoute(_ sentence: String, typed askedFor: String) {
+        let typedAt = ContinuousClock.now
+        let sleep = deps.sleep
+        let wait = ChipTiming.routeWait(after: host?.contextBeforeInput ?? "")
+        let context = memory.context()
+        routeTask = Task { [weak self] in
+            try? await sleep(wait)
+            guard let self, !Task.isCancelled else { return }
+            self.suggest.markAsked(sentence)
+            guard let res = try? await self.deps.api().route(sentence, context: context), !Task.isCancelled, self.typed == askedFor else { return }
+            self.applyRoute(res, sentence: sentence)
+            let ms = Int((ContinuousClock.now - typedAt) / .milliseconds(1))
+            self.lastLatencyMs = ms
+            self.log.notice("PIP_TIMING keystroke_to_route_ms=\(ms, privacy: .public) label=\(res.label, privacy: .public)")
+        }
+    }
+
+    /// The router's label becomes that action's chip. The phone's parsers read the details; a label with no action yet shows nothing.
+    func applyRoute(_ res: RouteResponse, sentence: String) {
+        switch res.label {
+        case "calendar_event", "reminder", "note":
+            let more = res.chips.filter { Self.deviceKinds.contains($0.kind) }
+                .compactMap { Self.smartChip($0, sentence: sentence, now: deps.now()) }.filter { !isDone($0) }
+            guard !more.isEmpty else { return }
+            serverSmart = (sentence, more)
+            smart = Array((smart + more.filter { m in !smart.contains { $0.id == m.id } }).prefix(SmartDetect.maxChips))
+        case "understand", "chart":
+            guard explainOffer == nil, drawTopic == nil else { return }
+            routed = (sentence, res.label)
+            updateExplain(typed)
+        case "pay", "xchain_pay":
+            routeToPay(sentence, label: res.label)
+        default:
+            break
+        }
+    }
+
     /// Kinds the server answers. They run on the phone, never on the server.
     static let deviceKinds: Set<String> = ["event", "reminder", "note", "followup"]
 
@@ -1211,12 +1297,14 @@ final class KeyboardModel: ObservableObject {
         return true
     }
 
-    private func apply(_ p: WritePreview, label: String) {
+    private func apply(_ p: WritePreview, label: String, quiet: Bool = false) {
         guard replace(p.original, with: p.text) else { bar = .error("The text changed. Try again."); return }
         lastFixed = p.text
         fixPlan = nil
         bar = .idle
         lastWrite = p.kind
+        // A fix says nothing: backspace right after it puts the typed text back.
+        if quiet { quietFixUndo = WriteUndo(label: label, original: p.original, replacement: p.text); return }
         undo = WriteUndo(label: label, original: p.original, replacement: p.text)
         undoTask?.cancel()
         let sleep = deps.sleep
@@ -1244,7 +1332,7 @@ final class KeyboardModel: ObservableObject {
         suggestTask?.cancel()
         writeTask?.cancel()
         if let plan = localFix(d) {
-            apply(WritePreview(kind: "fix", title: plan.title, original: d.original, text: plan.fixed), label: plan.done)
+            apply(WritePreview(kind: "fix", title: plan.title, original: d.original, text: plan.fixed), label: plan.done, quiet: true)
             return
         }
         bar = .working("Fixing\u{2026}")
@@ -1256,7 +1344,7 @@ final class KeyboardModel: ObservableObject {
                     self.fixPlan = nil
                     self.bar = .done("Looks good \u{2713}")
                 } else {
-                    self.apply(WritePreview(kind: "fix", title: "Fix grammar", original: d.original, text: res.text), label: "Fixed grammar \u{2713}")
+                    self.apply(WritePreview(kind: "fix", title: "Fix grammar", original: d.original, text: res.text), label: "Fixed grammar \u{2713}", quiet: true)
                 }
             } catch {
                 guard let self, !Task.isCancelled else { return }
@@ -1478,7 +1566,7 @@ final class KeyboardModel: ObservableObject {
                                     smart: smart.map { BarItems.Smart(chip: $0, access: writer.access($0.place, hasFullAccess: hasFullAccess)) },
                                     added: added?.label, fieldEmpty: fieldEmpty,
                                     ready: .init(copiedAvailable: copiedAvailable, nextUp: nextUp, today: appointments), explain: explainItem,
-                                    pay: payItem, paid: paidItem, now: deps.now()))
+                                    draw: drawItem, secret: secretLine, pay: payItem, paid: paidItem, now: deps.now()))
     }
 
     func perform(_ action: BarItems.Action) {
@@ -1491,6 +1579,7 @@ final class KeyboardModel: ObservableObject {
         case .today: openCalendar()
         case .notes: toggleNotes()
         case .explain: openExplainCard()
+        case .draw: tapDraw()
         case .pay: tapPay()
         case .insertPaid: insertPaid()
         }

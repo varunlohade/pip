@@ -6,6 +6,9 @@ enum ChipTiming {
     static let settle: Duration = .milliseconds(400)
     /// In the middle of a word the wait is longer, so a half-typed word is not covered.
     static let settleMidWord: Duration = .milliseconds(1000)
+    /// The router asks once the fingers have been still this long after a space or punctuation, or longer mid-word.
+    static let routePause: Duration = .milliseconds(450)
+    static let routePauseMidWord: Duration = .milliseconds(1100)
     /// After ✕: no chip of any kind for this long, and the same text never brings one back.
     static let dismissQuiet: TimeInterval = 10
     /// Typing on past a chip seen for `typedPastSeen` by `typedPastWords` new words: no chip for this long.
@@ -21,6 +24,8 @@ enum ChipTiming {
         let midWord = before.last.map { !$0.isWhitespace } == true && !word.isEmpty && word.allSatisfy { $0.isLetter || $0 == "'" }
         return midWord ? settleMidWord : settle
     }
+
+    static func routeWait(after before: String) -> Duration { settle(after: before) == settleMidWord ? routePauseMidWord : routePause }
 
     static func words(_ text: String) -> Int { text.split(whereSeparator: \.isWhitespace).count }
 }

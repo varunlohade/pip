@@ -9,6 +9,7 @@ struct DemoAPI: KeyboardAPI {
     var fixed = ""
 
     func suggest(_ text: String, context: String?) async throws -> SuggestResponse { SuggestResponse(chips: [], intent: "none", timings: nil) }
+    func route(_ text: String, context: [String]) async throws -> RouteResponse { RouteResponse(label: "none", confidence: 0, chips: []) }
     func fix(_ text: String) async throws -> WriteResponse { WriteResponse(text: fixed, changed: true) }
     func rewrite(_ text: String, tones: [String]) -> AsyncThrowingStream<RewriteLine, Error> {
         AsyncThrowingStream { cont in

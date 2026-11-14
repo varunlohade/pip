@@ -4,6 +4,7 @@ import { createApp } from '../src/app.ts';
 import type { AppleVerifier } from '../src/apple.ts';
 import type { Ai, DeviceAction, ToneCheck } from '../src/ai.ts';
 import { ExplanationSchema, SceneSchema } from '../src/explain.ts';
+import type { RouteLabel } from '../src/route.ts';
 import { createCipher, randomToken, sha256 } from '../src/crypto.ts';
 import type { Mail } from '../src/mailer.ts';
 import { openDb } from '../src/db.ts';
@@ -16,7 +17,7 @@ import { noteServed, type AttestationSnapshot, type Served } from '../src/nearai
 
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; ai?: Ai; pay?: PayDeps; served?: Served; attestation?: AttestationSnapshot } = {}) {
+export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; route?: { label?: RouteLabel; confidence?: number } | Error; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; ai?: Ai; pay?: PayDeps; served?: Served; attestation?: AttestationSnapshot } = {}) {
   const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
@@ -51,6 +52,12 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
       const d = opts.device;
       if (d instanceof Error) throw d;
       return { kind: 'none', confidence: 0.92, ...d };
+    },
+    async route(text, context) {
+      aiCalls.push({ fn: 'route', args: context?.length ? [text, context] : [text] });
+      const r = opts.route;
+      if (r instanceof Error) throw r;
+      return { label: 'none', confidence: 0.9, via: 'fake', ...r };
     },
     async fix(text, signal) { aiCalls.push({ fn: 'fix', args: [text] }); await slow('fix', signal); return serve(rewrite(text)); },
     async refine(text, tone, signal) { aiCalls.push({ fn: 'refine', args: [text, tone] }); await slow(tone, signal); return serve(rewrite(text)); },

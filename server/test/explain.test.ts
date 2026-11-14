@@ -192,3 +192,70 @@ test('createAi: a bad primary answer falls back once to the second model', async
   assert.equal((await ai.explain('what is a vpn')).short, 'ok');
   assert.deepEqual(models, [config.llm.primary.model, config.llm.fallback.model]);
 });
+
+test('route: a label at or above its confidence; low confidence, a failure and plain chat are a quiet none', async () => {
+  for (const [route, want] of [
+    [{ label: 'understand', confidence: 0.95 }, 'understand'],
+    [{ label: 'xchain_pay', confidence: config.jev.routeMin.default }, 'xchain_pay'],
+    [{ label: 'calendar_event', confidence: 0.47 }, 'none'],
+    [{ label: 'none', confidence: 0.99 }, 'none'],
+    [new Error('jev down'), 'none'],
+  ] as const) {
+    const { call, device, aiCalls } = setup({ route });
+    const { token } = device();
+    const res = await call(token, 'POST', '/v1/route', { text: ' ye EMI kya hota hai ' });
+    assert.equal(res.status, 200);
+    const out = await res.json();
+    assert.equal(out.label, want);
+    assert.deepEqual(out.chips, []);
+    assert.deepEqual(aiCalls, [{ fn: 'route', args: ['ye EMI kya hota hai'] }]);
+  }
+});
+
+test('route: a calendar label carries the device chip; earlier lines go along as context', async () => {
+  const { call, device, aiCalls } = setup({ route: { label: 'calendar_event', confidence: 0.9 } });
+  const { token } = device();
+  const res = await call(token, 'POST', '/v1/route', { text: 'dinner with Priya friday 8?', context: ['hey', 'are you free this week'] });
+  const out = await res.json();
+  assert.equal(out.label, 'calendar_event');
+  assert.equal(out.chips[0].kind, 'event');
+  assert.deepEqual(aiCalls[0].args, ['dinner with Priya friday 8?', ['hey', 'are you free this week']]);
+});
+
+test('route: needs a token and a text; at most 3 context lines', async () => {
+  const { call, device, aiCalls } = setup();
+  assert.equal((await call(null, 'POST', '/v1/route', { text: 'how do mortgages work' })).status, 401);
+  const { token } = device();
+  assert.equal((await call(token, 'POST', '/v1/route', { text: ' ' })).status, 400);
+  assert.equal((await call(token, 'POST', '/v1/route', { text: 'x'.repeat(config.maxExplainChars + 1) })).status, 400);
+  assert.equal((await call(token, 'POST', '/v1/route', { text: 'hi there you', context: ['a', 'b', 'c', 'd'] })).status, 400);
+  assert.equal(aiCalls.length, 0);
+});
+
+test('route: jev on NEAR AI Cloud first, TypeSafe direct when NEAR fails; one choice question with every label', async () => {
+  const urls: string[] = [];
+  const bodies: any[] = [];
+  const real = globalThis.fetch;
+  let nearUp = true;
+  globalThis.fetch = (async (url: string, init: RequestInit) => {
+    const u = String(url);
+    if (!u.includes('systemone')) return real(url, init);
+    urls.push(u);
+    bodies.push(JSON.parse(String(init.body)));
+    if (u.includes('near.ai') && !nearUp) return new Response('down', { status: 503 });
+    return new Response(JSON.stringify({ answers: { q: { choice: 6, confidence: 0.93 } } }), { status: 200 });
+  }) as typeof globalThis.fetch;
+  try {
+    const ai = createAi({ typesafeKey: 'k', openrouterKey: 'o', nearaiKey: 'n' });
+    assert.deepEqual(await ai.route('steps to file gst', ['earlier line']), { label: 'understand', confidence: 0.93, via: 'near-jev' });
+    nearUp = false;
+    assert.equal((await ai.route('steps to file gst')).via, 'jev');
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.match(urls[0], /cloud-api\.near\.ai\/v1\/systemone$/);
+  assert.equal(bodies[0].model, config.jev.nearModel);
+  assert.equal(bodies[0].state.context, 'EARLIER: earlier line\nTYPING: steps to file gst');
+  assert.equal(Object.keys(bodies[0].questions.q.criteria).length, 12);
+  assert.equal(urls.at(-1), config.jev.url);
+});

@@ -81,12 +81,14 @@ struct SuggestionBar: View {
                     .accessibilityIdentifier("explain.title")
                 Spacer(minLength: 4)
                 PanelCloseButton(id: "explain.close", action: model.closeExplain).padding(.trailing, 6)
+            } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "secret" {
+                secretRow(first)
             } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "pay" || first.id == "paid" {
                 dismissButton
-                PayBarRow(item: first, perform: model.perform)
-            } else if !model.notesOpen, !model.writeOpen, let explain = items.first, explain.id == "explain" {
+                if case .whichChain = model.xchainOffer { whichChainRow } else { PayBarRow(item: first, perform: model.perform) }
+            } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "explain" || first.id == "draw" {
                 dismissButton
-                explainRow(explain)
+                explainRow(items.first { $0.id == "explain" }, draw: items.first { $0.id == "draw" })
                 Spacer(minLength: 0)
             } else if model.notesOpen {
                 Text("Notes").font(M.prediction.weight(.medium)).foregroundStyle(palette.label).padding(.leading, Theme.Space.s)
@@ -125,12 +127,12 @@ struct SuggestionBar: View {
                 .accessibilityIdentifier("chip.fix")
                 .transition(.opacity)
             }
-            if model.paired && !showsWords && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil && !payOwnsBar {
+            if model.paired && !showsWords && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil && model.drawTopic == nil && !payOwnsBar {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.writeOpen ? "keyboard" : "wand.and.stars", id: "write.toggle", label: model.writeOpen ? "Keyboard" : "Rewrite", action: model.toggleWrite)
             }
             // Notes live in the App Group, which the keyboard reaches only with Full Access.
-            if model.hasFullAccess && !showsWords && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil && !payOwnsBar {
+            if model.hasFullAccess && !showsWords && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil && model.drawTopic == nil && !payOwnsBar {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.notesOpen ? "keyboard" : "note.text", id: "notes.toggle", label: model.notesOpen ? "Keyboard" : "Notes", action: model.toggleNotes)
                 if !model.notesOpen {
@@ -152,10 +154,82 @@ struct SuggestionBar: View {
         }
     }
 
-    /// B2-3: the buddy, then the answer as a glowing sky chip ("btw → by the way"), then "Explain more".
-    private func explainRow(_ item: BarItems.Item) -> some View {
+    /// The secret filter hit: one muted line with a lock. Not tappable; it goes when the line is sent or deleted.
+    private func secretRow(_ item: BarItems.Item) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "lock.fill").font(.system(size: 11, weight: .semibold))
+            Text(item.title).font(.system(size: 13.5)).lineLimit(1).minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(palette.secondaryLabel)
+        .padding(.leading, 12)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chip.secret")
+    }
+
+    /// An 0x address with no chain: one chip per EVM chain; a tap adds "on base" to the text.
+    private var whichChainRow: some View {
+        HStack(spacing: 6) {
+            Text("Which chain?").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.Color.text2).fixedSize()
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(XchainOffer.evmChains, id: \.words) { c in
+                        Button { model.pickChain(c.words) } label: {
+                            Text(c.title).font(.system(size: 14.5, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                                .padding(.horizontal, 11).frame(height: 32).background(FrostFill())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("chip.chain.\(c.words)")
+                    }
+                }
+            }
+        }
+        .padding(.trailing, 6)
+    }
+
+    /// B2-3: the buddy, then the answer as a glowing sky chip ("btw → by the way"), then "Draw it" and "Explain more".
+    /// Before the answer comes, "Draw it" stands alone with the topic quoted.
+    private func explainRow(_ answer: BarItems.Item?, draw: BarItems.Item?) -> some View {
         HStack(spacing: 8) {
             Buddy(size: 30)
+            // Beside Draw it, the answer drops its quoted topic so the answer itself has room.
+            if let item = answer { answerChip(draw == nil ? item : BarItems.Item(id: item.id, title: item.title, detail: item.detail, action: item.action)) }
+            if let d = draw { drawChip(d) }
+            if answer != nil, model.explainOfferHasMore {
+                Button { model.openExplainCard() } label: {
+                    Text(draw == nil ? "Explain more" : "More").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                        .padding(.horizontal, 14).frame(height: 36).background(FrostFill())
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .accessibilityIdentifier("chip.explain.more")
+            }
+        }
+        .padding(.leading, 6)
+    }
+
+    /// "Draw it": opens the drawing panel straight away.
+    private func drawChip(_ item: BarItems.Item) -> some View {
+        Button { model.perform(.draw) } label: {
+            HStack(spacing: 6) {
+                if let t = item.trigger {
+                    Text(t).font(.system(size: 15)).foregroundStyle(Theme.Color.text2).lineLimit(1)
+                    Image(systemName: "arrow.right").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.Color.text3)
+                }
+                Image(systemName: "scribble.variable").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.Color.skyDeep)
+                Text(item.title).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(Theme.Color.text1).fixedSize()
+            }
+            .padding(.horizontal, 13).frame(height: 36).background(FrostFill())
+        }
+        .buttonStyle(.plain)
+        .layoutPriority(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel([item.trigger, item.title].compactMap { $0 }.joined(separator: ": "))
+        .accessibilityIdentifier("chip.draw")
+    }
+
+    private func answerChip(_ item: BarItems.Item) -> some View {
+        Group {
             Button { model.tapExplainChip() } label: {
                 HStack(spacing: 7) {
                     if let t = item.trigger {
@@ -174,17 +248,7 @@ struct SuggestionBar: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel([item.trigger, item.title, item.detail].compactMap { $0 }.joined(separator: ": "))
             .accessibilityIdentifier("chip.explain")
-            if model.explainOfferHasMore {
-                Button { model.openExplainCard() } label: {
-                    Text("Explain more").font(.system(size: 15, weight: .medium)).foregroundStyle(Theme.Color.text1)
-                        .padding(.horizontal, 14).frame(height: 36).background(FrostFill())
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-                .accessibilityIdentifier("chip.explain.more")
-            }
         }
-        .padding(.leading, 6)
     }
 
     private func panelTitle(_ p: ExplainPanel) -> String {
@@ -220,7 +284,7 @@ struct SuggestionBar: View {
 
     /// Fix sits beside the chips, so it never takes a chip's place.
     private var showsFix: Bool {
-        guard !showsWords, model.fixable, model.explainPanel == nil, model.explainOffer == nil, !payOwnsBar, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
+        guard !showsWords, model.fixable, !model.secretLine, model.explainPanel == nil, model.explainOffer == nil, model.drawTopic == nil, !payOwnsBar, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
         if case .idle = model.bar { return true }
         return false
     }

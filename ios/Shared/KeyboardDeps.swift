@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// The server calls the keyboard makes. APIClient is the real one; tests pass a fake.
 protocol KeyboardAPI {
     func suggest(_ text: String, context: String?) async throws -> SuggestResponse
+    /// The router: one jev label for the sentence typed, with up to 3 earlier lines (all through SecretFilter first).
+    func route(_ text: String, context: [String]) async throws -> RouteResponse
     func fix(_ text: String) async throws -> WriteResponse
     /// The Rewrite list: one line per version as it arrives. `tones` are RefineTone raw values.
     func rewrite(_ text: String, tones: [String]) -> AsyncThrowingStream<RewriteLine, Error>

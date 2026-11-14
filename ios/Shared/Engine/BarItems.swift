@@ -15,6 +15,8 @@ enum BarItems {
         case notes
         /// Opens the card for the meaning or answer on the bar.
         case explain
+        /// Opens the drawing panel for the topic on the bar, without the text card.
+        case draw
         /// Proposes the typed payment and opens the app to approve it.
         case pay
         /// Types the "Sent you 5 USDC ✓ <link>" line.
@@ -55,6 +57,10 @@ enum BarItems {
         var ready = ReadyChips.Input()
         /// "btw" → "by the way": the answer to what the last sentence asks. It comes before every other chip.
         var explain: Item?
+        /// "Draw it" beside the explain chip, for a topic the server can draw.
+        var draw: Item?
+        /// The current line holds a secret: no AI chips, one muted line instead.
+        var secret = false
         /// "Send 5 USDC to ana.testnet · Approve in Pip". It comes first while typing.
         var pay: Item?
         /// A payment the app just sent, with Insert.
@@ -84,11 +90,17 @@ enum BarItems {
         let smart = smartItems(s.smart, now: s.now)
         switch s.bar {
         case .idle:
+            // A secret in the line: only a sum worked out on the phone, and the quiet line. Nothing else about the typing.
+            if s.secret {
+                if let e = s.explain, s.draw == nil { out.append(e) }
+                return out + [Item(id: "secret", title: secretLine, tone: .secondary)]
+            }
             // A chip about the typed words gets the room; the day's chips wait for an empty field.
             if let p = s.pay { out.append(p) }
             if let e = s.explain { out.append(e) }
+            if let d = s.draw { out.append(d) }
             out += smart
-            let aboutTyping = !smart.isEmpty || s.explain != nil || s.pay != nil
+            let aboutTyping = !smart.isEmpty || s.explain != nil || s.draw != nil || s.pay != nil
             if !aboutTyping, s.copiedAvailable { out.append(Item(id: "copied", title: "Use copied message", action: .useCopied)) }
             if !aboutTyping, let a = s.nextUp { out.append(Item(id: "next", title: "Next: \(a.time)", detail: a.title, tone: .secondary)) }
             out = Array(out.prefix(3))
@@ -102,9 +114,11 @@ enum BarItems {
         return out
     }
 
+    static let secretLine = "Sensitive text detected. AI is off."
+
     /// A chip the ✕ hides: an offer about the typing or the copy. Lines, Undo and the day's chips stay.
     static func dismissible(_ item: Item) -> Bool {
-        ["copied", "calm", "explain", "pay", "paid"].contains(item.id) || item.id.hasPrefix("smart.")
+        ["copied", "calm", "explain", "draw", "pay", "paid"].contains(item.id) || item.id.hasPrefix("smart.")
     }
 
     /// Each smart chip, or the one line that says which permission it waits for. The line opens nothing: a keyboard cannot.

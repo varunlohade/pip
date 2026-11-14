@@ -32,6 +32,21 @@ struct SuggestPolicy {
         return covered || asked.contains(words) ? nil : sentence
     }
 
+    /// The router's gate: any sentence of 3 words or more in a plain text field, once per version, with no secret and no
+    /// clear match on the phone. Unlike `maybe` it needs no action words: jev decides what the sentence is.
+    func route(_ typed: String, clear: Bool, field: FieldKind) -> String? {
+        guard field == .text, !clear, !typed.isEmpty, !typed.hasPrefix(Self.shortcutPrefix) else { return nil }
+        let line = typed.split(whereSeparator: \.isNewline).last.map(String.init) ?? typed
+        guard !SecretFilter.isSecret(line) else { return nil }
+        let sentence = SmartDetect.lastSentence(typed)
+        let words = Self.words(sentence)
+        guard sentence.count >= Self.minRouteChars, words.count >= Self.minWords else { return nil }
+        let covered = asked.contains { a in words.starts(with: a) && words.count - a.count < Self.regrowWords }
+        return covered || asked.contains(words) ? nil : sentence
+    }
+
+    static let minRouteChars = 8
+
     /// Called when the request really goes out, after the pause.
     mutating func markAsked(_ sentence: String) {
         asked.append(Self.words(sentence))

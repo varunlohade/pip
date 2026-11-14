@@ -37,7 +37,7 @@ final class SmartChipsModelTests: XCTestCase {
         host.text = text
         model.textChanged()
         await until("pause sleep") { clock.sleeping > 0 }
-        clock.advance(SuggestPolicy.debounce.seconds)
+        clock.advance(ChipTiming.routePauseMidWord.seconds)
     }
 
     private func item(_ id: String) -> BarItems.Item? { model.barItems.first { $0.id == id } }
@@ -128,18 +128,18 @@ final class SmartChipsModelTests: XCTestCase {
     }
 
     func testMaybeSentenceAsksOnceAndShowsTheServersDeviceChip() async {
-        api.suggestReply = SuggestResponse(chips: [Chip(kind: "followup", label: "Follow up", payload: ["title": .string("Follow up with Ana")],
-                                                        needs_confirm: false, trigger: "Ana")], intent: "followup", timings: nil)
+        api.routeReply = RouteResponse(label: "reminder", confidence: 0.9, chips: [Chip(kind: "followup", label: "Follow up",
+                                       payload: ["title": .string("Follow up with Ana")], needs_confirm: false, trigger: "Ana")])
         await typeAndPause("can we sort out Ana's thing")
         await until("follow-up chip") { item("smart.reminder") != nil }
-        XCTAssertEqual(api.suggested.map(\.text), ["can we sort out Ana's thing"])
+        XCTAssertEqual(api.routed.map(\.text), ["can we sort out Ana's thing"])
         XCTAssertEqual(item("smart.reminder")?.trigger, "Ana")
 
         host.text = "can we sort out Ana's thing soon"
         model.textChanged()
-        clock.advance(SuggestPolicy.debounce.seconds)
+        clock.advance(ChipTiming.routePauseMidWord.seconds)
         for _ in 0..<20 { await Task.yield() }
-        XCTAssertEqual(api.calls, ["suggest"], "the same sentence never goes twice")
+        XCTAssertEqual(api.calls, ["route"], "the same sentence never goes twice")
         XCTAssertNotNil(item("smart.reminder"), "the server's chip stays while the sentence goes on")
     }
 

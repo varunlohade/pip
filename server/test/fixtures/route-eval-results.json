@@ -1,0 +1,3458 @@
+{
+ "jev": {
+  "need": {
+   "calendar_event": 0,
+   "reminder": 0,
+   "note": 0,
+   "pay": 0,
+   "xchain_pay": 0,
+   "understand": 0,
+   "chart": 0,
+   "rewrite": 0,
+   "translate": 0,
+   "calc_convert": 0,
+   "saved_detail_request": 0,
+   "none": 0
+  },
+  "rows": [
+   {
+    "text": "lets meet tomorrow at 3pm",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 837
+   },
+   {
+    "text": "dinner with priya friday 8?",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.99,
+    "ms": 306
+   },
+   {
+    "text": "can we do the call monday morning",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 338
+   },
+   {
+    "text": "dentist appt on the 12th at 10",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.99,
+    "ms": 347
+   },
+   {
+    "text": "standup moved to 9:30 tmrw",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.89,
+    "ms": 357
+   },
+   {
+    "text": "kal 5 baje milte hain cafe pe",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.99,
+    "ms": 308
+   },
+   {
+    "text": "meeting w ana thursday 2pm works",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 350
+   },
+   {
+    "text": "book the team lunch for next wed noon",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.99,
+    "ms": 382
+   },
+   {
+    "text": "see you saturday at 7 for the movie",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 359
+   },
+   {
+    "text": "interveiw at google on tuesday 11am",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.92,
+    "ms": 268
+   },
+   {
+    "text": "parents ke saath sunday lunch 1 baje",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.98,
+    "ms": 408
+   },
+   {
+    "text": "zoom sync at 4 today?",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.99,
+    "ms": 330
+   },
+   {
+    "text": "remind me to call mom tonight",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.91,
+    "ms": 365
+   },
+   {
+    "text": "need to pay the electricity bill tomorrow",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.99,
+    "ms": 358
+   },
+   {
+    "text": "dont forget to buy milk",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 1,
+    "ms": 325
+   },
+   {
+    "text": "i have to send the invoice to raj by friday",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.96,
+    "ms": 271
+   },
+   {
+    "text": "pick up the dry cleaning after work",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.98,
+    "ms": 304
+   },
+   {
+    "text": "will get back to you on this tomorrow",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 738
+   },
+   {
+    "text": "kal yaad dilana rent bhejna hai",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.86,
+    "ms": 301
+   },
+   {
+    "text": "gotta renew my passport this month",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 305
+   },
+   {
+    "text": "follow up with the landlord about the leak",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.97,
+    "ms": 299
+   },
+   {
+    "text": "must check the oven before leaving",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.97,
+    "ms": 301
+   },
+   {
+    "text": "need to order the cake for sat",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.86,
+    "ms": 300
+   },
+   {
+    "text": "call the bank abt my card",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.88,
+    "ms": 274
+   },
+   {
+    "text": "the wifi password is sunflower22",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.98,
+    "ms": 295
+   },
+   {
+    "text": "gate code is 4471",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.99,
+    "ms": 269
+   },
+   {
+    "text": "my locker number is B12",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.96,
+    "ms": 319
+   },
+   {
+    "text": "parking spot is level 3 row G",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.96,
+    "ms": 384
+   },
+   {
+    "text": "the plumber charged 2400",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.96,
+    "ms": 326
+   },
+   {
+    "text": "flight PNR is X7Q2LM",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.99,
+    "ms": 312
+   },
+   {
+    "text": "his shoe size is 10",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.89,
+    "ms": 287
+   },
+   {
+    "text": "booking ref 88213 for the hotel",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.88,
+    "ms": 272
+   },
+   {
+    "text": "office address is 21 mg road 3rd floor",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.66,
+    "ms": 467
+   },
+   {
+    "text": "the tv model is lg c3 65 inch",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.93,
+    "ms": 314
+   },
+   {
+    "text": "ana's new number is 98200 12345",
+    "want": "note",
+    "got": "saved_detail_request",
+    "confidence": 0.71,
+    "ms": 321
+   },
+   {
+    "text": "rent is 32k due on 5th",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.84,
+    "ms": 350
+   },
+   {
+    "text": "send 5 usdc to ana.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 321
+   },
+   {
+    "text": "pay bob.testnet 2 near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 292
+   },
+   {
+    "text": "send $0.02 USDT to ana.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.99,
+    "ms": 542
+   },
+   {
+    "text": "transfer 10 near to raj.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 306
+   },
+   {
+    "text": "pay priya 20 usdc for dinner",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.83,
+    "ms": 271
+   },
+   {
+    "text": "bhai 3 near bhej de ana.testnet ko",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.92,
+    "ms": 367
+   },
+   {
+    "text": "send 0.5 near to bob.testnet",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 275
+   },
+   {
+    "text": "pay 15 usdc to cafe.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 430
+   },
+   {
+    "text": "can you send 1 near to mom.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 346
+   },
+   {
+    "text": "sending 4 usdc to ana.testnet now",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.99,
+    "ms": 404
+   },
+   {
+    "text": "pay rahul.near 50 usdt",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 403
+   },
+   {
+    "text": "give bob.near 2 usdc",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 321
+   },
+   {
+    "text": "send $0.02 USDT to TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 307
+   },
+   {
+    "text": "send 10 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.98,
+    "ms": 314
+   },
+   {
+    "text": "bridge 5 usdc to base",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.97,
+    "ms": 351
+   },
+   {
+    "text": "send 0.001 btc to bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 320
+   },
+   {
+    "text": "send 2 usdc to my solana wallet 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.99,
+    "ms": 338
+   },
+   {
+    "text": "pay 20 usdt on tron to TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.99,
+    "ms": 389
+   },
+   {
+    "text": "move 50 usdc from near to arbitrum",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.96,
+    "ms": 348
+   },
+   {
+    "text": "send 5 bucks of usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.99,
+    "ms": 305
+   },
+   {
+    "text": "transfer 0.1 eth to vitalik.eth",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.92,
+    "ms": 478
+   },
+   {
+    "text": "bhej 10 usdt tron pe TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.99,
+    "ms": 259
+   },
+   {
+    "text": "send 3 usdc to base address 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.99,
+    "ms": 355
+   },
+   {
+    "text": "swap and send 1 sol to 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.97,
+    "ms": 352
+   },
+   {
+    "text": "how do mortgages work",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 315
+   },
+   {
+    "text": "difference between stocks and bonds",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 319
+   },
+   {
+    "text": "wait what's a CAGR",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 415
+   },
+   {
+    "text": "why is the sky blue?",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 310
+   },
+   {
+    "text": "steps to file gst",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.99,
+    "ms": 302
+   },
+   {
+    "text": "compare iphone vs pixel cameras",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 438
+   },
+   {
+    "text": "eli5 blockchain",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 454
+   },
+   {
+    "text": "ye EMI kya hota hai",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 272
+   },
+   {
+    "text": "explain compued interest",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.98,
+    "ms": 320
+   },
+   {
+    "text": "explian photosynthesis",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.98,
+    "ms": 370
+   },
+   {
+    "text": "wat is inflation",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 328
+   },
+   {
+    "text": "sip kya hai aur kaise kaam karta hai",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 348
+   },
+   {
+    "text": "bar chart rent 1200 food 400 fun 200",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 311
+   },
+   {
+    "text": "graph y = x^2",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.99,
+    "ms": 345
+   },
+   {
+    "text": "pie chart of my week work 40 sleep 56 gym 5",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.66,
+    "ms": 392
+   },
+   {
+    "text": "plot sales 3 5 9 4 over the months",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 264
+   },
+   {
+    "text": "make a line graph of my weight 80 79 78 77",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 288
+   },
+   {
+    "text": "chart my spending this month food 300 travel 120",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.93,
+    "ms": 271
+   },
+   {
+    "text": "draw a graph of sin x",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 329
+   },
+   {
+    "text": "can u plot y=2x+1",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 274
+   },
+   {
+    "text": "bar graph of votes ana 12 bob 9 raj 4",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.9,
+    "ms": 302
+   },
+   {
+    "text": "pie chart ka banao: rent 50 food 30 baaki 20",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 370
+   },
+   {
+    "text": "show a chart of q1 120 q2 150 q3 90",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 287
+   },
+   {
+    "text": "graph the function log x",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 332
+   },
+   {
+    "text": "make this sound more polite",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 289
+   },
+   {
+    "text": "rewrite this more professional pls",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.99,
+    "ms": 302
+   },
+   {
+    "text": "fix my grammar in this",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.99,
+    "ms": 312
+   },
+   {
+    "text": "can you make this shorter",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.98,
+    "ms": 416
+   },
+   {
+    "text": "reword this so it's not so rude",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 308
+   },
+   {
+    "text": "make it sound friendlier",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 350
+   },
+   {
+    "text": "isko thoda formal bana do",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 325
+   },
+   {
+    "text": "tone this down a bit",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 357
+   },
+   {
+    "text": "rephrase this for my boss",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.98,
+    "ms": 466
+   },
+   {
+    "text": "make this msg less blunt",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 511
+   },
+   {
+    "text": "fix spelling in this text",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.98,
+    "ms": 394
+   },
+   {
+    "text": "make this more firm but nice",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.99,
+    "ms": 332
+   },
+   {
+    "text": "translate thank you so much to spanish",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 324
+   },
+   {
+    "text": "how do you say good morning in japanese",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 298
+   },
+   {
+    "text": "what is i love you in french",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 361
+   },
+   {
+    "text": "translate this to hindi: see you tomorrow",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.99,
+    "ms": 324
+   },
+   {
+    "text": "say happy birthday in german",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 485
+   },
+   {
+    "text": "spanish for where is the station",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.99,
+    "ms": 424
+   },
+   {
+    "text": "isko english mein translate karo: kal milte hain",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.99,
+    "ms": 422
+   },
+   {
+    "text": "translate 'congrats on the baby' to tamil",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 334
+   },
+   {
+    "text": "how to say sorry in korean",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 477
+   },
+   {
+    "text": "what's cheers in italian",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 266
+   },
+   {
+    "text": "translate to arabic: welcome home",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 408
+   },
+   {
+    "text": "portuguese for good night",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.88,
+    "ms": 334
+   },
+   {
+    "text": "what's 15% tip on 840",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 302
+   },
+   {
+    "text": "convert 100 usd to inr",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 360
+   },
+   {
+    "text": "split 1200 between 4 people",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.99,
+    "ms": 381
+   },
+   {
+    "text": "how many km is 26 miles",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 288
+   },
+   {
+    "text": "what time is 3pm est in ist",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 377
+   },
+   {
+    "text": "250 x 12 =",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.98,
+    "ms": 279
+   },
+   {
+    "text": "how much is 5 feet 9 in cm",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 298
+   },
+   {
+    "text": "70 f to c",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 413
+   },
+   {
+    "text": "18% gst on 4500 kitna hua",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 447
+   },
+   {
+    "text": "convert 2 cups to ml",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 289
+   },
+   {
+    "text": "what's 1240 divided by 8",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 326
+   },
+   {
+    "text": "how many grams in 3 ounces",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 331
+   },
+   {
+    "text": "what's your address",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 265
+   },
+   {
+    "text": "send me your email",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 332
+   },
+   {
+    "text": "whats ur upi id",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 312
+   },
+   {
+    "text": "can you share your phone number",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 323
+   },
+   {
+    "text": "my address is",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 340
+   },
+   {
+    "text": "drop your delivery address here",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.96,
+    "ms": 320
+   },
+   {
+    "text": "what's your bank account number for the transfer",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 340
+   },
+   {
+    "text": "apna address bhejo",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.96,
+    "ms": 282
+   },
+   {
+    "text": "need your email for the invite",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 367
+   },
+   {
+    "text": "my email is",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.98,
+    "ms": 370
+   },
+   {
+    "text": "here's my number",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.92,
+    "ms": 369
+   },
+   {
+    "text": "share your home address for the parcel",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.98,
+    "ms": 267
+   },
+   {
+    "text": "why are you late",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 476
+   },
+   {
+    "text": "how are you",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 508
+   },
+   {
+    "text": "what time",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.92,
+    "ms": 315
+   },
+   {
+    "text": "where are you rn",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 412
+   },
+   {
+    "text": "how was your day?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 423
+   },
+   {
+    "text": "why didn't you call me back",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.98,
+    "ms": 399
+   },
+   {
+    "text": "what are you doing tonight",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.99,
+    "ms": 293
+   },
+   {
+    "text": "kya kar rahe ho",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 493
+   },
+   {
+    "text": "kab aa rahe ho?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.99,
+    "ms": 297
+   },
+   {
+    "text": "lol that's hilarious",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 316
+   },
+   {
+    "text": "ok see you",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.85,
+    "ms": 273
+   },
+   {
+    "text": "why is the bus so late today ugh",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.98,
+    "ms": 306
+   },
+   {
+    "text": "what's up",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 353
+   },
+   {
+    "text": "wat r u upto",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 300
+   },
+   {
+    "text": "how's the new job going?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 574
+   },
+   {
+    "text": "did you eat?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 331
+   },
+   {
+    "text": "haha same",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 328
+   },
+   {
+    "text": "miss you",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 363
+   },
+   {
+    "text": "why would you say that",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.83,
+    "ms": 295
+   },
+   {
+    "text": "how long till you get here",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 263
+   },
+   {
+    "text": "tum kahan ho abhi",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 315
+   },
+   {
+    "text": "omg no way",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 330
+   },
+   {
+    "text": "good night",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 384
+   },
+   {
+    "text": "is mom home yet?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 335
+   },
+   {
+    "text": "how was the movie",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.99,
+    "ms": 400
+   },
+   {
+    "text": "thanks so much",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 303
+   },
+   {
+    "text": "bro chill",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 313
+   },
+   {
+    "text": "i'm so tired today",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 325
+   },
+   {
+    "text": "sounds good",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.8,
+    "ms": 306
+   },
+   {
+    "text": "what did the doctor say",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.91,
+    "ms": 268
+   }
+  ]
+ },
+ "near-jev": {
+  "need": {
+   "calendar_event": 0,
+   "reminder": 0,
+   "note": 0,
+   "pay": 0,
+   "xchain_pay": 0,
+   "understand": 0,
+   "chart": 0,
+   "rewrite": 0,
+   "translate": 0,
+   "calc_convert": 0,
+   "saved_detail_request": 0,
+   "none": 0
+  },
+  "rows": [
+   {
+    "text": "lets meet tomorrow at 3pm",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 1102
+   },
+   {
+    "text": "dinner with priya friday 8?",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 365
+   },
+   {
+    "text": "can we do the call monday morning",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 370
+   },
+   {
+    "text": "dentist appt on the 12th at 10",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.99,
+    "ms": 409
+   },
+   {
+    "text": "standup moved to 9:30 tmrw",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 353
+   },
+   {
+    "text": "kal 5 baje milte hain cafe pe",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 473
+   },
+   {
+    "text": "meeting w ana thursday 2pm works",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 330
+   },
+   {
+    "text": "book the team lunch for next wed noon",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.98,
+    "ms": 385
+   },
+   {
+    "text": "see you saturday at 7 for the movie",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 455
+   },
+   {
+    "text": "interveiw at google on tuesday 11am",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.98,
+    "ms": 356
+   },
+   {
+    "text": "parents ke saath sunday lunch 1 baje",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 1149
+   },
+   {
+    "text": "zoom sync at 4 today?",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 1,
+    "ms": 352
+   },
+   {
+    "text": "remind me to call mom tonight",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 391
+   },
+   {
+    "text": "need to pay the electricity bill tomorrow",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.99,
+    "ms": 528
+   },
+   {
+    "text": "dont forget to buy milk",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 1,
+    "ms": 384
+   },
+   {
+    "text": "i have to send the invoice to raj by friday",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.99,
+    "ms": 378
+   },
+   {
+    "text": "pick up the dry cleaning after work",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 1,
+    "ms": 347
+   },
+   {
+    "text": "will get back to you on this tomorrow",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.98,
+    "ms": 358
+   },
+   {
+    "text": "kal yaad dilana rent bhejna hai",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.98,
+    "ms": 344
+   },
+   {
+    "text": "gotta renew my passport this month",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.98,
+    "ms": 336
+   },
+   {
+    "text": "follow up with the landlord about the leak",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.99,
+    "ms": 434
+   },
+   {
+    "text": "must check the oven before leaving",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 1,
+    "ms": 386
+   },
+   {
+    "text": "need to order the cake for sat",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.93,
+    "ms": 408
+   },
+   {
+    "text": "call the bank abt my card",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.97,
+    "ms": 368
+   },
+   {
+    "text": "the wifi password is sunflower22",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.96,
+    "ms": 400
+   },
+   {
+    "text": "gate code is 4471",
+    "want": "note",
+    "got": "note",
+    "confidence": 1,
+    "ms": 464
+   },
+   {
+    "text": "my locker number is B12",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.97,
+    "ms": 428
+   },
+   {
+    "text": "parking spot is level 3 row G",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.99,
+    "ms": 395
+   },
+   {
+    "text": "the plumber charged 2400",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.99,
+    "ms": 421
+   },
+   {
+    "text": "flight PNR is X7Q2LM",
+    "want": "note",
+    "got": "note",
+    "confidence": 1,
+    "ms": 483
+   },
+   {
+    "text": "his shoe size is 10",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.92,
+    "ms": 350
+   },
+   {
+    "text": "booking ref 88213 for the hotel",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.88,
+    "ms": 784
+   },
+   {
+    "text": "office address is 21 mg road 3rd floor",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.71,
+    "ms": 428
+   },
+   {
+    "text": "the tv model is lg c3 65 inch",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.99,
+    "ms": 367
+   },
+   {
+    "text": "ana's new number is 98200 12345",
+    "want": "note",
+    "got": "saved_detail_request",
+    "confidence": 0.85,
+    "ms": 373
+   },
+   {
+    "text": "rent is 32k due on 5th",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.81,
+    "ms": 366
+   },
+   {
+    "text": "send 5 usdc to ana.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 345
+   },
+   {
+    "text": "pay bob.testnet 2 near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 361
+   },
+   {
+    "text": "send $0.02 USDT to ana.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 339
+   },
+   {
+    "text": "transfer 10 near to raj.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 349
+   },
+   {
+    "text": "pay priya 20 usdc for dinner",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.86,
+    "ms": 462
+   },
+   {
+    "text": "bhai 3 near bhej de ana.testnet ko",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.97,
+    "ms": 661
+   },
+   {
+    "text": "send 0.5 near to bob.testnet",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 736
+   },
+   {
+    "text": "pay 15 usdc to cafe.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 402
+   },
+   {
+    "text": "can you send 1 near to mom.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 541
+   },
+   {
+    "text": "sending 4 usdc to ana.testnet now",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 371
+   },
+   {
+    "text": "pay rahul.near 50 usdt",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 436
+   },
+   {
+    "text": "give bob.near 2 usdc",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 345
+   },
+   {
+    "text": "send $0.02 USDT to TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.96,
+    "ms": 359
+   },
+   {
+    "text": "send 10 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 364
+   },
+   {
+    "text": "bridge 5 usdc to base",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 391
+   },
+   {
+    "text": "send 0.001 btc to bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 409
+   },
+   {
+    "text": "send 2 usdc to my solana wallet 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 682
+   },
+   {
+    "text": "pay 20 usdt on tron to TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.98,
+    "ms": 388
+   },
+   {
+    "text": "move 50 usdc from near to arbitrum",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 408
+   },
+   {
+    "text": "send 5 bucks of usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 348
+   },
+   {
+    "text": "transfer 0.1 eth to vitalik.eth",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.89,
+    "ms": 358
+   },
+   {
+    "text": "bhej 10 usdt tron pe TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 449
+   },
+   {
+    "text": "send 3 usdc to base address 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 345
+   },
+   {
+    "text": "swap and send 1 sol to 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.99,
+    "ms": 393
+   },
+   {
+    "text": "how do mortgages work",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 411
+   },
+   {
+    "text": "difference between stocks and bonds",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 348
+   },
+   {
+    "text": "wait what's a CAGR",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 393
+   },
+   {
+    "text": "why is the sky blue?",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 346
+   },
+   {
+    "text": "steps to file gst",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 423
+   },
+   {
+    "text": "compare iphone vs pixel cameras",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 385
+   },
+   {
+    "text": "eli5 blockchain",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 678
+   },
+   {
+    "text": "ye EMI kya hota hai",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 353
+   },
+   {
+    "text": "explain compued interest",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 365
+   },
+   {
+    "text": "explian photosynthesis",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 512
+   },
+   {
+    "text": "wat is inflation",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 479
+   },
+   {
+    "text": "sip kya hai aur kaise kaam karta hai",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 1,
+    "ms": 353
+   },
+   {
+    "text": "bar chart rent 1200 food 400 fun 200",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.98,
+    "ms": 381
+   },
+   {
+    "text": "graph y = x^2",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 415
+   },
+   {
+    "text": "pie chart of my week work 40 sleep 56 gym 5",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.91,
+    "ms": 511
+   },
+   {
+    "text": "plot sales 3 5 9 4 over the months",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 394
+   },
+   {
+    "text": "make a line graph of my weight 80 79 78 77",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 410
+   },
+   {
+    "text": "chart my spending this month food 300 travel 120",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.9,
+    "ms": 371
+   },
+   {
+    "text": "draw a graph of sin x",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 369
+   },
+   {
+    "text": "can u plot y=2x+1",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 348
+   },
+   {
+    "text": "bar graph of votes ana 12 bob 9 raj 4",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 393
+   },
+   {
+    "text": "pie chart ka banao: rent 50 food 30 baaki 20",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 357
+   },
+   {
+    "text": "show a chart of q1 120 q2 150 q3 90",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 348
+   },
+   {
+    "text": "graph the function log x",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 1,
+    "ms": 379
+   },
+   {
+    "text": "make this sound more polite",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 341
+   },
+   {
+    "text": "rewrite this more professional pls",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 469
+   },
+   {
+    "text": "fix my grammar in this",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 347
+   },
+   {
+    "text": "can you make this shorter",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.99,
+    "ms": 356
+   },
+   {
+    "text": "reword this so it's not so rude",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 450
+   },
+   {
+    "text": "make it sound friendlier",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 331
+   },
+   {
+    "text": "isko thoda formal bana do",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 339
+   },
+   {
+    "text": "tone this down a bit",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.92,
+    "ms": 419
+   },
+   {
+    "text": "rephrase this for my boss",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 391
+   },
+   {
+    "text": "make this msg less blunt",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 360
+   },
+   {
+    "text": "fix spelling in this text",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.99,
+    "ms": 371
+   },
+   {
+    "text": "make this more firm but nice",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 789
+   },
+   {
+    "text": "translate thank you so much to spanish",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 1162
+   },
+   {
+    "text": "how do you say good morning in japanese",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 690
+   },
+   {
+    "text": "what is i love you in french",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 331
+   },
+   {
+    "text": "translate this to hindi: see you tomorrow",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 496
+   },
+   {
+    "text": "say happy birthday in german",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 349
+   },
+   {
+    "text": "spanish for where is the station",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.99,
+    "ms": 547
+   },
+   {
+    "text": "isko english mein translate karo: kal milte hain",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.99,
+    "ms": 353
+   },
+   {
+    "text": "translate 'congrats on the baby' to tamil",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 368
+   },
+   {
+    "text": "how to say sorry in korean",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 329
+   },
+   {
+    "text": "what's cheers in italian",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 437
+   },
+   {
+    "text": "translate to arabic: welcome home",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 407
+   },
+   {
+    "text": "portuguese for good night",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.89,
+    "ms": 344
+   },
+   {
+    "text": "what's 15% tip on 840",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 332
+   },
+   {
+    "text": "convert 100 usd to inr",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 394
+   },
+   {
+    "text": "split 1200 between 4 people",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 493
+   },
+   {
+    "text": "how many km is 26 miles",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 380
+   },
+   {
+    "text": "what time is 3pm est in ist",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 357
+   },
+   {
+    "text": "250 x 12 =",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.99,
+    "ms": 377
+   },
+   {
+    "text": "how much is 5 feet 9 in cm",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 368
+   },
+   {
+    "text": "70 f to c",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 492
+   },
+   {
+    "text": "18% gst on 4500 kitna hua",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 424
+   },
+   {
+    "text": "convert 2 cups to ml",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 373
+   },
+   {
+    "text": "what's 1240 divided by 8",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 435
+   },
+   {
+    "text": "how many grams in 3 ounces",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 412
+   },
+   {
+    "text": "what's your address",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 413
+   },
+   {
+    "text": "send me your email",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 525
+   },
+   {
+    "text": "whats ur upi id",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 364
+   },
+   {
+    "text": "can you share your phone number",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 508
+   },
+   {
+    "text": "my address is",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.97,
+    "ms": 371
+   },
+   {
+    "text": "drop your delivery address here",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.98,
+    "ms": 423
+   },
+   {
+    "text": "what's your bank account number for the transfer",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 372
+   },
+   {
+    "text": "apna address bhejo",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 352
+   },
+   {
+    "text": "need your email for the invite",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.99,
+    "ms": 386
+   },
+   {
+    "text": "my email is",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 339
+   },
+   {
+    "text": "here's my number",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 394
+   },
+   {
+    "text": "share your home address for the parcel",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 1,
+    "ms": 344
+   },
+   {
+    "text": "why are you late",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 431
+   },
+   {
+    "text": "how are you",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 460
+   },
+   {
+    "text": "what time",
+    "want": "none",
+    "got": "calendar_event",
+    "confidence": 0.47,
+    "ms": 443
+   },
+   {
+    "text": "where are you rn",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 346
+   },
+   {
+    "text": "how was your day?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 357
+   },
+   {
+    "text": "why didn't you call me back",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.99,
+    "ms": 346
+   },
+   {
+    "text": "what are you doing tonight",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 336
+   },
+   {
+    "text": "kya kar rahe ho",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 389
+   },
+   {
+    "text": "kab aa rahe ho?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.98,
+    "ms": 408
+   },
+   {
+    "text": "lol that's hilarious",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 346
+   },
+   {
+    "text": "ok see you",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.57,
+    "ms": 392
+   },
+   {
+    "text": "why is the bus so late today ugh",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.98,
+    "ms": 364
+   },
+   {
+    "text": "what's up",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 344
+   },
+   {
+    "text": "wat r u upto",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 349
+   },
+   {
+    "text": "how's the new job going?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 352
+   },
+   {
+    "text": "did you eat?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 405
+   },
+   {
+    "text": "haha same",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 378
+   },
+   {
+    "text": "miss you",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 383
+   },
+   {
+    "text": "why would you say that",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.83,
+    "ms": 390
+   },
+   {
+    "text": "how long till you get here",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 409
+   },
+   {
+    "text": "tum kahan ho abhi",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 419
+   },
+   {
+    "text": "omg no way",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 408
+   },
+   {
+    "text": "good night",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 419
+   },
+   {
+    "text": "is mom home yet?",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 398
+   },
+   {
+    "text": "how was the movie",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 499
+   },
+   {
+    "text": "thanks so much",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 360
+   },
+   {
+    "text": "bro chill",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 378
+   },
+   {
+    "text": "i'm so tired today",
+    "want": "none",
+    "got": "none",
+    "confidence": 1,
+    "ms": 333
+   },
+   {
+    "text": "sounds good",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.79,
+    "ms": 371
+   },
+   {
+    "text": "what did the doctor say",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.92,
+    "ms": 365
+   }
+  ]
+ },
+ "qwen": {
+  "need": {
+   "calendar_event": 0,
+   "reminder": 0,
+   "note": 0,
+   "pay": 0,
+   "xchain_pay": 0,
+   "understand": 0,
+   "chart": 0,
+   "rewrite": 0,
+   "translate": 0,
+   "calc_convert": 0,
+   "saved_detail_request": 0,
+   "none": 0
+  },
+  "rows": [
+   {
+    "text": "lets meet tomorrow at 3pm",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 1132
+   },
+   {
+    "text": "dinner with priya friday 8?",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 542
+   },
+   {
+    "text": "can we do the call monday morning",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 494
+   },
+   {
+    "text": "dentist appt on the 12th at 10",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 518
+   },
+   {
+    "text": "standup moved to 9:30 tmrw",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 525
+   },
+   {
+    "text": "kal 5 baje milte hain cafe pe",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 486
+   },
+   {
+    "text": "meeting w ana thursday 2pm works",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 555
+   },
+   {
+    "text": "book the team lunch for next wed noon",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 489
+   },
+   {
+    "text": "see you saturday at 7 for the movie",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 555
+   },
+   {
+    "text": "interveiw at google on tuesday 11am",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 476
+   },
+   {
+    "text": "parents ke saath sunday lunch 1 baje",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 591
+   },
+   {
+    "text": "zoom sync at 4 today?",
+    "want": "calendar_event",
+    "got": "calendar_event",
+    "confidence": 0.95,
+    "ms": 482
+   },
+   {
+    "text": "remind me to call mom tonight",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 557
+   },
+   {
+    "text": "need to pay the electricity bill tomorrow",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 574
+   },
+   {
+    "text": "dont forget to buy milk",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 469
+   },
+   {
+    "text": "i have to send the invoice to raj by friday",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 477
+   },
+   {
+    "text": "pick up the dry cleaning after work",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 677
+   },
+   {
+    "text": "will get back to you on this tomorrow",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.9,
+    "ms": 489
+   },
+   {
+    "text": "kal yaad dilana rent bhejna hai",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 498
+   },
+   {
+    "text": "gotta renew my passport this month",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 553
+   },
+   {
+    "text": "follow up with the landlord about the leak",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 488
+   },
+   {
+    "text": "must check the oven before leaving",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 468
+   },
+   {
+    "text": "need to order the cake for sat",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.9,
+    "ms": 572
+   },
+   {
+    "text": "call the bank abt my card",
+    "want": "reminder",
+    "got": "reminder",
+    "confidence": 0.95,
+    "ms": 522
+   },
+   {
+    "text": "the wifi password is sunflower22",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 660
+   },
+   {
+    "text": "gate code is 4471",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 753
+   },
+   {
+    "text": "my locker number is B12",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 631
+   },
+   {
+    "text": "parking spot is level 3 row G",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 545
+   },
+   {
+    "text": "the plumber charged 2400",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 482
+   },
+   {
+    "text": "flight PNR is X7Q2LM",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 473
+   },
+   {
+    "text": "his shoe size is 10",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 567
+   },
+   {
+    "text": "booking ref 88213 for the hotel",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 579
+   },
+   {
+    "text": "office address is 21 mg road 3rd floor",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 746
+   },
+   {
+    "text": "the tv model is lg c3 65 inch",
+    "want": "note",
+    "got": "note",
+    "confidence": 0.95,
+    "ms": 903
+   },
+   {
+    "text": "ana's new number is 98200 12345",
+    "want": "note",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 531
+   },
+   {
+    "text": "rent is 32k due on 5th",
+    "want": "note",
+    "got": "reminder",
+    "confidence": 0.9,
+    "ms": 531
+   },
+   {
+    "text": "send 5 usdc to ana.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 498
+   },
+   {
+    "text": "pay bob.testnet 2 near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 494
+   },
+   {
+    "text": "send $0.02 USDT to ana.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 492
+   },
+   {
+    "text": "transfer 10 near to raj.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 476
+   },
+   {
+    "text": "pay priya 20 usdc for dinner",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 575
+   },
+   {
+    "text": "bhai 3 near bhej de ana.testnet ko",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 590
+   },
+   {
+    "text": "send 0.5 near to bob.testnet",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 582
+   },
+   {
+    "text": "pay 15 usdc to cafe.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 1,
+    "ms": 474
+   },
+   {
+    "text": "can you send 1 near to mom.near",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 507
+   },
+   {
+    "text": "sending 4 usdc to ana.testnet now",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 592
+   },
+   {
+    "text": "pay rahul.near 50 usdt",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 558
+   },
+   {
+    "text": "give bob.near 2 usdc",
+    "want": "pay",
+    "got": "pay",
+    "confidence": 0.95,
+    "ms": 593
+   },
+   {
+    "text": "send $0.02 USDT to TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 562
+   },
+   {
+    "text": "send 10 usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 601
+   },
+   {
+    "text": "bridge 5 usdc to base",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 480
+   },
+   {
+    "text": "send 0.001 btc to bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 747
+   },
+   {
+    "text": "send 2 usdc to my solana wallet 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 636
+   },
+   {
+    "text": "pay 20 usdt on tron to TQn9Y2khEsLJW1ChVWFMSMeRDow5KcbLSE",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 1,
+    "ms": 477
+   },
+   {
+    "text": "move 50 usdc from near to arbitrum",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 685
+   },
+   {
+    "text": "send 5 bucks of usdc to 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 519
+   },
+   {
+    "text": "transfer 0.1 eth to vitalik.eth",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 488
+   },
+   {
+    "text": "bhej 10 usdt tron pe TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 546
+   },
+   {
+    "text": "send 3 usdc to base address 0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 580
+   },
+   {
+    "text": "swap and send 1 sol to 7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    "want": "xchain_pay",
+    "got": "xchain_pay",
+    "confidence": 0.95,
+    "ms": 623
+   },
+   {
+    "text": "how do mortgages work",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 476
+   },
+   {
+    "text": "difference between stocks and bonds",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 470
+   },
+   {
+    "text": "wait what's a CAGR",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 563
+   },
+   {
+    "text": "why is the sky blue?",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 509
+   },
+   {
+    "text": "steps to file gst",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 566
+   },
+   {
+    "text": "compare iphone vs pixel cameras",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 493
+   },
+   {
+    "text": "eli5 blockchain",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 474
+   },
+   {
+    "text": "ye EMI kya hota hai",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 511
+   },
+   {
+    "text": "explain compued interest",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 478
+   },
+   {
+    "text": "explian photosynthesis",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 532
+   },
+   {
+    "text": "wat is inflation",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 473
+   },
+   {
+    "text": "sip kya hai aur kaise kaam karta hai",
+    "want": "understand",
+    "got": "understand",
+    "confidence": 0.95,
+    "ms": 491
+   },
+   {
+    "text": "bar chart rent 1200 food 400 fun 200",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 1015
+   },
+   {
+    "text": "graph y = x^2",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 1094
+   },
+   {
+    "text": "pie chart of my week work 40 sleep 56 gym 5",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 933
+   },
+   {
+    "text": "plot sales 3 5 9 4 over the months",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 479
+   },
+   {
+    "text": "make a line graph of my weight 80 79 78 77",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 598
+   },
+   {
+    "text": "chart my spending this month food 300 travel 120",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 650
+   },
+   {
+    "text": "draw a graph of sin x",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 500
+   },
+   {
+    "text": "can u plot y=2x+1",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 486
+   },
+   {
+    "text": "bar graph of votes ana 12 bob 9 raj 4",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 494
+   },
+   {
+    "text": "pie chart ka banao: rent 50 food 30 baaki 20",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 507
+   },
+   {
+    "text": "show a chart of q1 120 q2 150 q3 90",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 477
+   },
+   {
+    "text": "graph the function log x",
+    "want": "chart",
+    "got": "chart",
+    "confidence": 0.95,
+    "ms": 475
+   },
+   {
+    "text": "make this sound more polite",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 599
+   },
+   {
+    "text": "rewrite this more professional pls",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 603
+   },
+   {
+    "text": "fix my grammar in this",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 474
+   },
+   {
+    "text": "can you make this shorter",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 565
+   },
+   {
+    "text": "reword this so it's not so rude",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 577
+   },
+   {
+    "text": "make it sound friendlier",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 515
+   },
+   {
+    "text": "isko thoda formal bana do",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 472
+   },
+   {
+    "text": "tone this down a bit",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 495
+   },
+   {
+    "text": "rephrase this for my boss",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 525
+   },
+   {
+    "text": "make this msg less blunt",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 1,
+    "ms": 557
+   },
+   {
+    "text": "fix spelling in this text",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 472
+   },
+   {
+    "text": "make this more firm but nice",
+    "want": "rewrite",
+    "got": "rewrite",
+    "confidence": 0.95,
+    "ms": 475
+   },
+   {
+    "text": "translate thank you so much to spanish",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 532
+   },
+   {
+    "text": "how do you say good morning in japanese",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 479
+   },
+   {
+    "text": "what is i love you in french",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 585
+   },
+   {
+    "text": "translate this to hindi: see you tomorrow",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 476
+   },
+   {
+    "text": "say happy birthday in german",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 558
+   },
+   {
+    "text": "spanish for where is the station",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 489
+   },
+   {
+    "text": "isko english mein translate karo: kal milte hain",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 563
+   },
+   {
+    "text": "translate 'congrats on the baby' to tamil",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 592
+   },
+   {
+    "text": "how to say sorry in korean",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 521
+   },
+   {
+    "text": "what's cheers in italian",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 660
+   },
+   {
+    "text": "translate to arabic: welcome home",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 1,
+    "ms": 491
+   },
+   {
+    "text": "portuguese for good night",
+    "want": "translate",
+    "got": "translate",
+    "confidence": 0.95,
+    "ms": 470
+   },
+   {
+    "text": "what's 15% tip on 840",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 517
+   },
+   {
+    "text": "convert 100 usd to inr",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 515
+   },
+   {
+    "text": "split 1200 between 4 people",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 513
+   },
+   {
+    "text": "how many km is 26 miles",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 477
+   },
+   {
+    "text": "what time is 3pm est in ist",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 488
+   },
+   {
+    "text": "250 x 12 =",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 1,
+    "ms": 501
+   },
+   {
+    "text": "how much is 5 feet 9 in cm",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 550
+   },
+   {
+    "text": "70 f to c",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 495
+   },
+   {
+    "text": "18% gst on 4500 kitna hua",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 612
+   },
+   {
+    "text": "convert 2 cups to ml",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 537
+   },
+   {
+    "text": "what's 1240 divided by 8",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 500
+   },
+   {
+    "text": "how many grams in 3 ounces",
+    "want": "calc_convert",
+    "got": "calc_convert",
+    "confidence": 0.95,
+    "ms": 490
+   },
+   {
+    "text": "what's your address",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 507
+   },
+   {
+    "text": "send me your email",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 471
+   },
+   {
+    "text": "whats ur upi id",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 578
+   },
+   {
+    "text": "can you share your phone number",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 560
+   },
+   {
+    "text": "my address is",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 515
+   },
+   {
+    "text": "drop your delivery address here",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 654
+   },
+   {
+    "text": "what's your bank account number for the transfer",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 491
+   },
+   {
+    "text": "apna address bhejo",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 501
+   },
+   {
+    "text": "need your email for the invite",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 481
+   },
+   {
+    "text": "my email is",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 587
+   },
+   {
+    "text": "here's my number",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 777
+   },
+   {
+    "text": "share your home address for the parcel",
+    "want": "saved_detail_request",
+    "got": "saved_detail_request",
+    "confidence": 0.95,
+    "ms": 681
+   },
+   {
+    "text": "why are you late",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 480
+   },
+   {
+    "text": "how are you",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 619
+   },
+   {
+    "text": "what time",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.9,
+    "ms": 487
+   },
+   {
+    "text": "where are you rn",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 678
+   },
+   {
+    "text": "how was your day?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 483
+   },
+   {
+    "text": "why didn't you call me back",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 484
+   },
+   {
+    "text": "what are you doing tonight",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 499
+   },
+   {
+    "text": "kya kar rahe ho",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 517
+   },
+   {
+    "text": "kab aa rahe ho?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 495
+   },
+   {
+    "text": "lol that's hilarious",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 516
+   },
+   {
+    "text": "ok see you",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 476
+   },
+   {
+    "text": "why is the bus so late today ugh",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 641
+   },
+   {
+    "text": "what's up",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 476
+   },
+   {
+    "text": "wat r u upto",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 499
+   },
+   {
+    "text": "how's the new job going?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 490
+   },
+   {
+    "text": "did you eat?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 545
+   },
+   {
+    "text": "haha same",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 499
+   },
+   {
+    "text": "miss you",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 571
+   },
+   {
+    "text": "why would you say that",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 547
+   },
+   {
+    "text": "how long till you get here",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 480
+   },
+   {
+    "text": "tum kahan ho abhi",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 481
+   },
+   {
+    "text": "omg no way",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 570
+   },
+   {
+    "text": "good night",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 476
+   },
+   {
+    "text": "is mom home yet?",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 582
+   },
+   {
+    "text": "how was the movie",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 481
+   },
+   {
+    "text": "thanks so much",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 578
+   },
+   {
+    "text": "bro chill",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 559
+   },
+   {
+    "text": "i'm so tired today",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 472
+   },
+   {
+    "text": "sounds good",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 484
+   },
+   {
+    "text": "what did the doctor say",
+    "want": "none",
+    "got": "none",
+    "confidence": 0.95,
+    "ms": 646
+   }
+  ]
+ }
+}

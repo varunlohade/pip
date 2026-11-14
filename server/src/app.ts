@@ -61,6 +61,8 @@ const ToneBody = z.object({ text: OptionalWriteText, context: OptionalWriteText 
 const ExplainText = CleanText(config.maxExplainChars);
 const ExplainBody = z.object({ text: ExplainText }).strict();
 const VisualBody = z.object({ topic: ExplainText }).strict();
+// Route: the sentence being typed and up to 3 earlier lines, all already passed the phone's secret filter. Never stored or logged.
+const RouteBody = z.object({ text: ExplainText, context: z.array(z.string().transform((v) => clean(v).slice(0, config.maxExplainChars))).max(3).optional() }).strict();
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
@@ -176,6 +178,7 @@ export function createApp(deps: Deps) {
   app.use('/v1/write/*', rateLimiter('write', byUser));
   app.use('/v1/write/rewrite', rateLimiter('rewrite', byUser));
   // One pattern covers /v1/explain and /v1/explain/visual, so both share the same buckets.
+  app.use('/v1/route', rateLimiter('route', byUser));
   app.use('/v1/explain/*', rateLimiter('explain', byUser), rateLimiter('explainDaily', byUser));
   app.use('/v1/*', rateLimiter('other', byUser));
   auth.privateRoutes(app);
@@ -355,6 +358,23 @@ export function createApp(deps: Deps) {
       return c.json({ error: 'explain is not available right now' }, 502);
     }
   };
+  // ---- route: one jev question picks what the bar offers. Under the label's confidence it is "none".
+  // Calendar, reminder and note labels carry the device chips, as /v1/suggest does. Only the label and timings are logged.
+  app.post('/v1/route', async (c) => {
+    const { text, context } = await body(c, RouteBody);
+    const t = performance.now();
+    try {
+      const r = await ai.route(text, context?.filter(Boolean));
+      const label = r.confidence >= (config.jev.routeMin[r.label] ?? config.jev.routeMin.default) ? r.label : 'none';
+      const device = ({ calendar_event: 'event', reminder: 'reminder', note: 'note' } as const)[label as 'calendar_event'];
+      const chips = device ? deviceChips(device, lastSentence(text)) : [];
+      log('route', { user_id: c.get('userId'), label, picked: r.label, confidence: r.confidence, via: r.via, ms: Math.round(performance.now() - t), paid_calls: 1 });
+      return c.json({ label, confidence: r.confidence, chips });
+    } catch (e) {
+      log('route', { user_id: c.get('userId'), ms: Math.round(performance.now() - t), ok: false, err: (e as Error).name });
+      return c.json({ label: 'none', confidence: 0, chips: [] });
+    }
+  });
   app.post('/v1/explain', async (c) => {
     const { text } = await body(c, ExplainBody);
     return explaining(c, 'explain', text.length, () => ai.explain(text));

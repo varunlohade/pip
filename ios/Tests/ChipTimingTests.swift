@@ -264,32 +264,34 @@ final class ChipTimingTests: XCTestCase {
         XCTAssertNil(item("copied"))
     }
 
-    // MARK: G9: the server is asked after a real pause, and again when the sentence grows
+    // MARK: G9: the router is asked after a real pause (0.45 s; 1.1 s mid-word), and again when the sentence grows
 
-    func testServerIsAskedAfter700msThenAgainWhenTheSentenceGrows() async {
-        set("can we sort out Ana's thing")
-        await advance(0.6)
-        XCTAssertEqual(api.suggested.count, 0, "600 ms: no call")
-        await advance(0.11)
-        await until("first ask") { api.suggested.count == 1 }
-        set("can we sort out Ana's thing on")
-        await advance(0.71)
-        XCTAssertEqual(api.suggested.count, 1, "one more word: no new ask")
+    func testRouterIsAskedAfterThePauseThenAgainWhenTheSentenceGrows() async {
+        set("can we sort out Ana's thing ")
+        await advance(0.4)
+        XCTAssertEqual(api.routed.count, 0, "400 ms: no call")
+        await advance(0.06)
+        await until("first ask") { api.routed.count == 1 }
+        set("can we sort out Ana's thing on ")
+        await advance(0.46)
+        XCTAssertEqual(api.routed.count, 1, "one more word: no new ask")
         set("can we sort out Ana's thing on friday")
-        await advance(0.71)
-        await until("second ask") { api.suggested.count == 2 }
-        XCTAssertEqual(api.suggested.last?.text, "can we sort out Ana's thing on friday", "the whole sentence goes")
+        await advance(1.0)
+        XCTAssertEqual(api.routed.count, 1, "mid-word: the router waits longer")
+        await advance(0.11)
+        await until("second ask") { api.routed.count == 2 }
+        XCTAssertEqual(api.routed.last?.text, "can we sort out Ana's thing on friday", "the whole sentence goes")
         model.textChanged()
-        await advance(0.71)
-        XCTAssertEqual(api.suggested.count, 2, "the same version never goes twice")
+        await advance(1.2)
+        XCTAssertEqual(api.routed.count, 2, "the same version never goes twice")
     }
 
     func testShortSentencesAreNotSent() async {
-        for text in ["Ana's thing?", "call Ana 5"] {
+        for text in ["Ana's thing?", "call Ana"] {
             set(text)
-            await advance(1)
+            await advance(1.2)
         }
-        XCTAssertEqual(api.suggested.count, 0)
+        XCTAssertEqual(api.routed.count, 0)
     }
 
     func testEverydayWhyQuestionIsNotExplained() async {

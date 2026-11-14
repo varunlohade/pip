@@ -62,7 +62,7 @@ final class LanguageModel: @unchecked Sendable {
     static func bundled(_ bundle: Bundle = .main) -> LanguageModel? {
         guard let url = bundle.url(forResource: "en-words", withExtension: "txt"),
               let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        return LanguageModel(text: text)
+        return LanguageModel(text: text + "\n" + CryptoWords.languageLines)
     }
 
     static func index(_ ch: Character) -> Int? {

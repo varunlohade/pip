@@ -229,7 +229,7 @@ final class KeyboardXchainTests: XCTestCase {
         await until("the chip") { model.payItem?.detail == "Review" }
         XCTAssertEqual(api.parsed, ["send 5 USDC to \(TestXchain.evm) on base"])
         XCTAssertEqual(model.payItem?.title, "Send 5 USDC to 0xd8da\u{2026}9da3")
-        XCTAssertFalse(api.calls.contains("suggest"))
+        XCTAssertFalse(api.calls.contains("route"))
     }
 
     func testServerReasonShowsWhenItCannotPay() async {

@@ -61,6 +61,7 @@ enum Explain {
         for pattern in [
             #"^(?:eli5|explain like i'?m (?:5|five))[:,]? (.+)$"#,
             #"^explain(?: to me)?[:,]? (.+?)(?: to me)?$"#,
+            #"^(?:draw|sketch)(?: me)?[:,]? (.+)$"#,
         ] {
             if let x = capture(pattern, s) {
                 return howOrWhy(x, question: question, needsDoes: false)
@@ -83,7 +84,30 @@ enum Explain {
         let lead = #"^(?:(?:hey|hi|yo|ok|okay|so|wait|lol|haha|hmm+|um+|uh+|bro|dude|pip|pls|plz|please|sorry|but|and|also|quick q|q)\b[,:\s]*)+"#
         s = s.replacingOccurrences(of: lead, with: "", options: .regularExpression)
         s = s.replacingOccurrences(of: #"^(?:(?:can|could|would) (?:you|u) (?:please |pls )?|do (?:you|u) know |i wonder |anyone know )"#, with: "", options: .regularExpression)
-        return s.trimmingCharacters(in: .whitespaces)
+        return fixAskWords(s.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Typos in the asking words only ("explian", "wat is", "how dose X wrok"). The topic stays as typed: the server reads it.
+    static func fixAskWords(_ s: String) -> String {
+        var words = s.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        guard let first = words.first else { return s }
+        if first != "explains", first.count >= 5, nearlyEqual(first, "explain") { words[0] = "explain" }
+        else if ["wat", "wht", "whta", "waht", "whar", "wut"].contains(first) { words[0] = "what" }
+        else if ["wats", "whts", "whatz", "wuts"].contains(first) { words[0] = "whats" }
+        else if ["hw", "hwo", "hiw"].contains(first) { words[0] = "how" }
+        else if ["drwa", "darw"].contains(first) { words[0] = "draw" }
+        if words.first == "how", words.count > 1, ["dose", "deos", "dos", "doe"].contains(words[1]) { words[1] = "does" }
+        if words.first == "how", let last = words.last, ["wokr", "wrok", "wrk", "werk"].contains(last) { words[words.count - 1] = "work" }
+        return words.joined(separator: " ")
+    }
+
+    /// One letter added, dropped or changed, or two next to each other swapped.
+    static func nearlyEqual(_ a: String, _ b: String) -> Bool {
+        if FixCheck.distance(a, b) <= 1 { return true }
+        let x = Array(a), y = Array(b)
+        guard x.count == y.count else { return false }
+        let diff = x.indices.filter { x[$0] != y[$0] }
+        return diff.count == 2 && diff[1] == diff[0] + 1 && x[diff[0]] == y[diff[1]] && x[diff[1]] == y[diff[0]]
     }
 
     /// "how does X work" asks about X; "explain why the sky is blue" asks the whole question. Bare "how X works" and any "why" only after "explain".

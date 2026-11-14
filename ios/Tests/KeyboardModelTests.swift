@@ -55,7 +55,7 @@ final class KeyboardModelTests: XCTestCase {
     /// Lets the debounce run out: waits for the suggest task to fall asleep, then moves the clock past it.
     private func passDebounce() async {
         await until("debounce sleep") { clock.sleeping > 0 }
-        clock.advance(SuggestPolicy.debounce.seconds)
+        clock.advance(ChipTiming.routePauseMidWord.seconds)
     }
 
     func testOneCharacterSendsNothing() async {
@@ -91,12 +91,12 @@ final class KeyboardModelTests: XCTestCase {
 
     func testADeviceReplyForOldTextIsDropped() async {
         let event = Chip(kind: "event", label: "Add to calendar", payload: ["title": .string("Ana's thing")], needs_confirm: false)
-        api.suggestReply = SuggestResponse(chips: [event], intent: "event", timings: nil)
+        api.routeReply = RouteResponse(label: "calendar_event", confidence: 0.9, chips: [event])
         host.text = "can we do Ana's thing Friday"
         model.textChanged()
-        api.duringSuggest = { [unowned self] in self.host.text += " or not" }
+        api.duringRoute = { [unowned self] in self.host.text += " or not" }
         await passDebounce()
-        await until("suggest") { api.calls == ["suggest"] }
+        await until("route") { api.calls == ["route"] }
         for _ in 0..<50 { await Task.yield() }
         XCTAssertFalse(model.smart.contains { $0.id == "smart.event" }, "the text moved on, so the chip is not shown")
     }

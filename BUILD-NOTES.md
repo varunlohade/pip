@@ -1,5 +1,15 @@
 # Pip build notes
 
+## 0.5 (6)
+
+What to Test:
+
+1. Explain and Draw it: type a question such as "explain compued interest" or "how do mortgages work". The bar shows the answer and a Draw it chip, even with typos. Tap Draw it to open the drawing straight away.
+2. Smarter bar: when you stop typing, Pip reads the sentence and picks the right chip: explain, calendar, reminder, note, chart or pay. Plain chat like "hey how are you" shows nothing.
+3. Private by default: if a line holds a password, a key, a seed phrase, a code or a card number, nothing goes to the server. The bar shows one quiet line: "Sensitive text detected. AI is off." Typing and sending work as normal.
+4. USDT and other token names, ALL-CAPS words, words with numbers and wallet addresses are never autocorrected or "fixed".
+5. Fix no longer shows a "Fixed" line. Press delete right after a Fix to undo it.
+
 ## 0.3 (4)
 
 What to Test:

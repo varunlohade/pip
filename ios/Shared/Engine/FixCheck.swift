@@ -74,7 +74,7 @@ enum FixCheck {
                 let out = word.first!.isUppercase || atStart ? fix.prefix(1).uppercased() + fix.dropFirst() : fix
                 typos.append((word, String(out)))
                 word = String(out)
-            } else if lower.count >= 3, !known.contains(lower), !chatWords.contains(lower),
+            } else if lower.count >= 3, !known.contains(lower), !chatWords.contains(lower), !CryptoWords.keep(word),
                       !word.dropFirst().contains(where: \.isUppercase), atStart || !word.first!.isUppercase {
                 checked += 1
                 if case .wrong(let guesses) = spell(word) {
@@ -138,7 +138,7 @@ enum FixCheck {
         }
         if let fix = slips[lower], lower.count > 1 { return (word, cased(fix)) }
         let known = Set(names.flatMap { $0.lowercased().split(separator: " ").map(String.init) })
-        guard lower.count >= 2, !known.contains(lower), !chatWords.contains(lower),
+        guard lower.count >= 2, !known.contains(lower), !chatWords.contains(lower), !CryptoWords.keep(word),
               !word.dropFirst().contains(where: \.isUppercase), atStart || !word.first!.isUppercase,
               case .wrong(let guesses) = spell(word) else { return nil }
         let most = lower.count >= 5 ? 2 : 1

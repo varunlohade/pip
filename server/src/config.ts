@@ -74,6 +74,11 @@ export const config = {
     model: env.TYPESAFE_MODEL ?? 'jev-latest',
     timeoutMs: 4000,
     minConfidence: 0.6,
+    // jev as listed on NEAR AI Cloud (same /systemone shape). Not attested: it does not run in a TEE.
+    nearModel: env.NEARAI_JEV_MODEL ?? 'typesafe/jev-1.13',
+    // /v1/route answers a label only at this confidence or more, else "none". From scripts/route-eval.ts (2026-11-14, 162 lines):
+    // every label reached 0.9 precision at any confidence; 0.6 drops the one low miss ("what time" -> calendar_event at 0.47).
+    routeMin: { default: 0.6 } as Record<string, number>,
   },
 
   llm: {
@@ -116,6 +121,8 @@ export const config = {
     // Explain and draw are paid calls a person asks for, so a few a minute and a cap per day.
     explain: { limit: 10, windowMs: 60_000 },
     explainDaily: { limit: 100, windowMs: 86_400_000 },
+    // One jev question per typing pause; the phone cancels on new typing.
+    route: { limit: 60, windowMs: 60_000 },
     shareUpload: { limit: 20, windowMs: 3_600_000 },
     // Opening a shared link needs no token, so it is limited per address.
     shareView: { limit: 120, windowMs: 60_000 },
