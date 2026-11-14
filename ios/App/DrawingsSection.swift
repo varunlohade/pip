@@ -3,6 +3,8 @@ import SwiftUI
 /// Home's "Your drawings": visual explanations exported from the keyboard, newest first. Plain current theme; restyle here.
 struct DrawingsSection: View {
     let drawings: [Drawing]
+    /// Decoded by Home off the main thread.
+    let images: [UUID: UIImage]
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Space.s) {
@@ -10,8 +12,9 @@ struct DrawingsSection: View {
             ScrollView(.horizontal) {
                 HStack(spacing: Theme.Space.s) {
                     ForEach(drawings) { d in
-                        if let url = SharedStore.drawingURL(d), let image = UIImage(contentsOfFile: url.path) {
-                            ShareLink(item: Image(uiImage: image), preview: SharePreview(d.title, image: Image(uiImage: image))) {
+                        // Shares the full-size file; the card shows the small picture.
+                        if let image = images[d.id], let url = SharedStore.drawingURL(d) {
+                            ShareLink(item: url, preview: SharePreview(d.title, image: Image(uiImage: image))) {
                                 VStack(alignment: .leading, spacing: Theme.Space.xxs) {
                                     Image(uiImage: image).resizable().scaledToFit()
                                         .frame(width: 180, height: 112)

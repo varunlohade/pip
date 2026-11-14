@@ -12,6 +12,8 @@ struct HomeView: View {
     @State private var caught: [Caught] = []
     @State private var added: Set<String> = []
     @State private var replay: Drawing?
+    /// Each drawing's picture, decoded and shrunk off the main thread. Home's body never reads a file.
+    @State private var images: [UUID: UIImage] = [:]
     @AppStorage(StoreKey.keyHaptics.rawValue, store: SharedStore.defaults) private var keyHaptics = true
 
     /// Shown until the owner has looked words up: what to type, and what Pip offers for it.
@@ -38,7 +40,7 @@ struct HomeView: View {
                         WalletSection().padding(.top, 22)
                         words.padding(.top, 24)
                         if !caught.isEmpty { fromChats.padding(.top, 26) }
-                        if drawings.count > 1 { DrawingsSection(drawings: Array(drawings.dropFirst())).padding(.top, Theme.Space.s) }
+                        if drawings.count > 1 { DrawingsSection(drawings: Array(drawings.dropFirst()), images: images).padding(.top, Theme.Space.s) }
                         setup.padding(.top, Theme.Metric.sectionGap)
                     }
                     .padding(.top, Theme.Space.xs)
@@ -62,6 +64,21 @@ struct HomeView: View {
         drawings = SharedStore.drawings
         learned = SharedStore.learned
         caught = SharedStore.caught.filter { !added.contains($0.id) }
+        let missing = drawings.filter { images[$0.id] == nil }.compactMap { d in SharedStore.drawingURL(d).map { (d.id, $0) } }
+        guard !missing.isEmpty else { return }
+        Task {
+            let loaded = await Task.detached(priority: .userInitiated) { Self.thumbnails(missing) }.value
+            images.merge(loaded) { $1 }
+        }
+    }
+
+    /// Big enough for the recent card (132 pt high) at 3x; a full-size PNG decoded on the main thread made Home stutter.
+    nonisolated static func thumbnails(_ files: [(UUID, URL)]) -> [UUID: UIImage] {
+        var out: [UUID: UIImage] = [:]
+        for (id, url) in files {
+            if let image = UIImage(contentsOfFile: url.path)?.preparingThumbnail(of: CGSize(width: 700, height: 420)) { out[id] = image }
+        }
+        return out
     }
 
     private var learnedToday: [Learned] { learned.filter { Calendar.current.isDateInToday($0.date) } }
@@ -79,13 +96,13 @@ struct HomeView: View {
         HStack(spacing: Theme.Space.xs) {
             Wordmark(size: 30)
             Spacer()
-            NavigationLink { ShortcutsView() } label: { IconCircle(systemImage: "bolt") }
+            NavigationLink { Deferred { ShortcutsView() } } label: { IconCircle(systemImage: "bolt") }
                 .accessibilityLabel("Shortcuts")
                 .accessibilityIdentifier("nav.shortcuts")
-            NavigationLink { NotesView() } label: { IconCircle(systemImage: "note.text") }
+            NavigationLink { Deferred { NotesView() } } label: { IconCircle(systemImage: "note.text") }
                 .accessibilityLabel("Notes")
                 .accessibilityIdentifier("nav.notes")
-            NavigationLink { AccountView() } label: { IconCircle(systemImage: "person") }
+            NavigationLink { Deferred { AccountView() } } label: { IconCircle(systemImage: "person") }
                 .accessibilityLabel("Account")
                 .accessibilityIdentifier("nav.account")
         }
@@ -96,7 +113,7 @@ struct HomeView: View {
     /// The last drawing, as a card with its title and Replay (B2: radius 22, ring shadow, ice Replay pill).
     private func recentDrawing(_ d: Drawing) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let url = SharedStore.drawingURL(d), let image = UIImage(contentsOfFile: url.path) {
+            if let image = images[d.id] {
                 Image(uiImage: image).resizable().scaledToFit()
                     .frame(maxWidth: .infinity, maxHeight: 132)
                     .padding(.horizontal, 18).padding(.top, 12)
@@ -303,4 +320,12 @@ struct FlowLayout: Layout {
         }
         return rows
     }
+}
+
+/// Builds its view only when shown. A NavigationLink builds its destination with the screen that holds it, so Home's
+/// every update read Notes and Shortcuts from disk; this waits for the tap.
+struct Deferred<Content: View>: View {
+    let make: () -> Content
+    init(@ViewBuilder _ make: @escaping () -> Content) { self.make = make }
+    var body: some View { make() }
 }
