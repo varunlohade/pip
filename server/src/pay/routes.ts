@@ -10,12 +10,15 @@ import { createNearChain, type Chain } from './chain.ts';
 import { payConfig, type PayConfig } from './config.ts';
 import { checkPayment, fromUnits, parsePayment, toUnits, type ParseResult } from './parse.ts';
 import { openPayStore, type Intent } from './store.ts';
+import type { PhoneDeps } from './phone/routes.ts';
 
 export type PayDeps = {
   chain?: Chain;
   config?: PayConfig;
   /** Reads a payment the fixed patterns missed (a model call). Its answer passes the same checks; it can only propose. */
   fallback?: (text: string) => Promise<{ amount: string; token: string; recipient: string } | null>;
+  /** The phone-signed flow (src/pay/phone): fake chains and mainnet settings for tests. */
+  phone?: PhoneDeps;
 };
 
 const ParseBody = z.object({ text: z.string().trim().min(1).max(500) }).strict();
@@ -30,7 +33,8 @@ export function payRoutes(app: Hono<Env>, base: { db: Db; cipher: Cipher; now: (
   const chain = deps.chain ?? createNearChain(cfg);
   const store = openPayStore(db, now);
   const notReady = (c: Context<Env>) =>
-    (!cfg.funderAccountId || !cfg.funderSecretKey ? c.json({ error: 'payments are not set up on this server' }, 503) : undefined);
+    (!cfg.legacyCustody ? c.json({ error: 'server-held wallets are off; the Pip app signs payments' }, 410)
+      : !cfg.funderAccountId || !cfg.funderSecretKey ? c.json({ error: 'payments are not set up on this server' }, 503) : undefined);
   const json = async <T extends z.ZodTypeAny>(c: Context<Env>, schema: T): Promise<z.infer<T>> => schema.parse(await c.req.json().catch(() => {
     throw new HttpError(400, 'body must be JSON');
   }));
@@ -297,7 +301,7 @@ export function payRoutes(app: Hono<Env>, base: { db: Db; cipher: Cipher; now: (
   app.get('/v1/pay/history', (c) => c.json({ payments: store.history(c.get('userId'), 50).map((i) => view(expireIfDue(i))) }));
 }
 
-function approverOk(c: Context<Env>, keyHash: string): boolean {
+export function approverOk(c: Context<Env>, keyHash: string): boolean {
   const got = c.req.header('x-pay-approver');
   if (!got || !/^pap_[A-Za-z0-9_-]{20,100}$/.test(got)) return false;
   return sameHash(sha256(got), keyHash);

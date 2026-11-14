@@ -97,7 +97,7 @@ function fakeChain(o: { broadcast?: 'ok' | 'failed' | Error; prepare?: Error; do
 
 function paySetup(o: Parameters<typeof fakeChain>[0] = {}, now?: () => number) {
   const fake = fakeChain(o);
-  const config = { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:funder' };
+  const config = { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:funder', legacyCustody: true };
   const s = setup({ pay: { chain: fake.chain, config }, now });
   const user = s.device();
   return { ...s, ...fake, user };
@@ -254,7 +254,7 @@ test('pay: a failure before broadcast is marked failed, nothing sent', async () 
 });
 
 test('pay: no funder configured answers 503; RPC down answers 502', async () => {
-  const s = setup({ pay: { chain: fakeChain().chain, config: { ...payConfig, funderAccountId: '', funderSecretKey: '' } } });
+  const s = setup({ pay: { chain: fakeChain().chain, config: { ...payConfig, funderAccountId: '', funderSecretKey: '', legacyCustody: true } } });
   const u = s.device();
   assert.equal((await s.call(u.token, 'GET', '/v1/pay/wallet')).status, 503);
   const d = paySetup({ down: true });
