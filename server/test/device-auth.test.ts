@@ -36,12 +36,12 @@ test('POST /v1/auth/device: a body without a UUID makes no user', async () => {
   assert.equal((s.db.raw.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n, 0);
 });
 
-test('POST /v1/auth/device: rate limited per client, 5 an hour', async () => {
+test('POST /v1/auth/device: rate limited per client, 30 an hour', async () => {
   const s = setup();
   const codes: number[] = [];
-  for (let i = 0; i < 6; i++) codes.push((await s.call(null, 'POST', '/v1/auth/device', { device_id: ID })).status);
-  assert.deepEqual(codes, [200, 200, 200, 200, 200, 429]);
-  assert.equal((s.db.raw.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n, 5);
+  for (let i = 0; i < 31; i++) codes.push((await s.call(null, 'POST', '/v1/auth/device', { device_id: ID })).status);
+  assert.deepEqual(codes, [...Array(30).fill(200), 429]);
+  assert.equal((s.db.raw.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n, 30);
 });
 
 test('POST /v1/auth/device: the new-user hook runs once per account', async () => {
