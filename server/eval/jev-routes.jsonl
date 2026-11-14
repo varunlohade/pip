@@ -1,0 +1,40 @@
+{"text":"make this sound more polite: send me the file now","label":"instant"}
+{"text":"fix my grammar: their going to the park tomorow","label":"instant"}
+{"text":"explain what a log function is","label":"instant"}
+{"text":"remind me to call the bank at 5pm","label":"instant"}
+{"text":"add lunch with Sam on Friday at 1 to my calendar","label":"instant"}
+{"text":"translate 'see you soon' into Spanish","label":"instant"}
+{"text":"make this shorter: I just wanted to check in and see if you had a chance to look at the document I sent over last week","label":"instant"}
+{"text":"what does RSVP mean","label":"instant"}
+{"text":"save a note: wifi password is on the fridge","label":"instant"}
+{"text":"rewrite this to be firmer: please stop sending me late invoices","label":"instant"}
+{"text":"find three cafes near me that are open now","label":"recipe"}
+{"text":"what are the best budget noise-cancelling headphones under $100","label":"recipe"}
+{"text":"look up the opening hours of the Science Museum","label":"recipe"}
+{"text":"find a good recipe for vegan lasagna","label":"recipe"}
+{"text":"what's the weather in Lisbon this weekend","label":"recipe"}
+{"text":"summarise this article: https://example.org/news/bike-lanes","label":"recipe"}
+{"text":"compare the iPhone 17 and Pixel 10 cameras","label":"recipe"}
+{"text":"find the cheapest train from London to Paris next Friday","label":"recipe"}
+{"text":"who won the last Tour de France","label":"recipe"}
+{"text":"give me three gift ideas for a 10 year old who likes space","label":"recipe"}
+{"text":"plan a three day trip to Rome for me: flights, hotel and what to see each day","label":"open"}
+{"text":"go through my inbox and tell me which emails need a reply today","label":"open"}
+{"text":"find a time next week when Alex and I are both free and draft an invite","label":"open"}
+{"text":"research the top five CRM tools for a small bakery and write me a short comparison","label":"open"}
+{"text":"track the price of this flight every day and tell me when it drops","label":"open"}
+{"text":"find my last three electricity bills in my mail and work out the average","label":"open"}
+{"text":"organise a team dinner for eight people on Thursday near the office","label":"open"}
+{"text":"look at my calendar and move my gym sessions so they do not clash with meetings","label":"open"}
+{"text":"find a plumber who can come tomorrow morning, check reviews, and draft a message to them","label":"open"}
+{"text":"help me prepare for my job interview at a fintech startup on Monday","label":"open"}
+{"text":"haha yes that was so funny","label":"none"}
+{"text":"ok see you soon","label":"none"}
+{"text":"love you too","label":"none"}
+{"text":"I'm on my way, ten minutes","label":"none"}
+{"text":"thanks so much!","label":"none"}
+{"text":"did you watch the game last night","label":"none"}
+{"text":"lol no way","label":"none"}
+{"text":"good morning everyone","label":"none"}
+{"text":"sounds good to me","label":"none"}
+{"text":"can't wait for the weekend","label":"none"}
