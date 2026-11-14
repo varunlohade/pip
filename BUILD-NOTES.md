@@ -1,5 +1,11 @@
 # Pip build notes
 
+## 1.0 (13)
+
+What to Test:
+
+1. Cleaner look: clouds and glow removed.
+
 ## 0.9 (12)
 
 What to Test:
