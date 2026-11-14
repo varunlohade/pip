@@ -20,8 +20,6 @@ struct PayPanel: Equatable {
     var pinReady = false
     /// The PIN is being checked (PBKDF2 takes a moment).
     var checkingPIN = false
-    /// "Approve in Pip": too many wrong tries.
-    var offerApp = false
 
     init(intent: PayIntent, xchain: XchainCard? = nil) {
         self.intent = intent
@@ -175,7 +173,7 @@ extension KeyboardModel {
                 let intent = try await api.createPayIntent(d)
                 guard let self, !Task.isCancelled else { return }
                 self.deps.store.payPending = intent.id
-                if signer.accountID() != nil { self.showPanel(PayPanel(intent: intent)) } else { self.openAppToSetUp(intent) }
+                if signer.accountID() != nil { self.showPanel(PayPanel(intent: intent)) } else { self.noKeyHere() }
             } catch {
                 guard let self, !Task.isCancelled else { return }
                 self.payDone.remove(d)
@@ -197,7 +195,7 @@ extension KeyboardModel {
                 guard let self, !Task.isCancelled else { return }
                 if let id = q.intent?.id { self.deps.store.payPending = id }
                 guard signer.accountID() != nil else {
-                    if let i = q.intent { self.openAppToSetUp(i) } else { self.bar = .error("Set up Pip Pay in \(AppConfig.displayName) first") }
+                    self.noKeyHere()
                     return
                 }
                 // An unverified quote still shows its card, with the reason and Approve off.
@@ -227,11 +225,18 @@ extension KeyboardModel {
         payPanel = p
     }
 
-    /// No NEAR key on this phone yet: Pip Pay is set up in the app.
-    func openAppToSetUp(_ intent: PayIntent) {
+    /// No NEAR key on this phone yet: one line on the bar. Nothing opens the app.
+    private func noKeyHere() {
         payPanel = nil
-        let opened = URL(string: intent.deep_link).map { host?.open($0) ?? false } ?? false
-        bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Set up Pip Pay in \(AppConfig.displayName) first")
+        pinBeat("blocked: no pay key on this phone")
+        bar = .error(PayFallback.noKey)
+    }
+
+    /// One line on Keyboard status for every Approve tap: "pin tap at 14:02:09: shown" or "... blocked: <reason>".
+    func pinBeat(_ what: String) {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        beat(pinTap: "pin tap at \(f.string(from: deps.now())): \(what)")
     }
 
     /// First time paying this address: one of the three endings.
@@ -244,23 +249,40 @@ extension KeyboardModel {
         payPanel = p
     }
 
-    /// "Approve with PIN": the PIN pad opens straight away. The keyboard never tries Face ID (on a real phone it hangs or does
-    /// nothing there). No PIN on this phone yet: "Set a payment PIN in Pip" opens the app's PIN setup.
+    /// "Approve with PIN": the PIN pad opens inside the keyboard. Every approval happens here; the keyboard never tries Face ID
+    /// and never sends a payment to the app. Each tap writes its outcome to Keyboard status and never ends silently.
+    /// No PIN on this phone yet: the app's PIN setup is the one hop (the raw key needs Face ID, which a keyboard cannot ask for).
     func approvePayInKeyboard() {
-        guard var p = payPanel, p.canApprove, p.pin == nil else { return }
+        guard var p = payPanel else { return pinBeat("blocked: no card") }
+        if p.pin != nil { return pinBeat("shown (already open)") }
+        guard p.phase == .ready else { return pinBeat("blocked: busy (\(p.phase))") }
+        if let card = p.xchain, !card.approvable {
+            let why = XchainCardText(card).blocked ?? "the price could not be checked"
+            p.note = why
+            payPanel = p
+            return pinBeat("blocked: quote: \(why)")
+        }
+        if let c = p.confirm, !c.confirmed {
+            p.note = PayFallback.pickEnd
+            payPanel = p
+            return pinBeat("blocked: address ending not picked")
+        }
         host?.playClick()
         let pinVault = deps.pin()
         p.pinReady = pinVault.isSet
-        p.offerApp = false
         if !p.pinReady {
+            let status = pinVault.sealedStatus
+            beat(pinReady: false, pinStatus: status)
             let opened = URL(string: PayFallback.pinSetupLink).map { host?.open($0) ?? false } ?? false
-            p.note = opened ? nil : PayFallback.setPIN
+            p.note = PayFallback.setPIN
+            pinBeat("blocked: no PIN in the keyboard (OSStatus \(status)); setup link \(opened ? "opened" : "did not open")")
         } else if pinVault.isLocked {
             p.note = PayFallback.locked
-            p.offerApp = true
+            pinBeat("blocked: locked after \(PayPIN.maxTries) wrong tries")
         } else {
             p.pin = ""
             p.note = nil
+            pinBeat("shown")
         }
         payPanel = p
     }
@@ -306,24 +328,15 @@ extension KeyboardModel {
             case .locked:
                 now.pin = nil
                 now.note = PayFallback.locked
-                now.offerApp = true
+                self.pinBeat("blocked: locked after \(PayPIN.maxTries) wrong tries")
             case .notSet:
                 now.pin = nil
-                now.note = PayFallback.useApp
-                now.offerApp = true
+                now.pinReady = pinVault.isSet
+                now.note = PayFallback.setPIN
+                self.pinBeat("blocked: PIN check found no sealed key or account (OSStatus \(pinVault.sealedStatus), account \(pinVault.accountID() == nil ? "missing" : "set"))")
             }
             self.payPanel = now
         }
-    }
-
-    /// "Approve in Pip": the app reads the same payment by id, asks for Face ID there and signs it.
-    func approvePayInApp() {
-        guard let p = payPanel, !p.intent.id.isEmpty else { return }
-        host?.playClick()
-        payTask?.cancel()
-        payPanel = nil
-        let opened = URL(string: p.intent.deep_link).map { host?.open($0) ?? false } ?? false
-        bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Open \(AppConfig.displayName) to approve this payment")
     }
 
     /// The proof for the server, then the checked transaction, signed with `sign` (the PIN's key).
@@ -331,8 +344,8 @@ extension KeyboardModel {
         let api = deps.api(), signer = deps.signer()
         guard let account = signer.accountID() else {
             payPanel?.phase = .ready
-            payPanel?.note = PayFallback.useApp
-            payPanel?.offerApp = true
+            payPanel?.note = PayFallback.noKey
+            pinBeat("blocked: no pay key on this phone")
             return
         }
         do {
@@ -374,6 +387,7 @@ extension KeyboardModel {
             guard !Task.isCancelled else { return }
             payPanel?.phase = .ready
             payPanel?.note = plainLine(error)
+            pinBeat("server refused: \(error)")
         }
     }
 
@@ -472,9 +486,10 @@ extension KeyboardModel {
     }
 }
 
-/// The card's lines when the keyboard cannot approve by itself.
+/// The card's lines when the keyboard cannot approve yet. None of them sends a payment to the app.
 enum PayFallback {
-    static let useApp = "Approve this payment in \(AppConfig.displayName)."
+    static let noKey = "Set up Pip Pay in \(AppConfig.displayName) first"
+    static let pickEnd = "Tap how the address ends first."
     static let setPIN = "Set a payment PIN in \(AppConfig.displayName): Pip Pay > Payment PIN."
     static let pinSetupLink = "pip://pin-setup"
     static let locked = "Too many tries. Open \(AppConfig.displayName) to unlock."

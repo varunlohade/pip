@@ -122,7 +122,8 @@ final class KeyboardPINTests: XCTestCase {
         XCTAssertEqual(signer.asks, 0)
     }
 
-    func testFiveWrongPINsLockAndOfferTheApp() async {
+    func testFiveWrongPINsLockInlineAndOpenNothing() async {
+        host.canOpen = true
         model.approvePayInKeyboard()
         XCTAssertEqual(model.payPanel?.pin, "")
         for n in 1...4 {
@@ -133,7 +134,10 @@ final class KeyboardPINTests: XCTestCase {
         type("000000")
         await until("locked") { model.payPanel?.note == PayFallback.locked }
         XCTAssertNil(model.payPanel?.pin)
-        XCTAssertEqual(model.payPanel?.offerApp, true)
+        XCTAssertEqual(host.opened, [], "the lock is a line on the card, not a trip to the app")
+        model.approvePayInKeyboard()
+        XCTAssertNil(model.payPanel?.pin)
+        XCTAssertTrue(model.payPanel?.note == PayFallback.locked && model.deps.store.heartbeat?.pinTap?.contains("blocked: locked") == true)
         XCTAssertEqual(api.submitted.count, 0)
         XCTAssertEqual(String(decoding: pinStore.items[.tries] ?? Data(), as: UTF8.self), "5", "tries live in the Keychain store")
         XCTAssertEqual(signer.asks, 0)

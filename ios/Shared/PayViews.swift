@@ -470,13 +470,12 @@ struct PayKeyboardCard: View {
     var pick: (String) -> Void = { _ in }
     var digit: (String) -> Void = { _ in }
     var deleteDigit: () -> Void = {}
-    var openApp: () -> Void = {}
 
     var body: some View {
         if let pin = panel.pin {
-            PINPadCard(panel: panel, pin: pin, digit: digit, deleteDigit: deleteDigit, openApp: openApp, reject: reject)
+            PINPadCard(panel: panel, pin: pin, digit: digit, deleteDigit: deleteDigit, reject: reject)
         } else if let card = panel.xchain {
-            XchainKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert, pick: pick, openApp: openApp)
+            XchainKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert, pick: pick)
         } else {
             plain
         }
@@ -536,6 +535,10 @@ struct PayKeyboardCard: View {
                 hint(line)
             } else {
                 // The note sits above the buttons, so a failure line is never pushed off the bottom of the keyboard.
+                // The address check sits above the buttons too, so Approve and the check both fit on an SE.
+                if let c = panel.confirm, !c.confirmed {
+                    AddressConfirmRow(confirm: c, pick: pick)
+                }
                 if let note = panel.note {
                     Text(note).font(.system(size: 14, weight: .medium)).foregroundStyle(K.warning).lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4)
@@ -545,11 +548,9 @@ struct PayKeyboardCard: View {
                     Button("Reject", action: reject).buttonStyle(FrostPill(height: 50, font: .system(size: 17, weight: .semibold)))
                         .frame(width: 120)
                         .accessibilityIdentifier("paycard.reject")
-                    ApproveButton(panel: panel, height: 50, approve: approve, openApp: openApp)
+                    ApproveButton(panel: panel, height: 50, approve: approve)
                 }
-                if let c = panel.confirm, !c.confirmed {
-                    AddressConfirmRow(confirm: c, pick: pick)
-                } else if panel.note == nil, panel.confirm == nil {
+                if panel.note == nil, panel.confirm == nil {
                     hint("You paid this account before. Your key signs it on this phone.")
                 }
             }
@@ -599,7 +600,6 @@ struct XchainKeyboardCard: View {
     let reject: () -> Void
     let insert: () -> Void
     let pick: (String) -> Void
-    var openApp: () -> Void = {}
 
     var body: some View {
         let t = XchainCardText(card)
@@ -644,7 +644,7 @@ struct XchainKeyboardCard: View {
                     Button("Reject", action: reject).buttonStyle(FrostPill(height: 46, font: .system(size: 17, weight: .semibold)))
                         .frame(width: 110)
                         .accessibilityIdentifier("paycard.reject")
-                    ApproveButton(panel: panel, height: 46, approve: approve, openApp: openApp)
+                    ApproveButton(panel: panel, height: 46, approve: approve)
                 }
             }
         }
@@ -689,33 +689,23 @@ struct XchainKeyboardCard: View {
     }
 }
 
-/// "Approve with PIN" when the keyboard can read the PIN-sealed key, else "Set a payment PIN in Pip". "Approve in Pip" once
-/// the PIN is locked. Never Face ID: in a keyboard it hangs or does nothing on a real phone.
+/// "Approve with PIN" when the keyboard can read the PIN-sealed key, else "Set a payment PIN in Pip". Never Face ID, never the app.
+/// It stays tappable while the address check or quote is not done (dimmed), so a tap always says why it cannot go on.
 struct ApproveButton: View {
     let panel: PayPanel
     let height: CGFloat
     let approve: () -> Void
-    let openApp: () -> Void
 
     var body: some View {
-        if panel.offerApp {
-            Button(action: openApp) {
-                HStack(spacing: 8) { Image(systemName: "arrow.up.forward.app"); Text("Approve in \(AppConfig.displayName)") }
+        Button(action: approve) {
+            HStack(spacing: 8) {
+                if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: panel.pinReady ? "lock.fill" : "key.fill") }
+                Text(panel.pinReady ? "Approve with PIN" : "Set a payment PIN in \(AppConfig.displayName)").lineLimit(1).minimumScaleFactor(0.75)
             }
-            .buttonStyle(SkyPill(height: height, font: .system(size: 17, weight: .semibold)))
-            .disabled(panel.intent.id.isEmpty)
-            .accessibilityIdentifier("paycard.approveInApp")
-        } else {
-            Button(action: approve) {
-                HStack(spacing: 8) {
-                    if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: panel.pinReady ? "lock.fill" : "key.fill") }
-                    Text(panel.pinReady ? "Approve with PIN" : "Set a payment PIN in \(AppConfig.displayName)").lineLimit(1).minimumScaleFactor(0.75)
-                }
-            }
-            .buttonStyle(SkyPill(height: height, font: .system(size: 17, weight: .semibold)))
-            .disabled(!panel.canApprove)
-            .accessibilityIdentifier(panel.pinReady ? "paycard.approve" : "paycard.pinSetup")
         }
+        .buttonStyle(SkyPill(height: height, font: .system(size: 17, weight: .semibold)))
+        .opacity(panel.canApprove ? 1 : 0.45)
+        .accessibilityIdentifier(panel.pinReady ? "paycard.approve" : "paycard.pinSetup")
     }
 }
 
@@ -725,7 +715,6 @@ struct PINPadCard: View {
     let pin: String
     let digit: (String) -> Void
     let deleteDigit: () -> Void
-    let openApp: () -> Void
     let reject: () -> Void
 
     private static let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"]
@@ -753,11 +742,8 @@ struct PINPadCard: View {
                         .accessibilityIdentifier("paycard.note")
                 }
                 Spacer(minLength: 0)
-                HStack(spacing: 14) {
-                    Button("Cancel", action: reject).foregroundStyle(K.ink2).accessibilityIdentifier("pin.cancel")
-                    Button("Approve in \(AppConfig.displayName)", action: openApp).foregroundStyle(K.link).accessibilityIdentifier("paycard.approveInApp")
-                }
-                .font(.system(size: 14.5, weight: .medium)).lineLimit(1).minimumScaleFactor(0.75)
+                Button("Cancel", action: reject).foregroundStyle(K.ink2).accessibilityIdentifier("pin.cancel")
+                    .font(.system(size: 14.5, weight: .medium)).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)

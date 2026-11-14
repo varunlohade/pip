@@ -28,8 +28,10 @@ final class PayCardRenderTests: XCTestCase {
         var pin = card
         pin.pin = "48"
         var fail = card
-        fail.note = PayFallback.useApp
-        fail.offerApp = true
+        fail.note = PayFallback.locked
+        var first = PayPanel(intent: .fake(draft, newRecipient: true))
+        first.pinReady = true
+        first.note = PayFallback.pickEnd
         for (prefix, width) in [("pay", CGFloat(393)), ("pay-se", CGFloat(375))] {
             for dark in [false, true] {
                 let mode = dark ? "dark" : "light"
@@ -37,6 +39,7 @@ final class PayCardRenderTests: XCTestCase {
                 try render("\(prefix)-\(mode)-sent", width: width, dark: dark, sent)
                 try render("\(prefix)-\(mode)-pin", width: width, dark: dark, pin)
                 try render("\(prefix)-\(mode)-fail", width: width, dark: dark, fail)
+                try render("\(prefix)-\(mode)-first", width: width, dark: dark, first)
             }
         }
     }

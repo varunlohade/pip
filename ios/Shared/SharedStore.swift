@@ -51,6 +51,8 @@ struct KeyboardHeartbeat: Codable, Equatable {
     var pinReady: Bool?
     /// The Keychain's OSStatus for that read when it failed, such as -25300 (not found) or -34018 (no entitlement).
     var pinStatus: Int32?
+    /// The last Approve tap and what came of it: "pin tap at 14:02:09: shown" or "... blocked: <reason>".
+    var pinTap: String?
 
     static var thisBuild: String {
         let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"

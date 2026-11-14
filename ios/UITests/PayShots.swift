@@ -155,6 +155,62 @@ final class PayShots: XCTestCase {
         shot("near-inserted")
     }
 
+    /// Boss man's P0: in Messages, "Approve with PIN" opens Pip's number pad inside the keyboard, the PIN signs, and the
+    /// payment is sent without the app. Sets the PIN in the app first when it is not on (Face ID: post a match while this runs).
+    func test5ApproveWithPINInTheKeyboard() {
+        let pin = env["PAY_PIN"] ?? "482915"
+        let app = XCUIApplication()
+        app.launch()
+        let row = element(app, "home.keyboardPay")
+        for _ in 0..<6 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
+        XCTAssertTrue(row.waitForExistence(timeout: 10), String(app.debugDescription.suffix(3000)))
+        row.tap()
+        let state = element(app, "pay.pinState")
+        XCTAssertTrue(state.waitForExistence(timeout: 10), String(app.debugDescription.suffix(3000)))
+        if state.label != "On" {
+            let field = element(app, "pinsetup.field")
+            if !field.waitForExistence(timeout: 3) { element(app, "pay.pinAction").tap() }
+            XCTAssertTrue(field.waitForExistence(timeout: 6), String(app.debugDescription.suffix(3000)))
+            field.typeText(pin)
+            Thread.sleep(forTimeInterval: 0.5)
+            field.typeText(pin)
+            XCTAssertTrue(state.waitForExistence(timeout: 20))
+            let on = NSPredicate(format: "label == 'On'")
+            expectation(for: on, evaluatedWith: state)
+            waitForExpectations(timeout: 20)
+        }
+        let field = openField()
+        enter(env["PAY_TEXT"] ?? "send 5 USDC to ana.near", in: field)
+        let chip = element(messages, "chip.pay")
+        if !chip.waitForExistence(timeout: 6) {
+            Thread.sleep(forTimeInterval: 5.5)
+            element(messages, "delete").tap()
+            element(messages, "space").tap()
+        }
+        XCTAssertTrue(chip.waitForExistence(timeout: 6), String(messages.debugDescription.suffix(3000)))
+        chip.tap()
+        let approve = element(messages, "paycard.approve")
+        XCTAssertTrue(approve.waitForExistence(timeout: 10), String(messages.debugDescription.suffix(4000)))
+        // A first payment to this address: tap how it ends, inside the keyboard.
+        let ends = messages.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'paycard.end.'"))
+        if ends.firstMatch.waitForExistence(timeout: 1) {
+            let to = env["PAY_TO_FULL"] ?? "ana.testnet"
+            let right = (0..<ends.count).map { ends.element(boundBy: $0) }.first { to.hasSuffix(String($0.identifier.dropFirst("paycard.end.".count))) }
+            XCTAssertNotNil(right)
+            right?.tap()
+        }
+        approve.tap()
+        XCTAssertTrue(element(messages, "pin.pad").waitForExistence(timeout: 5), String(messages.debugDescription.suffix(4000)))
+        XCTAssertTrue(element(messages, "pin.dots").exists)
+        XCTAssertFalse(element(messages, "paycard.approveInApp").exists, "no app hop on the pad")
+        shot("pin-pad-keyboard")
+        for d in pin { element(messages, "pin.\(d)").tap() }
+        let insert = element(messages, "paycard.insert")
+        XCTAssertTrue(insert.waitForExistence(timeout: 25), String(messages.debugDescription.suffix(4000)))
+        XCTAssertEqual(messages.state, .runningForeground, "the app never opened")
+        shot("pin-pad-sent")
+    }
+
     func test4PrivateAIProof() {
         let app = XCUIApplication()
         app.launch()

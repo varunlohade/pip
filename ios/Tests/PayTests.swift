@@ -77,9 +77,10 @@ final class KeyboardPayTests: XCTestCase {
         await card()
         XCTAssertEqual(api.proposed.first?.recipient, "ana.testnet")
         XCTAssertEqual(store.payPending, PayIntent.fakeID)
-        XCTAssertEqual(host.opened, [], "a keyboard send does not open the app")
+        host.canOpen = true
         model.approveWithPIN()
         await until("sent") { model.payPanel?.phase == .sent }
+        XCTAssertEqual(host.opened, [], "a keyboard send does not open the app")
         XCTAssertEqual(signer.asks, 0, "no Face ID in the keyboard")
         XCTAssertEqual(api.unsignedWith, [nil], "the keyboard never holds the approver key")
         let s = try XCTUnwrap(api.submitted.first)
@@ -154,13 +155,16 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertTrue(signer.key.publicKey.isValidSignature(s.signature, for: s.hash))
     }
 
-    func testApproveInPipOpensTheApp() async throws {
+    /// Every Approve tap lands on Keyboard status: shown, or blocked with the reason.
+    func testEveryApproveTapWritesTheHeartbeat() async throws {
         await card()
         host.canOpen = true
-        model.approvePayInApp()
-        XCTAssertEqual(host.opened, [try XCTUnwrap(URL(string: "pip://approve/\(PayIntent.fakeID)"))])
-        XCTAssertNil(model.payPanel)
-        XCTAssertEqual(model.bar, .done("Opening \(AppConfig.displayName)\u{2026}"))
+        model.approvePayInKeyboard()
+        XCTAssertEqual(model.payPanel?.pin, "")
+        let line = try XCTUnwrap(store.heartbeat?.pinTap)
+        XCTAssertTrue(line.hasPrefix("pin tap at "), line)
+        XCTAssertTrue(line.hasSuffix(": shown"), line)
+        XCTAssertEqual(host.opened, [], "approving never opens the app")
     }
 
     /// Boss man's call: a new recipient is approved in the keyboard too, after the owner taps how the address ends and Face ID.
@@ -175,8 +179,12 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertEqual(Set(c.options).count, 3)
         XCTAssertTrue(c.options.contains("tnet"))
         XCTAssertFalse(model.payPanel!.canApprove, "Approve stays off until the ending is picked")
+        host.canOpen = true
         model.approvePayInKeyboard()
         XCTAssertEqual(signer.asks, 0)
+        XCTAssertNil(model.payPanel?.pin)
+        XCTAssertEqual(model.payPanel?.note, PayFallback.pickEnd, "a tap before the check says why, never silent")
+        XCTAssertTrue(store.heartbeat?.pinTap?.hasSuffix("blocked: address ending not picked") == true, store.heartbeat?.pinTap ?? "nil")
         model.pickAddressEnd(c.options.first { $0 != "tnet" }!)
         XCTAssertEqual(model.payPanel?.note, "That is not how this address ends. Check it and try again.")
         XCTAssertFalse(model.payPanel!.canApprove)
@@ -184,6 +192,7 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertTrue(model.payPanel!.canApprove)
         model.approveWithPIN()
         await until("sent") { model.payPanel?.phase == .sent }
+        XCTAssertEqual(host.opened, [], "a new recipient is approved in the keyboard, never the app")
         XCTAssertEqual(signer.asks, 0, "one PIN signs the proof and the transaction")
         let proof = try XCTUnwrap(api.proofs.first ?? nil)
         let i = PayIntent.fake(PayDraft(amount: "5", token: "USDC", recipient: "ana.testnet", trigger: ""), newRecipient: true)
@@ -200,17 +209,19 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertEqual(PayApproval.proofHash(i), Data(SHA256.hash(data: Data(text.utf8))))
     }
 
-    func testNoKeyOnThisPhoneOpensTheAppToSetUp() async {
+    func testNoKeyOnThisPhoneSaysSoAndOpensNothing() async {
         signer.hasKey = false
         host.canOpen = true
         set("send 5 USDC to ana.testnet")
         model.perform(.pay)
-        await until("the bar line") { model.bar == .done("Opening Pip\u{2026}") }
+        await until("the bar line") { model.bar == .error(PayFallback.noKey) }
         XCTAssertNil(model.payPanel)
+        XCTAssertEqual(host.opened, [])
     }
 
     func testServerRefusalShowsItsReasonOnTheCard() async {
         api.unsignedError = APIError.http(403, #"{"error":"over the 25 USDC daily limit"}"#)
+        host.canOpen = true
         await card()
         model.approveWithPIN()
         await until("the note") { model.payPanel?.note != nil }
