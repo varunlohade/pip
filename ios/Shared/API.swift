@@ -58,11 +58,25 @@ struct RewriteLine: Decodable, Equatable {
     var text: String?
     var error: String?
     var done: Bool?
+    /// Ran in NEAR AI's TEE, and its attestation was checked.
+    var isPrivate: Bool?
+    var attested: Bool?
+
+    enum CodingKeys: String, CodingKey { case tone, text, error, done, isPrivate = "private", attested }
 }
 /// tone is "upset" (the other person), "blunt" (the owner's draft) or "ok". calm is set unless tone is "ok".
 struct ToneResponse: Decodable { let tone: String; let calm: String? }
 /// POST /v1/explain: `short` is one line, `body` up to four lines split by newlines.
-struct ExplainResponse: Decodable, Equatable { let short: String; let body: String; let visual_ok: Bool }
+struct ExplainResponse: Decodable, Equatable {
+    let short: String
+    let body: String
+    let visual_ok: Bool
+    var isPrivate: Bool? = nil
+    var attested: Bool? = nil
+
+    enum CodingKeys: String, CodingKey { case short, body, visual_ok, isPrivate = "private", attested }
+    var privacy: PrivacyMark? { PrivacyMark(private: isPrivate, attested: attested) }
+}
 
 enum APIError: Error, LocalizedError {
     case notPaired

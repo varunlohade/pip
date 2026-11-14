@@ -56,6 +56,11 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        NSFaceIDUsageDescription: $(PRODUCT_DISPLAY_NAME) asks for Face ID before it sends a payment.
+        # pip://approve/<id>: the keyboard hands a payment to the app for approval.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.orseliyas.pip
+            CFBundleURLSchemes: [pip]
     entitlements:
       path: App/Pip.entitlements
       properties:
@@ -80,10 +85,12 @@ targets:
         script: |
           if [ "$CONFIGURATION" = "Debug" ]; then
             plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
-            /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist" 2>/dev/null || true
-            /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes array" -c "Add :CFBundleURLTypes:0 dict" \
-              -c "Add :CFBundleURLTypes:0:CFBundleURLName string com.orseliyas.pip.dev" \
-              -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string pip-dev" "$plist"
+            # pip:// comes from project.yml as entry 0; pip-dev is added as entry 1, once.
+            if ! /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$plist" | grep -q pip-dev; then
+              /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:1 dict" \
+                -c "Add :CFBundleURLTypes:1:CFBundleURLName string com.orseliyas.pip.dev" \
+                -c "Add :CFBundleURLTypes:1:CFBundleURLSchemes array" -c "Add :CFBundleURLTypes:1:CFBundleURLSchemes:0 string pip-dev" "$plist"
+            fi
           fi
   PipKeyboard:
     type: app-extension
@@ -120,6 +127,7 @@ targets:
             PrefersRightToLeft: false
             PrimaryLanguage: en-US
             RequestsOpenAccess: true
+        NSFaceIDUsageDescription: $(PRODUCT_DISPLAY_NAME) asks for Face ID before it sends a payment from the keyboard.
     entitlements:
       path: Keyboard/PipKeyboard.entitlements
       properties:

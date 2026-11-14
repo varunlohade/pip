@@ -214,7 +214,7 @@ extension KeyboardModel {
     var visualOpen: Bool { if case .visual = explainPanel { return true }; return false }
 
     /// The keyboard grows while the visual panel or the calendar is open, so they have room.
-    var keyboardHeight: CGFloat { Self.height(panel: explainPanel, calendarOpen: calendar != nil) }
+    var keyboardHeight: CGFloat { Self.height(panel: explainPanel, calendarOpen: calendar != nil || payPanel != nil) }
 
     static func height(panel: ExplainPanel?, calendarOpen: Bool) -> CGFloat {
         if case .visual? = panel { return Theme.SystemKeyboard.visualHeight }

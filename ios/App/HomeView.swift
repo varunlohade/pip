@@ -35,6 +35,7 @@ struct HomeView: View {
                             .padding(.horizontal, Theme.Metric.cardInset + 8).padding(.top, 18)
                             .accessibilityIdentifier("home.headline")
                         if let d = drawings.first { recentDrawing(d).padding(.top, 22) }
+                        WalletSection().padding(.top, 22)
                         words.padding(.top, 24)
                         if !caught.isEmpty { fromChats.padding(.top, 26) }
                         if drawings.count > 1 { DrawingsSection(drawings: Array(drawings.dropFirst())).padding(.top, Theme.Space.s) }

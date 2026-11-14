@@ -24,6 +24,17 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.orseliyas.pip</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>pip</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>DefaultServerURL</key>
@@ -41,6 +52,8 @@
 	<string>$(PRODUCT_DISPLAY_NAME) reads today's events to show what's next, and adds the events you type. They stay on this phone.</string>
 	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
 	<string>$(PRODUCT_DISPLAY_NAME) adds the events you type, such as "meeting with Ana tomorrow 3pm".</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>$(PRODUCT_DISPLAY_NAME) asks for Face ID before it sends a payment.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>$(PRODUCT_DISPLAY_NAME) adds the reminders you type, such as "call supplier at 5". They stay on this phone.</string>
 	<key>UILaunchScreen</key>

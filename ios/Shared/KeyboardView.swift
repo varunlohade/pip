@@ -23,6 +23,10 @@ struct KeyboardView: View {
                     }
                 }
                 .padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
+            } else if let pay = model.payPanel {
+                PayKeyboardCard(panel: pay, approve: model.approvePayInKeyboard, reject: model.rejectPayInKeyboard,
+                                insert: model.insertKeyboardSent)
+                    .padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if let c = model.calendar {
                 CalendarPanelView(model: model, panel: c, palette: p).padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if model.notesOpen {
@@ -54,6 +58,9 @@ struct SuggestionBar: View {
         if let c = model.calendar {
             CalendarBar(model: model, panel: c, palette: palette)
                 .padding(.bottom, M.barHeight - 2 * 23.8)
+        } else if let pay = model.payPanel {
+            PayPanelBar(panel: pay, close: model.closePayPanel)
+                .padding(.bottom, M.barHeight - 2 * 23.8)
         } else {
             chipsBar
         }
@@ -74,6 +81,9 @@ struct SuggestionBar: View {
                     .accessibilityIdentifier("explain.title")
                 Spacer(minLength: 4)
                 barButton("keyboard", id: "explain.close", label: "Keyboard", action: model.closeExplain)
+            } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "pay" || first.id == "paid" {
+                dismissButton
+                PayBarRow(item: first, perform: model.perform)
             } else if !model.notesOpen, !model.writeOpen, let explain = items.first, explain.id == "explain" {
                 dismissButton
                 explainRow(explain)
@@ -115,12 +125,12 @@ struct SuggestionBar: View {
                 .accessibilityIdentifier("chip.fix")
                 .transition(.opacity)
             }
-            if model.paired && !showsWords && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil {
+            if model.paired && !showsWords && !model.notesOpen && model.explainPanel == nil && model.explainOffer == nil && !payOwnsBar {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.writeOpen ? "keyboard" : "wand.and.stars", id: "write.toggle", label: model.writeOpen ? "Keyboard" : "Rewrite", action: model.toggleWrite)
             }
             // Notes live in the App Group, which the keyboard reaches only with Full Access.
-            if model.hasFullAccess && !showsWords && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil {
+            if model.hasFullAccess && !showsWords && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil && !payOwnsBar {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.notesOpen ? "keyboard" : "note.text", id: "notes.toggle", label: model.notesOpen ? "Keyboard" : "Notes", action: model.toggleNotes)
                 if !model.notesOpen {
@@ -187,6 +197,9 @@ struct SuggestionBar: View {
 
     private var showsWords: Bool { model.showsWordSlots }
 
+    /// The pay chip or the sent line gets the whole bar.
+    private var payOwnsBar: Bool { model.barItems.first.map { $0.id == "pay" || $0.id == "paid" } ?? false }
+
     private var wordRow: some View {
         HStack(spacing: 0) {
             ForEach(Array(model.words.slots.enumerated()), id: \.offset) { i, slot in
@@ -207,7 +220,7 @@ struct SuggestionBar: View {
 
     /// Fix sits beside the chips, so it never takes a chip's place.
     private var showsFix: Bool {
-        guard !showsWords, model.fixable, model.explainPanel == nil, model.explainOffer == nil, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
+        guard !showsWords, model.fixable, model.explainPanel == nil, model.explainOffer == nil, !payOwnsBar, model.undo == nil, !model.notesOpen, !model.writeOpen else { return false }
         if case .idle = model.bar { return true }
         return false
     }
@@ -352,10 +365,14 @@ struct WritePanelView: View {
 
     private func versions(_ list: RewriteList) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("\u{201C}\(list.text)\u{201D}").font(M.predictionSmall).foregroundStyle(palette.secondaryLabel)
-                .lineLimit(1).truncationMode(.middle)
-                .padding(.horizontal, Theme.Space.xs)
-                .accessibilityIdentifier("write.quote")
+            HStack {
+                Text("\u{201C}\(list.text)\u{201D}").font(M.predictionSmall).foregroundStyle(palette.secondaryLabel)
+                    .lineLimit(1).truncationMode(.middle)
+                    .accessibilityIdentifier("write.quote")
+                Spacer(minLength: 6)
+                if let mark = list.privacy { PrivacyMarkView(mark: mark, size: 11) }
+            }
+            .padding(.horizontal, Theme.Space.xs)
             ScrollView {
                 VStack(spacing: M.keyGap) {
                     ForEach(list.rows) { row in versionRow(row, copied: list.copied == row.tone) }

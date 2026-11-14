@@ -25,9 +25,12 @@ protocol TextHost: AnyObject {
     func adjustCursor(by offset: Int)
     func nextKeyboard()
     func playClick()
+    /// Opens a link in another app. Keyboards have no API for it; false when it could not.
+    func open(_ url: URL) -> Bool
 }
 
 extension TextHost {
+    func open(_ url: URL) -> Bool { false }
     var contextAfterInput: String? { nil }
     var keyboardType: UIKeyboardType { .default }
     var textContentType: UITextContentType? { nil }
@@ -102,6 +105,8 @@ struct RewriteList: Equatable {
     var rows: [RewriteRow] = RefineTone.allCases.map { RewriteRow(tone: $0) }
     /// The version a hold copied.
     var copied: RefineTone?
+    /// "Private AI · verified on NEAR" when every version so far came from an attested TEE.
+    var privacy: PrivacyMark?
 
     mutating func set(_ tone: RefineTone, _ status: RewriteRow.Status) {
         if let i = rows.firstIndex(where: { $0.tone == tone }) { rows[i].status = status }
@@ -190,6 +195,15 @@ final class KeyboardModel: ObservableObject {
     @Published var fieldEmpty = true
     /// A meaning or an answer for what the last sentence asks ("what does btw mean"). See KeyboardModel+Explain.
     @Published var explainOffer: ExplainOffer? { didSet { noteChipsShown() } }
+    /// "send 5 USDC to ana.testnet": the chip that proposes it for approval in the app. See KeyboardModel+Pay.
+    @Published var payOffer: PayDraft? { didSet { noteChipsShown() } }
+    /// A payment the app sent: the bar offers its Insert line.
+    @Published var paySent: PaySent?
+    /// The keyboard's own approval card (design C), in place of the keys.
+    @Published var payPanel: PayPanel?
+    var payTask: Task<Void, Never>?
+    /// Payments already proposed from this text, so the chip does not come back after the tap.
+    var payDone: Set<PayDraft> = []
     /// The explain card or the visual panel, in place of the keys. Nil when the keys show.
     @Published var explainPanel: ExplainPanel?
     /// The calendar panel, in place of the keys. See KeyboardModel+Calendar.
@@ -676,7 +690,7 @@ final class KeyboardModel: ObservableObject {
     /// The three word slots own the bar while a word is half typed, and after a space when no chip shows.
     /// An answer chip (a sum, a meaning) always wins over them. The tool icons step aside for the slots.
     var showsWordSlots: Bool {
-        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, undo == nil else { return false }
+        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, payOffer == nil, paySent == nil, payPanel == nil, undo == nil else { return false }
         if case .idle = bar {} else { return false }
         return words.midWord || barItems.isEmpty
     }
@@ -775,6 +789,7 @@ final class KeyboardModel: ObservableObject {
         reloadShortcuts()
         guard paired else { return }
         reloadSnapshot()
+        reloadPaySent()
         // A new field starts clean, cooldowns too.
         quietUntil = nil
         dismissedText = nil
@@ -847,6 +862,11 @@ final class KeyboardModel: ObservableObject {
         explainPending = nil
         explainCache = [:]
         explainOffer = nil
+        payTask?.cancel()
+        payOffer = nil
+        paySent = nil
+        payDone = []
+        payPanel = nil
         sharePrepared = nil
         shareAttempt = nil
         narration = nil
@@ -948,13 +968,14 @@ final class KeyboardModel: ObservableObject {
         // Empty again, as after a send: the ready chips read the app's latest snapshot.
         if text.isEmpty, !wasEmpty { reloadSnapshot() }
         let clear = detectSmart(text, quiet: quiet)
+        let paying = updatePay(text, quiet: quiet)
         guard text != lastSent else { return }
         suggestTask?.cancel()
         lastSent = text
         bar = .idle
         // Typing ends the copied-text offer.
         if !text.isEmpty, copiedAvailable { endCopied() }
-        if !quiet, !explaining, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
+        if !quiet, !explaining, !paying, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
     }
 
     // MARK: chip life: ✕, cooldowns, typed past
@@ -984,7 +1005,7 @@ final class KeyboardModel: ObservableObject {
 
     /// Notes when a chip about the typing first shows, so typing on past it can be counted.
     private func noteChipsShown() {
-        let visible = !smart.isEmpty || explainOffer != nil
+        let visible = !smart.isEmpty || explainOffer != nil || payOffer != nil
         if !visible { chipSeen = nil } else if chipSeen == nil { chipSeen = (deps.now(), ChipTiming.words(typed)) }
     }
 
@@ -995,12 +1016,14 @@ final class KeyboardModel: ObservableObject {
         dismissedText = typed
         if copiedAvailable { endCopied() }
         calmOffer = nil
+        dropPaySent()
         clearChips()
     }
 
     private func clearChips() {
         for t in [smartTask, fixTask, suggestTask] { t?.cancel() }
         if !smart.isEmpty { smart = [] }
+        if payOffer != nil { payOffer = nil }
         clearExplainOffer()
         fixPlan = nil
         chipSeen = nil
@@ -1306,6 +1329,11 @@ final class KeyboardModel: ObservableObject {
                 log.notice("PIP_TIMING tap_to_first_text_ms=\(ms, privacy: .public)")
             }
             l.set(tone, line.text.map { .ready($0) } ?? .stalled)
+            if line.text != nil {
+                let mark = PrivacyMark(private: line.isPrivate, attested: line.attested)
+                // The weakest answer wins: one plain version means no mark.
+                l.privacy = l.rows.filter({ $0.text != nil }).count == 1 ? mark : PrivacyMark.weaker(l.privacy, mark)
+            }
         }
     }
 
@@ -1439,7 +1467,7 @@ final class KeyboardModel: ObservableObject {
                                     smart: smart.map { BarItems.Smart(chip: $0, access: writer.access($0.place, hasFullAccess: hasFullAccess)) },
                                     added: added?.label, fieldEmpty: fieldEmpty,
                                     ready: .init(copiedAvailable: copiedAvailable, nextUp: nextUp, today: appointments), explain: explainItem,
-                                    now: deps.now()))
+                                    pay: payItem, paid: paidItem, now: deps.now()))
     }
 
     func perform(_ action: BarItems.Action) {
@@ -1452,6 +1480,8 @@ final class KeyboardModel: ObservableObject {
         case .today: showToday()
         case .notes: toggleNotes()
         case .explain: openExplainCard()
+        case .pay: tapPay()
+        case .insertPaid: insertPaid()
         }
     }
 

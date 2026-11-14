@@ -13,6 +13,10 @@ protocol KeyboardAPI {
     func explainVisual(_ topic: String) async throws -> Data
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String
     func rates() async throws -> Calc.Rates
+    /// A payment proposal. Only the app can approve it.
+    func createPayIntent(_ d: PayDraft) async throws -> PayIntent
+    func keyboardApprovePay(_ i: PayIntent, keyboardKey: String) async throws -> PayIntent
+    func rejectPay(_ id: String) async throws -> PayIntent
 }
 
 extension APIClient: KeyboardAPI {}
@@ -40,6 +44,14 @@ protocol KeyboardStore: AnyObject {
     var keyHaptics: Bool { get }
     /// The last currency rates the server sent. Nil until the first currency ask.
     var currencyRates: Calc.Rates? { get set }
+    /// The payment waiting for approval in the app.
+    var payPending: String? { get set }
+    /// The payment the app last sent; the keyboard offers its Insert line, then clears it.
+    var paySent: PaySent? { get set }
+    /// The capped keyboard send key, from the shared Keychain. Nil until keyboard pay is set up in the app.
+    var payKeyboardKey: String? { get }
+    /// Face ID before each keyboard send.
+    var payFaceID: Bool { get }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -75,6 +87,16 @@ final class SharedKeyboardStore: KeyboardStore {
         get { SharedStore.currencyRates }
         set { SharedStore.currencyRates = newValue }
     }
+    var payPending: String? {
+        get { SharedStore.payPending }
+        set { SharedStore.payPending = newValue }
+    }
+    var paySent: PaySent? {
+        get { SharedStore.paySent }
+        set { SharedStore.paySent = newValue }
+    }
+    var payKeyboardKey: String? { Keychain.get(.payKeyboardKey) }
+    var payFaceID: Bool { SharedStore.payFaceID }
 }
 
 /// The parts of UIPasteboard the keyboard uses. Only reading `string` can show the paste prompt.
@@ -110,6 +132,8 @@ struct KeyboardDeps {
     var haptics: @MainActor () -> KeyHaptics = { SystemHaptics() }
     /// The short wait before the word slots refresh. Real time even in tests, so it never shows in a fake clock's sleeps.
     var slotSleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    /// Face ID (or the passcode) before a keyboard send. Tests pass a fake.
+    var auth: () -> Authenticator = { DeviceOwnerAuth() }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

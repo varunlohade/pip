@@ -18,6 +18,14 @@ enum StoreKey: String, CaseIterable {
     case keyboardSeenEpoch = "keyboard_seen_epoch"
     /// Set on first launch. iOS deletes the App Group on uninstall but keeps the Keychain, so no marker means stale secrets.
     case installed = "installed"
+    /// The payment the keyboard last proposed, so opening Pip by hand still shows its approval card.
+    case payPending = "pay_pending"
+    /// The payment the app last sent (PaySent JSON), so the keyboard offers its Insert line.
+    case paySent = "pay_sent"
+    /// Keyboard pay: Face ID before every keyboard send. Missing means on.
+    case payFaceID = "pay_face_id"
+    /// Keyboard pay: the daily USDC limit the owner set, as the server confirmed it.
+    case payKeyboardLimit = "pay_keyboard_limit"
 }
 
 /// Every App Group file, in one place. All are small JSON files, except the drawings folder.
@@ -44,6 +52,9 @@ enum Secret: String, CaseIterable {
     case legacyDeviceToken = "device_token"
     /// A random id for this install. "Skip for now" sends it.
     case deviceID = "device_id"
+    /// The keyboard send key. Shared on purpose: the server caps it to the daily limit and to recipients paid before.
+    /// The full approver key is never here; it stays in the app's own group (ApproverKeychain).
+    case payKeyboardKey = "pay_keyboard_key"
 }
 
 /// The Keychain, in the shared access group. Items open after the first unlock and never leave this device (no backup, no sync).
@@ -217,6 +228,26 @@ enum SharedStore {
     static var currencyRates: Calc.Rates? {
         get { load(Calc.Rates.self, .rates) }
         set { if let newValue { save(newValue, .rates) } }
+    }
+
+    static var payPending: String? {
+        get { defaults?.string(forKey: StoreKey.payPending.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payPending.rawValue) }
+    }
+
+    static var paySent: PaySent? {
+        get { defaults?.data(forKey: StoreKey.paySent.rawValue).flatMap { try? JSONDecoder().decode(PaySent.self, from: $0) } }
+        set { defaults?.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: StoreKey.paySent.rawValue) }
+    }
+
+    static var payFaceID: Bool {
+        get { defaults?.object(forKey: StoreKey.payFaceID.rawValue) as? Bool ?? true }
+        set { defaults?.set(newValue, forKey: StoreKey.payFaceID.rawValue) }
+    }
+
+    static var payKeyboardLimit: String? {
+        get { defaults?.string(forKey: StoreKey.payKeyboardLimit.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payKeyboardLimit.rawValue) }
     }
 
     // MARK: secrets

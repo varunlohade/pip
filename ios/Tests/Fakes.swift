@@ -35,6 +35,10 @@ final class FakeHost: TextHost {
     }
     func nextKeyboard() {}
     func playClick() {}
+    /// Links the keyboard tried to open, and whether the host lets it.
+    private(set) var opened: [URL] = []
+    var canOpen = false
+    func open(_ url: URL) -> Bool { opened.append(url); return canOpen }
 }
 
 /// Answers with canned replies and records every call. Main-actor bound, so the model's tasks and the test never race on it.
@@ -98,6 +102,43 @@ final class FakeAPI: KeyboardAPI {
         return ratesReply
     }
     func releaseShares() { let h = heldShares; heldShares = []; h.forEach { $0.resume() } }
+
+    // Pay: the intent the server would make, and what the keyboard approve answers.
+    var keyboardCheck: PayIntent.KeyboardCheck? = .init(ok: true, reason: nil, left: "20", paid_before: 2)
+    var keyboardApproveError: Error?
+    private(set) var proposed: [PayDraft] = []
+    private(set) var keyboardApproved: [(id: String, key: String)] = []
+    private(set) var rejected: [String] = []
+    func createPayIntent(_ d: PayDraft) async throws -> PayIntent {
+        calls.append("payIntent"); proposed.append(d)
+        return PayIntent.fake(d, keyboard: keyboardCheck)
+    }
+    func keyboardApprovePay(_ i: PayIntent, keyboardKey: String) async throws -> PayIntent {
+        calls.append("keyboardApprove"); keyboardApproved.append((i.id, keyboardKey))
+        if let e = keyboardApproveError { throw e }
+        return PayIntent.fake(PayDraft(amount: i.amount, token: i.token, recipient: i.recipient, trigger: ""), status: "sent")
+    }
+    func rejectPay(_ id: String) async throws -> PayIntent {
+        calls.append("reject"); rejected.append(id)
+        return PayIntent.fake(PayDraft(amount: "5", token: "USDC", recipient: "ana.testnet", trigger: ""), status: "rejected")
+    }
+}
+
+extension PayIntent {
+    static let fakeID = String(repeating: "ab", count: 16)
+    static func fake(_ d: PayDraft, status: String = "pending", keyboard: KeyboardCheck? = nil) -> PayIntent {
+        let hash = status == "sent" ? "7Hq2Xb9TfE3mNwq8RkLz5VdYc1pA6sGh1uJkP4" : nil
+        return PayIntent(id: fakeID, amount: d.amount, token: d.token, recipient: d.recipient, status: status, network: "testnet",
+                         tx_hash: hash, explorer_url: hash.map { "https://testnet.nearblocks.io/txns/\($0)" },
+                         deep_link: "pip://approve/\(fakeID)", keyboard: keyboard)
+    }
+}
+
+/// Face ID that answers what the test says, and counts the asks.
+final class FakeAuth: Authenticator, @unchecked Sendable {
+    var answer: AuthResult = .approved
+    private(set) var asks = 0
+    func confirm(_ reason: String) async -> AuthResult { asks += 1; return answer }
 }
 
 /// In-memory stand-in for the App Group files and the Keychain token. Paired by default.
@@ -127,6 +168,10 @@ final class FakeStore: KeyboardStore {
         get { ratesReads += 1; return rates }
         set { rates = newValue }
     }
+    var payPending: String?
+    var paySent: PaySent?
+    var payKeyboardKey: String? = "pkb_fake_keyboard_key_for_tests_only"
+    var payFaceID = true
 }
 
 /// Records every key haptic instead of playing it.
@@ -242,11 +287,11 @@ final class FakeSpeaker: Speaker {
 extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
                      clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker(),
-                     haptics: HapticSpy = HapticSpy()) -> KeyboardDeps {
+                     haptics: HapticSpy = HapticSpy(), auth: FakeAuth = FakeAuth()) -> KeyboardDeps {
         KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
                      sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
-                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics })
+                     wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, auth: { auth })
     }
 }
 

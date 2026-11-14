@@ -270,3 +270,75 @@ test('pay: a deleted user takes their wallet and intents with them', async () =>
     assert.equal((s.db.raw.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get() as { n: number }).n, 0, t);
   }
 });
+
+// ---- keyboard key: capped, known recipients only, set only with the approver key
+const kbFields = { amount: '5', token: 'USDC', recipient: 'ana.testnet' };
+const kbApprove = (s: ReturnType<typeof paySetup>, id: string, key: string, fields = kbFields) =>
+  s.call(s.user.token, 'POST', `/v1/pay/intents/${id}/keyboard-approve`, fields, { 'X-Pay-Keyboard': key });
+async function keyboardKey(s: ReturnType<typeof paySetup>, approver: string, limits = { usdc_daily: '20', near_daily: '1' }) {
+  const res = await s.call(s.user.token, 'POST', '/v1/pay/keyboard', limits, { 'X-Pay-Approver': approver });
+  assert.equal(res.status, 200);
+  return ((await res.json()) as { keyboard_key: string }).keyboard_key;
+}
+
+test('pay keyboard: the key is made only with the approver key, and cannot make itself', async () => {
+  const s = paySetup();
+  const approver = await ready(s);
+  assert.equal((await s.call(s.user.token, 'POST', '/v1/pay/keyboard', { usdc_daily: '20', near_daily: '1' })).status, 403);
+  const kb = await keyboardKey(s, approver);
+  assert.match(kb, /^pkb_/);
+  const self = await s.call(s.user.token, 'POST', '/v1/pay/keyboard', { usdc_daily: '25', near_daily: '2' }, { 'X-Pay-Approver': kb });
+  assert.equal(self.status, 403);
+  const row = s.db.raw.prepare('SELECT key_hash FROM pay_keyboard').get() as { key_hash: string };
+  assert.ok(!row.key_hash.includes(kb));
+});
+
+test('pay keyboard: a new recipient always needs the app', async () => {
+  const s = paySetup();
+  const kb = await keyboardKey(s, await ready(s));
+  const i = (await (await s.call(s.user.token, 'POST', '/v1/pay/intents', kbFields)).json()) as { id: string; keyboard: { ok: boolean; reason: string } };
+  assert.deepEqual([i.keyboard.ok, i.keyboard.reason], [false, 'new_recipient']);
+  const res = await kbApprove(s, i.id, kb);
+  assert.equal(res.status, 403);
+  assert.equal(((await res.json()) as { needs_app: boolean }).needs_app, true);
+  assert.equal(s.sends.length, 0);
+});
+
+test('pay keyboard: a paid-before recipient within the limit sends; over the limit needs the app', async () => {
+  const s = paySetup();
+  const approver = await ready(s);
+  const kb = await keyboardKey(s, approver, { usdc_daily: '8', near_daily: '1' });
+  const first = (await (await s.call(s.user.token, 'POST', '/v1/pay/intents', kbFields)).json()) as { id: string };
+  assert.equal((await approve(s, first.id, approver, kbFields)).status, 200);
+
+  const second = (await (await s.call(s.user.token, 'POST', '/v1/pay/intents', kbFields)).json()) as { id: string; keyboard: { ok: boolean; left: string; paid_before: number } };
+  assert.deepEqual(second.keyboard, { ok: true, left: '8', paid_before: 1 });
+  const res = await kbApprove(s, second.id, kb);
+  assert.equal(res.status, 200);
+  assert.equal(((await res.json()) as { status: string }).status, 'sent');
+  assert.equal(s.sends.length, 2);
+
+  const third = (await (await s.call(s.user.token, 'POST', '/v1/pay/intents', kbFields)).json()) as { id: string; keyboard: { ok: boolean; reason: string; left: string } };
+  assert.deepEqual([third.keyboard.ok, third.keyboard.reason, third.keyboard.left], [false, 'over_limit', '3']);
+  assert.equal((await kbApprove(s, third.id, kb)).status, 403);
+  assert.equal(s.sends.length, 2);
+  // The app can still approve it.
+  assert.equal((await approve(s, third.id, approver, kbFields)).status, 200);
+});
+
+test('pay keyboard: the keyboard key cannot use the app approve route, and a wrong key is refused', async () => {
+  const s = paySetup();
+  const approver = await ready(s);
+  const kb = await keyboardKey(s, approver);
+  const i = (await (await s.call(s.user.token, 'POST', '/v1/pay/intents', kbFields)).json()) as { id: string };
+  assert.equal((await s.call(s.user.token, 'POST', `/v1/pay/intents/${i.id}/approve`, kbFields, { 'X-Pay-Approver': kb })).status, 403);
+  assert.equal((await kbApprove(s, i.id, 'pkb_' + 'x'.repeat(43))).status, 403);
+  assert.equal((await kbApprove(s, i.id, approver)).status, 403);
+  assert.equal(s.sends.length, 0);
+});
+
+test('pay keyboard: the keyboard limit never exceeds the server daily cap', async () => {
+  const s = paySetup();
+  const res = await s.call(s.user.token, 'POST', '/v1/pay/keyboard', { usdc_daily: '500', near_daily: '50' }, { 'X-Pay-Approver': await ready(s) });
+  assert.deepEqual(((await res.json()) as { limits: unknown }).limits, { USDC: payConfig.caps.USDC.daily, NEAR: payConfig.caps.NEAR.daily });
+});
