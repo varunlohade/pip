@@ -61,6 +61,8 @@ const ToneBody = z.object({ text: OptionalWriteText, context: OptionalWriteText 
 const ExplainText = CleanText(config.maxExplainChars);
 const ExplainBody = z.object({ text: ExplainText }).strict();
 const VisualBody = z.object({ topic: ExplainText }).strict();
+// Task: the typed ask, already passed the phone's secret filter. Never stored or logged.
+const TaskBody = z.object({ text: ExplainText }).strict();
 // Route: the sentence being typed and up to 3 earlier lines, all already passed the phone's secret filter. Never stored or logged.
 const RouteBody = z.object({ text: ExplainText, context: z.array(z.string().transform((v) => clean(v).slice(0, config.maxExplainChars))).max(3).optional() }).strict();
 
@@ -180,6 +182,7 @@ export function createApp(deps: Deps) {
   // One pattern covers /v1/explain and /v1/explain/visual, so both share the same buckets.
   app.use('/v1/route', rateLimiter('route', byUser));
   app.use('/v1/explain/*', rateLimiter('explain', byUser), rateLimiter('explainDaily', byUser));
+  app.use('/v1/task/*', rateLimiter('explain', byUser), rateLimiter('explainDaily', byUser));
   app.use('/v1/*', rateLimiter('other', byUser));
   auth.privateRoutes(app);
 
@@ -382,6 +385,13 @@ export function createApp(deps: Deps) {
   app.post('/v1/explain/visual', async (c) => {
     const { topic } = await body(c, VisualBody);
     return explaining(c, 'visual', topic.length, () => ai.visual(topic));
+  });
+  // ---- task plan: the steps a task agent would take for a booking-style ask. It never books or pays; the plan says so.
+  app.post('/v1/task/plan', async (c) => {
+    const { text } = await body(c, TaskBody);
+    if (!ai.taskPlan) return c.json({ error: 'task plans are not available' }, 501);
+    const plan = ai.taskPlan.bind(ai);
+    return explaining(c, 'task', text.length, () => plan(text));
   });
 
   // ---- private AI proof for the demo screen: which NEAR TEE models answer, what was checked, and the last reply signature.

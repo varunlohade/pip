@@ -4,6 +4,7 @@ import { createApp } from '../src/app.ts';
 import type { AppleVerifier } from '../src/apple.ts';
 import type { Ai, DeviceAction, ToneCheck } from '../src/ai.ts';
 import { ExplanationSchema, SceneSchema } from '../src/explain.ts';
+import { TaskPlanSchema } from '../src/task.ts';
 import type { RouteLabel } from '../src/route.ts';
 import { createCipher, randomToken, sha256 } from '../src/crypto.ts';
 import type { Mail } from '../src/mailer.ts';
@@ -17,7 +18,7 @@ import { noteServed, type AttestationSnapshot, type Served } from '../src/nearai
 
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; route?: { label?: RouteLabel; confidence?: number } | Error; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; ai?: Ai; pay?: PayDeps; served?: Served; attestation?: AttestationSnapshot } = {}) {
+export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; task?: unknown; route?: { label?: RouteLabel; confidence?: number } | Error; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; ai?: Ai; pay?: PayDeps; served?: Served; attestation?: AttestationSnapshot } = {}) {
   const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
@@ -65,6 +66,7 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     // explain and visual take the model's raw JSON (an Error to fail) and pass it through the real schemas, as createAi does.
     async explain(...args) { aiCalls.push({ fn: 'explain', args }); return serve(ExplanationSchema.parse(model(opts.explain, logExplain))); },
     async visual(...args) { aiCalls.push({ fn: 'visual', args }); return SceneSchema.parse(model(opts.visual, logScene)); },
+    async taskPlan(...args) { aiCalls.push({ fn: 'taskPlan', args }); return serve(TaskPlanSchema.parse(model(opts.task, { goal: 'Book a train ticket', steps: [{ do: 'Search trains', where: 'IRCTC' }], confirm: [] }))); },
   };
   // Mail the server would send. Tests read codes from here; nothing leaves the process, so email sign-up works by default.
   const mails: Mail[] = [];

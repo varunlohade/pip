@@ -5,6 +5,7 @@ import { log } from './log.ts';
 import { ROUTE_CRITERIA, ROUTE_LABELS, ROUTE_QUESTION, routeContext, type RouteLabel } from './route.ts';
 import { createNear, noteServed, type AttestationSnapshot } from './nearai.ts';
 import { EXPLAIN_SYSTEM, ExplanationSchema, SceneSchema, VISUAL_SYSTEM, type Explanation, type Scene } from './explain.ts';
+import { TASK_SYSTEM, TaskPlanSchema, type TaskPlan } from './task.ts';
 
 export type Ai = {
   /** A typed sentence: which on-phone action fits it, if any. One jev question. */
@@ -18,6 +19,8 @@ export type Ai = {
   explain(text: string): Promise<Explanation>;
   /** A topic drawn as 2-4 steps of shapes, already clamped to the board. */
   visual(topic: string): Promise<Scene>;
+  /** A task such as "book me a train ticket to Pune on Friday": the plan only. Nothing is booked or paid. */
+  taskPlan?(text: string): Promise<TaskPlan>;
   /** A typed sentence (and up to 3 earlier lines): which bar action fits it. One jev question, on NEAR AI Cloud first. */
   route(text: string, context?: string[]): Promise<{ label: RouteLabel; confidence: number; via: string }>;
   /** NEAR AI attestation for the demo screen; undefined when NEAR AI is off. */
@@ -239,6 +242,7 @@ export function createAi(env: { typesafeKey: string; openrouterKey?: string; nea
 
     explain: (text) => once('explain', EXPLAIN_SYSTEM, text, 400, ExplanationSchema),
     visual: (topic) => once('visual', VISUAL_SYSTEM, topic, 2500, SceneSchema),
+    taskPlan: (text) => once('task', TASK_SYSTEM, text, 700, TaskPlanSchema),
 
     async deviceAction(text) {
       const { index, confidence } = await choose(text.slice(0, config.maxTextChars),
