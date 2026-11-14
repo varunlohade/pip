@@ -16,7 +16,8 @@ function need(name: string): string {
 const app = createApp({
   db: openDb(config.dbPath),
   cipher: createCipher(parseMasterKey(process.env.DATA_ENCRYPTION_KEY)),
-  ai: createAi({ typesafeKey: need('TYPESAFE_API_KEY'), openrouterKey: need('OPENROUTER_API_KEY') }),
+  // NEARAI_API_KEY turns on private TEE inference; OPENROUTER_API_KEY is the fallback. At least one is needed.
+  ai: createAi({ typesafeKey: need('TYPESAFE_API_KEY'), openrouterKey: process.env.OPENROUTER_API_KEY, nearaiKey: process.env.NEARAI_API_KEY }),
   mailer: createMailer(),
   emailEnabled: emailEnabled(),
 });

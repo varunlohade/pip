@@ -14,7 +14,7 @@ import { createRates } from '../src/rates.ts';
 
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>> } = {}) {
+export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; ai?: Ai } = {}) {
   const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
@@ -37,7 +37,7 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     if (v instanceof Error) throw v;
     return v ?? fallback;
   };
-  const ai: Ai = {
+  const ai: Ai = opts.ai ?? {
     async deviceAction(text) {
       aiCalls.push({ fn: 'deviceAction', args: [text] });
       const d = opts.device;
