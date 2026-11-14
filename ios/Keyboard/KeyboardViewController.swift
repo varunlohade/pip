@@ -49,9 +49,11 @@ final class KeyboardViewController: UIInputViewController, TextHost {
         hosting?.rootView = KeyboardView(model: m)
         // The visual panel and the calendar need more room than the keys; the input view follows the model's height.
         // @Published sends before the property changes, so the height comes from the new value.
-        bag = m.$explainPanel.combineLatest(m.$calendar.map { $0 != nil }.removeDuplicates()).sink { [weak self] panel, calendarOpen in
-            self?.heightConstraint?.constant = KeyboardModel.height(panel: panel, calendarOpen: calendarOpen)
-        }
+        // The pay card takes the calendar's height.
+        bag = m.$explainPanel.combineLatest(m.$calendar.map { $0 != nil }.removeDuplicates(), m.$payPanel.map { $0 != nil }.removeDuplicates())
+            .sink { [weak self] panel, calendarOpen, payOpen in
+                self?.heightConstraint?.constant = KeyboardModel.height(panel: panel, calendarOpen: calendarOpen || payOpen)
+            }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -104,4 +106,21 @@ final class KeyboardViewController: UIInputViewController, TextHost {
     func adjustCursor(by offset: Int) { textDocumentProxy.adjustTextPosition(byCharacterOffset: offset) }
     func nextKeyboard() { advanceToNextInputMode() }
     func playClick() { UIDevice.current.playInputClick() }
+
+    /// Keyboards have no API to open an app. This walks the responder chain to the host's UIApplication and calls its
+    /// open(_:options:completionHandler:) by selector. If Apple closes that path, it returns false and the bar says
+    /// "Open Pip to approve"; the app then finds the payment in the App Group when it opens.
+    func open(_ url: URL) -> Bool {
+        let sel = NSSelectorFromString("openURL:options:completionHandler:")
+        var r: UIResponder? = self
+        while let cur = r {
+            if cur.isKind(of: NSClassFromString("UIApplication") ?? NSNull.self), cur.responds(to: sel), let imp = cur.method(for: sel) {
+                typealias Open = @convention(c) (AnyObject, Selector, URL, [String: Any], ((Bool) -> Void)?) -> Void
+                unsafeBitCast(imp, to: Open.self)(cur, sel, url, [:], nil)
+                return true
+            }
+            r = cur.next
+        }
+        return false
+    }
 }

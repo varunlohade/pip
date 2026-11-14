@@ -6,6 +6,12 @@ export type Tone = (typeof TONES)[number];
 export const REWRITES = [...TONES, 'fix'] as const;
 export type Rewrite = (typeof REWRITES)[number];
 
+/** A NEAR model id. Pip never sends text to Claude or GPT models, so those ids are refused at start-up. */
+function teeModel(id: string): string {
+  if (/anthropic|claude|openai|gpt/i.test(id)) throw new Error(`refusing model ${id}: Pip does not route to Claude or GPT`);
+  return id;
+}
+
 export const config = {
   port: Number(env.PORT ?? 8787),
   dbPath: env.DB_PATH ?? new URL('../data/pip.db', import.meta.url).pathname,
@@ -82,6 +88,24 @@ export const config = {
     explainTimeoutMs: 15_000,
     primary: { model: 'meta-llama/llama-3.3-70b-instruct', provider: { order: ['groq'], allow_fallbacks: true } },
     fallback: { model: 'google/gemini-2.5-flash' },
+  },
+
+  // NEAR AI Cloud private inference. Used when NEARAI_API_KEY is set; OpenRouter stays as the fallback.
+  // Both default models run on NEAR's own TEE GPUs ("Confidential TEE" tier) and support attestation and JSON mode.
+  nearai: {
+    url: (env.NEARAI_URL || 'https://cloud-api.near.ai/v1').replace(/\/+$/, ''),
+    primary: teeModel(env.NEARAI_MODEL_PRIMARY || 'Qwen/Qwen3.6-35B-A3B-FP8'),
+    fallback: teeModel(env.NEARAI_MODEL_FALLBACK || 'z-ai/glm-5.3-flash'),
+    // Extra body fields per model: JSON mode on, reasoning off or minimal, so a keyboard rewrite stays fast.
+    params: {
+      'Qwen/Qwen3.6-35B-A3B-FP8': { response_format: { type: 'json_object' }, chat_template_kwargs: { enable_thinking: false } },
+      'z-ai/glm-5.3-flash': { response_format: { type: 'json_object' }, reasoning_effort: 'low' },
+    } as Record<string, Record<string, unknown>>,
+    // A passing attestation counts for this long; then the next request starts a new check in the background.
+    attestTtlMs: 10 * 60_000,
+    attestTimeoutMs: 10_000,
+    signatureTries: 3,
+    signatureRetryMs: 1000,
   },
 
   rateLimit: {

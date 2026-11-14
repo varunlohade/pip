@@ -30,6 +30,8 @@ final class Session: ObservableObject {
     /// Goes up when the account behind the app changes (sign-in, logout, a recovered account), so Home loads again
     /// and the navigation stack starts new.
     @Published var account = 0
+    /// A payment waiting on the approval card: from a pip://approve/<id> link, or left by the keyboard in the App Group.
+    @Published var approval: PayApprovalRequest?
     private var rejected: AnyCancellable?
     private var signingOut = false
 
@@ -162,6 +164,7 @@ final class Session: ObservableObject {
     /// A failed write shows an error; it never passes silently.
     private func save(_ p: TokenPair, server: String) -> Bool {
         LocalWipe.wipeShared()
+        ApproverKeychain().set(nil)
         SharedStore.serverURL = server
         guard TokenStore.save(p) else {
             error = "Could not save your account on this phone. Try again."
@@ -183,7 +186,7 @@ final class Session: ObservableObject {
 
     enum Leave: Equatable { case logout, everywhere, delete(password: String?) }
 
-    /// Logout, log out everywhere and delete account. The server call comes first; then the phone forgets everything.
+    /// Logout, log out everywhere and delete account. The server call comes first; then the phone forgets everything but the pay key.
     /// A plain logout still wipes the phone when the server cannot be reached (the session then just expires there).
     /// Log out everywhere and delete must reach the server, or nothing changes and the owner sees why.
     func leave(_ how: Leave) async -> String? {
@@ -200,11 +203,15 @@ final class Session: ObservableObject {
             if how != .logout { return Self.line(error) }
         }
         await LocalWipe.wipeAll()
+        // Logout keeps the NEAR pay key (it has no backup). Deleting the account removes it, after the balance warning.
+        if case .delete = how { PayKeyVault().forget() }
         reset()
         return nil
     }
 
     private func reset() {
+        ApproverKeychain().set(nil)
+        approval = nil
         appleLinked = false
         notice = nil
         error = nil
@@ -217,6 +224,11 @@ final class Session: ObservableObject {
     /// Dev only: `xcrun simctl openurl <sim> "pip-dev://pair?token=...&server=..."`. It goes straight to Home.
     /// Release builds ignore it, so no web page can pair the app to another server.
     func handle(url: URL) {
+        if let id = PayApprovalRequest(url: url)?.id {
+            if SharedStore.payPending == id { SharedStore.payPending = nil }
+            approval = PayApprovalRequest(id: id)
+            return
+        }
         #if DEBUG
         guard url.scheme == "pip-dev", url.host == "pair",
               let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
@@ -242,7 +254,30 @@ struct RootView: View {
         // person (such as Account) stays pushed.
         .id(session.account)
         // Back from Settings: onboarding and Home see the new keyboard state at once.
-        .onChange(of: scenePhase) { _, phase in if phase == .active { KeyboardSetup.shared.refresh() } }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            KeyboardSetup.shared.refresh()
+            // Opened by hand after the keyboard said "Open Pip to approve": show that payment.
+            if session.paired, let id = SharedStore.payPending {
+                SharedStore.payPending = nil
+                session.approval = PayApprovalRequest(id: id)
+            }
+        }
+        .sheet(item: $session.approval) { r in ApprovalSheet(model: ApprovalModel.live(id: r.id)) }
         .task { await session.migrateLegacyToken() }
+    }
+}
+
+/// The id of a payment to approve. Only a 32-hex id from pip://approve/<id> is taken; the card reads every field from the server.
+struct PayApprovalRequest: Identifiable, Equatable {
+    let id: String
+
+    init(id: String) { self.id = id }
+
+    init?(url: URL) {
+        guard url.scheme == "pip", url.host == "approve", url.pathComponents.count == 2 else { return nil }
+        let id = url.pathComponents[1]
+        guard id.count == 32, id.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+        self.id = id
     }
 }

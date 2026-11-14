@@ -20,6 +20,7 @@ struct ExplainCardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
+                if case .answer(_, let r) = offer, let mark = r.privacy { PrivacyMarkView(mark: mark, size: 12) }
             }
             .padding(.horizontal, 16).padding(.vertical, 14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// Every App Group UserDefaults key, in one place. Nothing secret goes here: secrets live in the Keychain (`Secret`).
@@ -18,6 +19,14 @@ enum StoreKey: String, CaseIterable {
     case keyboardSeenEpoch = "keyboard_seen_epoch"
     /// Set on first launch. iOS deletes the App Group on uninstall but keeps the Keychain, so no marker means stale secrets.
     case installed = "installed"
+    /// The payment the keyboard last proposed, so opening Pip by hand still shows its approval card.
+    case payPending = "pay_pending"
+    /// The payment the app last sent (PaySent JSON), so the keyboard offers its Insert line.
+    case paySent = "pay_sent"
+    /// The phone's NEAR public key (64 hex), which is also its implicit account id. Not secret; the private key is in PayKeychain.
+    case payPublicKey = "pay_public_key"
+    /// "testnet" or "mainnet", as the server last confirmed it.
+    case payNetwork = "pay_network"
 }
 
 /// Every App Group file, in one place. All are small JSON files, except the drawings folder.
@@ -82,6 +91,24 @@ enum Keychain {
     static func deleteAll() {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccessGroup as String: AppConfig.keychainGroup]
         SecItemDelete(q as CFDictionary)
+    }
+
+    /// Every generic password in the shared group except the NEAR pay key. Logout uses it: the key holds money and has
+    /// no backup, so only "Remove wallet from this phone" or account delete may remove it. Reads attributes only (no Face ID).
+    static func deleteAllButPayKey() {
+        let ctx = LAContext()
+        ctx.interactionNotAllowed = true
+        let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccessGroup as String: AppConfig.keychainGroup,
+                                kSecMatchLimit as String: kSecMatchLimitAll, kSecReturnAttributes as String: true,
+                                kSecUseAuthenticationContext as String: ctx]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess else { return }
+        for item in out as? [[String: Any]] ?? [] where item[kSecAttrService as String] as? String != PayKeychain.service {
+            var one: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccessGroup as String: AppConfig.keychainGroup]
+            one[kSecAttrService as String] = item[kSecAttrService as String] ?? ""
+            one[kSecAttrAccount as String] = item[kSecAttrAccount as String] ?? ""
+            SecItemDelete(one as CFDictionary)
+        }
     }
 
     /// How many items the shared group holds. The wipe test reads it.
@@ -217,6 +244,26 @@ enum SharedStore {
     static var currencyRates: Calc.Rates? {
         get { load(Calc.Rates.self, .rates) }
         set { if let newValue { save(newValue, .rates) } }
+    }
+
+    static var payPending: String? {
+        get { defaults?.string(forKey: StoreKey.payPending.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payPending.rawValue) }
+    }
+
+    static var paySent: PaySent? {
+        get { defaults?.data(forKey: StoreKey.paySent.rawValue).flatMap { try? JSONDecoder().decode(PaySent.self, from: $0) } }
+        set { defaults?.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: StoreKey.paySent.rawValue) }
+    }
+
+    static var payPublicKey: String? {
+        get { defaults?.string(forKey: StoreKey.payPublicKey.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payPublicKey.rawValue) }
+    }
+
+    static var payNetwork: String? {
+        get { defaults?.string(forKey: StoreKey.payNetwork.rawValue) }
+        set { defaults?.set(newValue, forKey: StoreKey.payNetwork.rawValue) }
     }
 
     // MARK: secrets

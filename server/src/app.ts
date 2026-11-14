@@ -11,6 +11,7 @@ import type { Db, Preview, SharedImage } from './db.ts';
 import { isPng, jpegSize, pngSize } from './image.ts';
 import type { Ai, DeviceAction } from './ai.ts';
 import { log } from './log.ts';
+import { tracked } from './nearai.ts';
 import { clean } from './text.ts';
 import { deviceSignal, deviceTitle, deviceTrigger, lastSentence, nameIn } from './quick.ts';
 import { createAppleVerifier, type AppleVerifier } from './apple.ts';
@@ -19,6 +20,9 @@ import { PasswordBusyError } from './password.ts';
 import { clientIp, HttpError, rateLimiter, type Env } from './http.ts';
 import { createDevMailer, type Mailer } from './mailer.ts';
 import { createRates, type Rates } from './rates.ts';
+import { payRoutes, type PayDeps } from './pay/routes.ts';
+import { phoneRoutes } from './pay/phone/routes.ts';
+import { payConfig } from './pay/config.ts';
 
 export type Deps = {
   db: Db; cipher: Cipher; ai: Ai; now?: () => number;
@@ -31,6 +35,8 @@ export type Deps = {
   onNewUser?: (userId: string) => void;
   /** Currency rates for the keyboard's conversions. The default reads the keyless public source, cached for an hour. */
   rates?: Rates;
+  /** NEAR testnet payments (src/pay). Tests pass a fake chain. */
+  pay?: PayDeps;
 };
 export type { Env };
 export type Chip = { kind: string; label: string; payload: Record<string, unknown>; needs_confirm: boolean; trigger?: string };
@@ -227,10 +233,10 @@ export function createApp(deps: Deps) {
   const writing = async <T extends object>(c: Context<Env>, kind: string, chars: number, run: () => Promise<T>, paid: (out: T) => number = () => 1) => {
     const t = performance.now();
     try {
-      const out = await run();
+      const { out, privacy } = await tracked(run);
       const ms = Math.round(performance.now() - t);
       log('write', { user_id: c.get('userId'), kind, chars, ms, ok: true, paid_calls: paid(out) });
-      return c.json({ ...out, ms });
+      return c.json({ ...out, ms, ...privacy });
     } catch (e) {
       // A model error can quote the text, so only its type is logged.
       log('write', { user_id: c.get('userId'), kind, chars, ms: Math.round(performance.now() - t), ok: false, err: (e as Error).name });
@@ -268,9 +274,10 @@ export function createApp(deps: Deps) {
           timer = setTimeout(() => { stop.abort(); reject(new Error('stalled')); }, config.llm.rewriteStallMs);
         });
         const t = performance.now();
-        let line: { tone: Rewrite; text?: string; error?: 'stalled' | 'failed' };
+        let line: { tone: Rewrite; text?: string; error?: 'stalled' | 'failed'; private?: boolean; attested?: boolean; model?: string | null };
         try {
-          line = { tone, text: await Promise.race([tone === 'fix' ? ai.fix(text, signal) : ai.refine(text, tone, signal), stalled]) };
+          const { out, privacy } = await tracked(() => Promise.race([tone === 'fix' ? ai.fix(text, signal) : ai.refine(text, tone, signal), stalled]));
+          line = { tone, text: out, ...privacy };
         } catch (e) {
           line = { tone, error: stop.signal.aborted ? 'stalled' : 'failed' };
           // A model error can quote the text, so only its type is logged.
@@ -339,9 +346,9 @@ export function createApp(deps: Deps) {
   const explaining = async <T extends object>(c: Context<Env>, kind: string, chars: number, run: () => Promise<T>) => {
     const t = performance.now();
     try {
-      const out = await run();
+      const { out, privacy } = await tracked(run);
       log('explain', { user_id: c.get('userId'), kind, chars, ms: Math.round(performance.now() - t), ok: true, paid_calls: 1 });
-      return c.json(out);
+      return c.json({ ...out, ...privacy });
     } catch (e) {
       log('explain', { user_id: c.get('userId'), kind, chars, ms: Math.round(performance.now() - t), ok: false, err: (e as Error).name });
       return c.json({ error: 'explain is not available right now' }, 502);
@@ -356,6 +363,13 @@ export function createApp(deps: Deps) {
     return explaining(c, 'visual', topic.length, () => ai.visual(topic));
   });
 
+  // ---- private AI proof for the demo screen: which NEAR TEE models answer, what was checked, and the last reply signature.
+  app.get('/v1/ai/attestation', async (c) => {
+    if (!ai.attestation) return c.json({ provider: 'openrouter', private: false, attested: false });
+    const snap = await ai.attestation();
+    return c.json({ private: true, attested: snap.models.every((m) => m.ok), ...snap });
+  });
+
   // ---- rates: the phone keeps the last answer, so currency sums work offline.
   app.get('/v1/rates', async (c) => {
     try {
@@ -364,6 +378,11 @@ export function createApp(deps: Deps) {
       return c.json({ error: 'rates are not available right now' }, 502);
     }
   });
+
+  // ---- payments on NEAR testnet: parse, propose, approve in the app.
+  // Phone-signed payments (testnet and mainnet) go first; they hand legacy server-held requests on with next().
+  phoneRoutes(app, { db, now }, deps.pay?.config ?? payConfig, deps.pay?.phone);
+  payRoutes(app, { db, cipher, now }, deps.pay);
 
   return app;
 }

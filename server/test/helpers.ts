@@ -11,10 +11,12 @@ import logExplain from './fixtures/log-explain.json' with { type: 'json' };
 import logScene from './fixtures/log-scene.json' with { type: 'json' };
 import ratesUsd from './fixtures/rates-usd.json' with { type: 'json' };
 import { createRates } from '../src/rates.ts';
+import type { PayDeps } from '../src/pay/routes.ts';
+import { noteServed, type AttestationSnapshot, type Served } from '../src/nearai.ts';
 
 export const sleep = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>> } = {}) {
+export function setup(opts: { device?: { kind?: DeviceAction; confidence?: number } | Error; write?: string | Error; tone?: ToneCheck; explain?: unknown; visual?: unknown; now?: () => number; apple?: AppleVerifier; onNewUser?: (userId: string) => void; emailEnabled?: boolean; rates?: unknown; rewriteMs?: Partial<Record<string, number>>; ai?: Ai; pay?: PayDeps; served?: Served; attestation?: AttestationSnapshot } = {}) {
   const db = openDb(':memory:', { now: opts.now });
   const cipher = createCipher(randomBytes(32));
   const aiCalls: { fn: string; args: unknown[] }[] = [];
@@ -37,18 +39,24 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     if (v instanceof Error) throw v;
     return v ?? fallback;
   };
-  const ai: Ai = {
+  // served: which model each fake call says answered, so replies carry {private, attested, model} as on NEAR AI.
+  const serve = <T>(v: T): T => {
+    if (opts.served) noteServed(opts.served);
+    return v;
+  };
+  const ai: Ai = opts.ai ?? {
+    ...(opts.attestation ? { attestation: async () => opts.attestation! } : {}),
     async deviceAction(text) {
       aiCalls.push({ fn: 'deviceAction', args: [text] });
       const d = opts.device;
       if (d instanceof Error) throw d;
       return { kind: 'none', confidence: 0.92, ...d };
     },
-    async fix(text, signal) { aiCalls.push({ fn: 'fix', args: [text] }); await slow('fix', signal); return rewrite(text); },
-    async refine(text, tone, signal) { aiCalls.push({ fn: 'refine', args: [text, tone] }); await slow(tone, signal); return rewrite(text); },
+    async fix(text, signal) { aiCalls.push({ fn: 'fix', args: [text] }); await slow('fix', signal); return serve(rewrite(text)); },
+    async refine(text, tone, signal) { aiCalls.push({ fn: 'refine', args: [text, tone] }); await slow(tone, signal); return serve(rewrite(text)); },
     async toneCheck(...args) { aiCalls.push({ fn: 'toneCheck', args }); return opts.tone ?? { tone: 'ok', calm: null }; },
     // explain and visual take the model's raw JSON (an Error to fail) and pass it through the real schemas, as createAi does.
-    async explain(...args) { aiCalls.push({ fn: 'explain', args }); return ExplanationSchema.parse(model(opts.explain, logExplain)); },
+    async explain(...args) { aiCalls.push({ fn: 'explain', args }); return serve(ExplanationSchema.parse(model(opts.explain, logExplain))); },
     async visual(...args) { aiCalls.push({ fn: 'visual', args }); return SceneSchema.parse(model(opts.visual, logScene)); },
   };
   // Mail the server would send. Tests read codes from here; nothing leaves the process, so email sign-up works by default.
@@ -62,7 +70,7 @@ export function setup(opts: { device?: { kind?: DeviceAction; confidence?: numbe
     return new Response(JSON.stringify(v), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }) as typeof fetch;
   const rates = createRates({ fetch: ratesFetch, now: opts.now });
-  const app = createApp({ db, cipher, ai, rates, now: opts.now, apple: opts.apple, onNewUser: opts.onNewUser, mailer, emailEnabled: opts.emailEnabled ?? true });
+  const app = createApp({ db, cipher, ai, rates, now: opts.now, apple: opts.apple, onNewUser: opts.onNewUser, mailer, emailEnabled: opts.emailEnabled ?? true, pay: opts.pay });
   /** A signed-in user with a live access token, made straight in the DB. */
   const device = () => {
     const userId = db.createUser();

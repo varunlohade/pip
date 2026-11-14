@@ -4,7 +4,8 @@ import WebKit
 /// Removes everything the previous person left on this phone. The app runs both parts on logout and account delete.
 /// The keyboard runs `wipeProcess` itself the next time it appears, because its caches live in its own sandbox.
 enum LocalWipe {
-    /// What the app and the keyboard share: the Keychain group, every App Group file and every App Group default.
+    /// What the app and the keyboard share: the Keychain group, every App Group file and every App Group default,
+    /// except the NEAR pay key (Keychain) and its public key (App Group). `PayKeyVault.forget` removes those.
     /// Ends by writing a new account epoch, which tells the keyboard to drop what it holds in memory.
     static func wipeShared() {
         // Take the refresh lock when it is free within a second, so a refresh cannot write the last person's tokens back
@@ -15,7 +16,9 @@ enum LocalWipe {
     }
 
     private static func wipeSharedLocked() {
-        Keychain.deleteAll()
+        // The NEAR pay key and its public key stay: losing them loses the money in the account.
+        let payKey = SharedStore.payPublicKey
+        Keychain.deleteAllButPayKey()
         if let root = SharedStore.container {
             // Library/Preferences holds the App Group defaults, cleared below key by key. The lock file stays: deleting a file
             // another process holds locked would break the lock.
@@ -29,6 +32,7 @@ enum LocalWipe {
             d.synchronize()
         }
         SharedStore.defaults?.set(true, forKey: StoreKey.installed.rawValue)
+        SharedStore.payPublicKey = payKey
         SharedStore.accountEpoch = UUID().uuidString
     }
 
@@ -86,7 +90,7 @@ enum LocalWipe {
     @MainActor
     private static func sharedDefaultsReachDisk() async {
         guard let file = SharedStore.container?.appendingPathComponent("Library/Preferences/\(AppConfig.appGroupID).plist") else { return }
-        let kept: Set<String> = [StoreKey.accountEpoch.rawValue, StoreKey.installed.rawValue]
+        let kept: Set<String> = [StoreKey.accountEpoch.rawValue, StoreKey.installed.rawValue, StoreKey.payPublicKey.rawValue]
         for _ in 0..<100 {
             guard let data = FileManager.default.contents(atPath: file.path),
                   let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],

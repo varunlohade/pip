@@ -13,6 +13,12 @@ protocol KeyboardAPI {
     func explainVisual(_ topic: String) async throws -> Data
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String
     func rates() async throws -> Calc.Rates
+    /// A payment proposal. Only the app can approve it.
+    func createPayIntent(_ d: PayDraft) async throws -> PayIntent
+    /// The exact transaction to sign. Without the approver key the server builds it only for a recipient paid before.
+    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned
+    func submitPay(_ id: String, signature: Data) async throws -> PayIntent
+    func rejectPay(_ id: String) async throws -> PayIntent
 }
 
 extension APIClient: KeyboardAPI {}
@@ -40,6 +46,10 @@ protocol KeyboardStore: AnyObject {
     var keyHaptics: Bool { get }
     /// The last currency rates the server sent. Nil until the first currency ask.
     var currencyRates: Calc.Rates? { get set }
+    /// The payment waiting for approval in the app.
+    var payPending: String? { get set }
+    /// The payment the app last sent; the keyboard offers its Insert line, then clears it.
+    var paySent: PaySent? { get set }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -74,6 +84,14 @@ final class SharedKeyboardStore: KeyboardStore {
     var currencyRates: Calc.Rates? {
         get { SharedStore.currencyRates }
         set { SharedStore.currencyRates = newValue }
+    }
+    var payPending: String? {
+        get { SharedStore.payPending }
+        set { SharedStore.payPending = newValue }
+    }
+    var paySent: PaySent? {
+        get { SharedStore.paySent }
+        set { SharedStore.paySent = newValue }
     }
 }
 
@@ -110,6 +128,8 @@ struct KeyboardDeps {
     var haptics: @MainActor () -> KeyHaptics = { SystemHaptics() }
     /// The short wait before the word slots refresh. Real time even in tests, so it never shows in a fake clock's sleeps.
     var slotSleep: (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+    /// The phone's NEAR key, shared with the app; every signature needs Face ID. Tests pass a fake.
+    var signer: () -> PaySigner = { PayKeyVault() }
 
     static func live() -> KeyboardDeps {
         KeyboardDeps(api: { APIClient.shared() }, store: SharedKeyboardStore(), pasteboard: UIPasteboard.general,

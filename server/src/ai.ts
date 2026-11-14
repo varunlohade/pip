@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { config, type Tone } from './config.ts';
 import { clean } from './text.ts';
 import { log } from './log.ts';
+import { createNear, noteServed, type AttestationSnapshot } from './nearai.ts';
 import { EXPLAIN_SYSTEM, ExplanationSchema, SceneSchema, VISUAL_SYSTEM, type Explanation, type Scene } from './explain.ts';
 
 export type Ai = {
@@ -16,6 +17,8 @@ export type Ai = {
   explain(text: string): Promise<Explanation>;
   /** A topic drawn as 2-4 steps of shapes, already clamped to the board. */
   visual(topic: string): Promise<Scene>;
+  /** NEAR AI attestation for the demo screen; undefined when NEAR AI is off. */
+  attestation?(): Promise<AttestationSnapshot>;
 };
 export type ToneCheck = { tone: 'upset' | 'blunt' | 'ok'; calm: string | null };
 export const DEVICE_ACTIONS = ['event', 'reminder', 'note', 'followup', 'none'] as const;
@@ -121,16 +124,32 @@ export async function hedge<T>(
   });
 }
 
-export function createAi(env: { typesafeKey: string; openrouterKey: string }): Ai {
-  type Model = typeof config.llm.primary | typeof config.llm.fallback;
+export function createAi(env: { typesafeKey: string; openrouterKey?: string; nearaiKey?: string; fetch?: typeof fetch; nonce?: () => string }): Ai {
+  type Route = { model: string; near: boolean; body: Record<string, unknown> };
   type Messages = { role: string; content: string }[];
+  const near = env.nearaiKey ? createNear({ apiKey: env.nearaiKey, fetch: env.fetch, nonce: env.nonce }) : null;
+  const nearRoute = (model: string): Route => ({ model, near: true, body: config.nearai.params[model] ?? {} });
+  const { model: orPrimary, ...orPrimaryBody } = config.llm.primary;
+  const openrouter: Route[] = env.openrouterKey
+    ? [{ model: orPrimary, near: false, body: orPrimaryBody }, { model: config.llm.fallback.model, near: false, body: {} }]
+    : [];
+  // NEAR first when its key is set; OpenRouter only when NEAR fails or has no key. Each pair is [primary, fallback].
+  const pairs: Route[][] = [...(near ? [[nearRoute(config.nearai.primary), nearRoute(config.nearai.fallback)]] : []), ...(openrouter.length ? [openrouter] : [])];
+  if (!pairs.length) throw new Error('set NEARAI_API_KEY or OPENROUTER_API_KEY');
+  if (near) for (const m of [config.nearai.primary, config.nearai.fallback]) void near.refresh(m);
 
-  async function chatOnce(m: Model, messages: Messages, maxTokens: number, purpose: string, signal?: AbortSignal, timeoutMs = config.llm.timeoutMs): Promise<string> {
+  async function chatOnce(m: Route, messages: Messages, maxTokens: number, purpose: string, signal?: AbortSignal, timeoutMs = config.llm.timeoutMs): Promise<string> {
     const t = performance.now();
+    const body = { ...m.body, messages, temperature: 0, max_tokens: maxTokens };
     try {
-      const data = await postJson(config.llm.url, env.openrouterKey, { ...m, messages, temperature: 0, max_tokens: maxTokens }, timeoutMs, signal);
-      const content = data?.choices?.[0]?.message?.content;
-      if (typeof content !== 'string' || !content.trim()) throw new Error('empty completion');
+      let content: string;
+      if (m.near) {
+        content = (await near!.chat(m.model, body, timeoutMs, signal)).content;
+      } else {
+        const data = await postJson(config.llm.url, env.openrouterKey!, { model: m.model, ...body }, timeoutMs, signal);
+        content = data?.choices?.[0]?.message?.content;
+        if (typeof content !== 'string' || !content.trim()) throw new Error('empty completion');
+      }
       log('llm', { purpose, model: m.model, ms: Math.round(performance.now() - t), ok: true });
       return content;
     } catch (e) {
@@ -138,24 +157,39 @@ export function createAi(env: { typesafeKey: string; openrouterKey: string }): A
       throw e;
     }
   }
+  // Called once a reply passed its schema, so app.ts can say which model answered and whether it was private and attested.
+  const served = (m: Route) => noteServed({ model: m.model, private: m.near, attested: m.near && near!.attested(m.model) });
 
-  // Writing help: one hedged call, and a result counts only once it passes its schema.
-  function write<T>(purpose: string, system: string, text: string, schema: { parse(v: unknown): T }, outer?: AbortSignal): Promise<T> {
+  // Writing help: one hedged call per pair, and a result counts only once it passes its schema.
+  async function write<T>(purpose: string, system: string, text: string, schema: { parse(v: unknown): T }, outer?: AbortSignal): Promise<T> {
     const messages = [{ role: 'system', content: system }, { role: 'user', content: text }];
     const maxTokens = Math.ceil(text.length / 2) + 120;
-    const attempt = (m: Model) => async (signal: AbortSignal) =>
-      schema.parse(parseModelJson(await chatOnce(m, messages, maxTokens, purpose, outer ? AbortSignal.any([signal, outer]) : signal, config.llm.writeTimeoutMs)));
-    return hedge(attempt(config.llm.primary), attempt(config.llm.fallback), config.llm.writeHedgeMs);
+    const attempt = (m: Route) => async (signal: AbortSignal) => {
+      const out = schema.parse(parseModelJson(await chatOnce(m, messages, maxTokens, purpose, outer ? AbortSignal.any([signal, outer]) : signal, config.llm.writeTimeoutMs)));
+      served(m);
+      return out;
+    };
+    for (let i = 0; ; i++) {
+      try {
+        return await hedge(attempt(pairs[i][0]), attempt(pairs[i][1]), config.llm.writeHedgeMs);
+      } catch (e) {
+        if (i === pairs.length - 1 || outer?.aborted) throw e;
+      }
+    }
   }
 
-  // Explain: one call to the primary model; the fallback runs only if it fails or its answer fails the schema. No hedge, so one paid call in the common case.
+  // Explain: one call to the primary model; the next model runs only if it fails or its answer fails the schema. No hedge, so one paid call in the common case.
   async function once<T>(purpose: string, system: string, text: string, maxTokens: number, schema: { parse(v: unknown): T }): Promise<T> {
     const messages = [{ role: 'system', content: system }, { role: 'user', content: text }];
-    const attempt = async (m: Model) => schema.parse(parseModelJson(await chatOnce(m, messages, maxTokens, purpose, undefined, config.llm.explainTimeoutMs)));
-    try {
-      return await attempt(config.llm.primary);
-    } catch {
-      return attempt(config.llm.fallback);
+    const chain = pairs.flat();
+    for (let i = 0; ; i++) {
+      try {
+        const out = schema.parse(parseModelJson(await chatOnce(chain[i], messages, maxTokens, purpose, undefined, config.llm.explainTimeoutMs)));
+        served(chain[i]);
+        return out;
+      } catch (e) {
+        if (i === chain.length - 1) throw e;
+      }
     }
   }
 
@@ -167,10 +201,13 @@ export function createAi(env: { typesafeKey: string; openrouterKey: string }): A
       questions: { q: { type: 'choice', criteria: Object.fromEntries(criteria.map((c, i) => [String(i + 1), c])), instructions: { question } } },
     };
     const ans = (await postJson(config.jev.url, env.typesafeKey, body, config.jev.timeoutMs))?.answers?.q;
+    // jev runs outside a TEE, so a reply that used it is not private.
+    noteServed({ model: config.jev.model, private: false, attested: false });
     return { index: Number(ans?.choice) - 1, confidence: Number(ans?.confidence ?? 0) };
   }
 
   return {
+    ...(near ? { attestation: () => near.snapshot([config.nearai.primary, config.nearai.fallback]) } : {}),
     async fix(text, signal) {
       return (await write('fix', WRITER +
         'Fix spelling, grammar, capital letters and punctuation only. Do not change the meaning, the tone or the choice of words. ' +

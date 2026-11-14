@@ -51,3 +51,35 @@ test('fake server: refuses to start in production', () => {
   assert.equal(r.status, 1);
   assert.match(r.stderr, /refuses to start/);
 });
+
+test('fake server: pay runs the phone-signed flow; the signature is checked and the balance goes down', async (t) => {
+  const { generateKeyPairSync, sign } = await import('node:crypto');
+  const child = spawn(process.execPath, [script], { env: { ...process.env, PORT: '0', NODE_ENV: '' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  t.after(() => child.kill());
+  let out = '';
+  child.stdout.setEncoding('utf8');
+  while (!/127\.0\.0\.1:(\d+)/.test(out)) out += (await once(child.stdout, 'data'))[0];
+  const base = `http://127.0.0.1:${/127\.0\.0\.1:(\d+)/.exec(out)![1]}`;
+  let approver = '';
+  const call = async (method: string, path: string, body?: unknown) => {
+    const res = await fetch(base + path, {
+      method, body: body === undefined ? undefined : JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer pkd_fake', 'X-User-Action': 'tap', ...(approver ? { 'X-Pay-Approver': approver } : {}) },
+    });
+    return { status: res.status, json: (await res.json()) as any };
+  };
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const hex = Buffer.from(publicKey.export({ format: 'jwk' }).x!, 'base64url').toString('hex');
+  approver = (await call('POST', '/v1/pay/approver')).json.approver_key;
+  assert.equal((await call('GET', '/v1/pay/network')).json.mainnet_enabled, true, 'the mainnet switch shows in shots');
+  assert.equal((await call('POST', '/v1/pay/register', { publicKey: hex })).json.account_id, hex);
+  const fields = { amount: '5', token: 'USDC', recipient: 'ana.testnet' };
+  const i = (await call('POST', '/v1/pay/intents', fields)).json;
+  assert.equal(i.new_recipient, true);
+  const u = (await call('POST', `/v1/pay/intents/${i.id}/unsigned`, fields)).json;
+  const signature = sign(null, Buffer.from(u.sign_hash_hex, 'hex'), privateKey).toString('base64');
+  const sent = await call('POST', `/v1/pay/intents/${i.id}/submit`, { signature });
+  assert.equal(sent.json.status, 'sent', JSON.stringify(sent.json));
+  assert.match(sent.json.explorer_url, /^https:\/\/testnet\.nearblocks\.io\/txns\//);
+  assert.equal((await call('GET', '/v1/pay/wallet')).json.balances.USDC, '37.1');
+});
