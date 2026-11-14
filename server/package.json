@@ -10,6 +10,7 @@
     "start": "node --env-file-if-exists=../.env src/index.ts",
     "device": "node --env-file=../.env scripts/create-device.ts",
     "fake": "node scripts/fake-server.ts",
+    "quote": "node scripts/quote.ts",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },

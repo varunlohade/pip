@@ -6,6 +6,26 @@ Private AI runs on NEAR AI Cloud. Payments run on NEAR, with keys held on your p
 
 Built for NEAR HACKATHON. The repo started on 2026-11-12, inside the hackathon window.
 
+## For judges: a 2-minute check
+
+No keys and no wallet needed:
+
+```sh
+cd server && npm install
+npm test                     # 246 tests
+npm run quote -- "send 5 usdc to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 on base"
+```
+
+`npm run quote` asks NEAR Intents (1Click) for a live, dry quote. It reads the typed text, checks the token against Pip's verified contract pins, converts the amount to exact base units for that chain's decimals, and checks that the recipient gets exactly what you typed. Nothing is signed and no money moves.
+
+## What makes Pip different
+
+- **You approve inside the keyboard.** Type the payment, enter your PIN, done. You never leave the chat for a wallet app.
+- **The key stays on your phone.** Pip makes a NEAR key on the device and seals it with your PIN (PBKDF2 + AES-GCM) in the iOS keychain. The server never holds it. The phone checks each transaction before it signs.
+- **Private AI you can check.** The server verifies the TEE attestation of the NEAR AI Cloud model, not just its name.
+- **A secret filter.** Passwords, private keys and seed phrases never reach any AI. You can still type and send them.
+- **One router for every action.** jev on NEAR AI Cloud reads what you type and picks the action. There are no fixed keyword triggers.
+
 ## Try it
 
 **TestFlight: https://testflight.apple.com/join/N35PJPEx**
