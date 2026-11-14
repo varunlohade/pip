@@ -230,6 +230,10 @@ struct HomeView: View {
                     .tint(Theme.Color.sky)
                     .accessibilityIdentifier("home.keyHaptics")
             }
+            NavigationLink("Voice") { VoiceView() }
+                .font(Theme.Font.label).foregroundStyle(Theme.Color.text2)
+                .frame(minHeight: Theme.Metric.iconButton)
+                .accessibilityIdentifier("home.voice")
             if !session.appleLinked {
                 SaveDetailsCard()
             } else if let notice = session.notice {

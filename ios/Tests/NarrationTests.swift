@@ -137,3 +137,43 @@ final class VoiceModelTests: XCTestCase {
         XCTAssertEqual(speaker.stops, 1)
     }
 }
+
+/// The voice ranking and the stored choice. Nothing here speaks.
+final class VoiceChoiceTests: XCTestCase {
+    func testAvaPremiumBeatsSamanthaCompact() {
+        let voices = [
+            VoiceInfo(id: "sam", name: "Samantha", quality: .default, language: "en-US"),
+            VoiceInfo(id: "ava", name: "Ava (Premium)", quality: .premium, language: "en-US"),
+            VoiceInfo(id: "dan", name: "Daniel", quality: .enhanced, language: "en-GB"),
+        ]
+        XCTAssertEqual(VoiceChoice.best(voices, lang: "en-US")?.id, "ava")
+    }
+
+    func testWithNoPreferredVoiceTheBestQualityWins() {
+        let voices = [
+            VoiceInfo(id: "sam", name: "Samantha", quality: .default, language: "en-US"),
+            VoiceInfo(id: "dan", name: "Daniel", quality: .enhanced, language: "en-GB"),
+        ]
+        XCTAssertEqual(VoiceChoice.best(voices, lang: "en-US")?.id, "dan")
+    }
+
+    func testNarrationUsesTheStoredChoice() throws {
+        let d = try XCTUnwrap(UserDefaults(suiteName: "voice-tests"))
+        d.removePersistentDomain(forName: "voice-tests")
+        let installed = VoiceInfo.installedEnglish
+        let pick = try XCTUnwrap(installed.last, "the simulator has an English voice")
+        VoiceChoice(voiceID: pick.id, rate: 0.5, pitch: 1.2).save(d)
+
+        let u = VoiceChoice.load(d).utterance("Hi", voices: installed)
+        XCTAssertEqual(u.voice?.identifier, pick.id)
+        XCTAssertEqual(u.rate, 0.5)
+        XCTAssertEqual(u.pitchMultiplier, 1.2)
+    }
+
+    func testNothingStoredMeansTheLivelyDefaults() {
+        let u = VoiceChoice.load(nil).utterance("Hi", voices: [])
+        XCTAssertEqual(u.rate, 0.53)
+        XCTAssertEqual(u.pitchMultiplier, 1.08)
+        XCTAssertGreaterThan(u.preUtteranceDelay, 0)
+    }
+}

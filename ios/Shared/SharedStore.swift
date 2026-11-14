@@ -27,6 +27,10 @@ enum StoreKey: String, CaseIterable {
     case payPublicKey = "pay_public_key"
     /// "testnet" or "mainnet", as the server last confirmed it.
     case payNetwork = "pay_network"
+    /// The voice the owner picked in Settings → Voice (an AVSpeechSynthesisVoice identifier); missing means the best installed.
+    case voiceID = "voice_id"
+    case voiceRate = "voice_rate"
+    case voicePitch = "voice_pitch"
 }
 
 /// Every App Group file, in one place. All are small JSON files, except the drawings folder.
