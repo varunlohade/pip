@@ -174,7 +174,7 @@ Pick the **Pip** scheme and an iPhone simulator. Debug builds talk to `http://lo
 ## What's next
 
 - **Merlin: an always-watching agent for your computer.** It watches everything that happens on your computer. It spots when something is about to leak, like a password, a private key or a seed phrase, and when you need help. Then it helps on its own, or asks you first. It runs on private AI and tells no one what it sees.
-- **Multi-signature wallets.** Bigger payments need a second approval, from another of your devices or a person you trust.
+- **Multi-signature wallets, coming soon.** Your phone key signs first, and a passkey gives the second signature for bigger payments.
 - **Key backup and recovery.** Today the wallet key lives only on your phone, by design. Uninstalling the app deletes it.
 - **jev inside a TEE.** jev runs on NEAR AI Cloud; Qwen, the main writing model, is already TEE-attested.
 - **Deeper attestation.** Add the Intel TCB and revocation check, NVIDIA GPU evidence, and an allowlist of builds.
