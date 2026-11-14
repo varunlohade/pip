@@ -510,6 +510,9 @@ struct PayKeyboardCard: View {
                             Text(PayApprovalCard.shortTx(s)).font(.system(size: 15)).foregroundStyle(K.link).lineLimit(1)
                         }
                     }
+                } else if panel.confirm?.confirmed == false {
+                    // The address check below shows the whole address, so the card keeps only the fee.
+                    Text("Network fee < 0.001 NEAR").font(.system(size: 13)).foregroundStyle(K.ink3)
                 } else {
                     HStack(spacing: 10) {
                         Text(String(i.recipient.prefix(2)).uppercased()).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
@@ -567,28 +570,93 @@ struct PayKeyboardCard: View {
     }
 }
 
-/// "First time paying this address": the owner taps how it ends, one of three, before approving.
+/// "First time paying this address": the whole address with its ending marked, then the owner taps that ending, one of three.
 struct AddressConfirmRow: View {
     let confirm: AddressConfirm
     let pick: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label("First time paying this address. Tap how it ends:", systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(K.warning).lineLimit(2)
+        VStack(alignment: .leading, spacing: 7) {
+            FullAddress(confirm: confirm)
+            (Text("Check the end of the address: tap the one that matches ")
+                + Text("\u{2026}\(confirm.answer)").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundStyle(K.link))
+                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(K.ink1)
+                .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("paycard.firsttime")
             HStack(spacing: 8) {
                 ForEach(confirm.options, id: \.self) { end in
                     Button { pick(end) } label: {
-                        Text("\u{2026}\(end)").font(.system(size: 16, weight: .semibold, design: .monospaced))
-                            .frame(maxWidth: .infinity).frame(height: 36)
+                        Text(end).frame(maxWidth: .infinity).frame(height: 38)
                     }
-                    .buttonStyle(FrostPill(height: 36, font: .system(size: 16, weight: .semibold, design: .monospaced)))
+                    .buttonStyle(FrostPill(height: 38, font: .system(size: 18, weight: .bold, design: .monospaced)))
                     .overlay(Capsule().stroke(confirm.picked == end ? K.warning : .clear, lineWidth: 2))
                     .accessibilityIdentifier("paycard.end.\(end)")
                 }
             }
         }
+    }
+}
+
+/// The whole recipient address in monospace, wrapped and never cut, with its ending bold in the accent color on a small highlight.
+struct FullAddress: View {
+    let confirm: AddressConfirm
+    static let font = Font.system(size: 15, weight: .regular, design: .monospaced)
+
+    var body: some View {
+        let p = confirm.parts
+        CharFlow {
+            ForEach(Array(p.head.enumerated()), id: \.offset) { Text(String($0.element)) }
+            Text(p.end).font(.system(size: 15, weight: .bold, design: .monospaced)).foregroundStyle(K.link)
+                .padding(.horizontal, 3)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(K.link.opacity(0.16)))
+                .accessibilityIdentifier("paycard.addressEnd")
+            ForEach(Array(p.tail.enumerated()), id: \.offset) { Text(String($0.element)) }
+        }
+        .font(Self.font).foregroundStyle(K.ink1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(K.card))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(confirm.address)
+        .accessibilityIdentifier("paycard.address")
+    }
+}
+
+/// Left to right, wrapping to a new line when the next piece does not fit. A piece is never split, so the ending stays whole.
+struct CharFlow: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let rows = rows(width: proposal.width ?? .infinity, subviews)
+        return CGSize(width: rows.map(\.width).max() ?? 0, height: rows.map(\.height).reduce(0, +))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(width: bounds.width, subviews) {
+            var x = bounds.minX
+            for i in row.items {
+                let s = subviews[i].sizeThatFits(.unspecified)
+                subviews[i].place(at: CGPoint(x: x, y: y + row.height / 2), anchor: .leading, proposal: .unspecified)
+                x += s.width
+            }
+            y += row.height
+        }
+    }
+
+    private func rows(width: CGFloat, _ subviews: Subviews) -> [(items: [Int], width: CGFloat, height: CGFloat)] {
+        var rows: [(items: [Int], width: CGFloat, height: CGFloat)] = []
+        var cur: (items: [Int], width: CGFloat, height: CGFloat) = ([], 0, 0)
+        for (i, v) in subviews.enumerated() {
+            let s = v.sizeThatFits(.unspecified)
+            if !cur.items.isEmpty, cur.width + s.width > width {
+                rows.append(cur)
+                cur = ([], 0, 0)
+            }
+            cur.items.append(i)
+            cur.width += s.width
+            cur.height = max(cur.height, s.height)
+        }
+        if !cur.items.isEmpty { rows.append(cur) }
+        return rows
     }
 }
 

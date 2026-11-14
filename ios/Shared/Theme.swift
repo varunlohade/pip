@@ -131,6 +131,8 @@ enum Theme {
         static let visualHeight: CGFloat = 470
         /// The keyboard while the calendar panel is open: month beside the day, as drawn in design/calendar/C.png.
         static let calendarHeight: CGFloat = 320
+        /// A pay card with the new-address check: room for the whole address, the three endings and Approve.
+        static let addressCheckHeight: CGFloat = 410
 
         static let letter = SwiftUI.Font.system(size: 22.5, weight: .regular)
         static let symbol = SwiftUI.Font.system(size: 22.5, weight: .regular)

@@ -177,7 +177,7 @@ final class KeyboardPayTests: XCTestCase {
         let c = try XCTUnwrap(model.payPanel?.confirm, "First time paying this address")
         XCTAssertEqual(c.options.count, 3)
         XCTAssertEqual(Set(c.options).count, 3)
-        XCTAssertTrue(c.options.contains("tnet"))
+        XCTAssertTrue(c.options.contains("ana"))
         XCTAssertFalse(model.payPanel!.canApprove, "Approve stays off until the ending is picked")
         host.canOpen = true
         model.approvePayInKeyboard()
@@ -185,10 +185,10 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertNil(model.payPanel?.pin)
         XCTAssertEqual(model.payPanel?.note, PayFallback.pickEnd, "a tap before the check says why, never silent")
         XCTAssertTrue(store.heartbeat?.pinTap?.hasSuffix("blocked: address ending not picked") == true, store.heartbeat?.pinTap ?? "nil")
-        model.pickAddressEnd(c.options.first { $0 != "tnet" }!)
+        model.pickAddressEnd(c.options.first { $0 != "ana" }!)
         XCTAssertEqual(model.payPanel?.note, "That is not how this address ends. Check it and try again.")
         XCTAssertFalse(model.payPanel!.canApprove)
-        model.pickAddressEnd("tnet")
+        model.pickAddressEnd("ana")
         XCTAssertTrue(model.payPanel!.canApprove)
         model.approveWithPIN()
         await until("sent") { model.payPanel?.phase == .sent }

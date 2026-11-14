@@ -104,11 +104,49 @@ final class XchainCardTests: XCTestCase {
 
     func testAddressConfirmOffersThreeEndingsWithTheRealOne() {
         for a in [TestXchain.evm, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "ana.testnet", "abcd", "aaaaaaaaaaaaaaaa"] {
-            let c = AddressConfirm(a)
+            var c = AddressConfirm(a)
             XCTAssertEqual(c.options.count, 3, a)
             XCTAssertEqual(Set(c.options).count, 3, a)
-            XCTAssertEqual(c.options.filter { $0 == String(a.suffix(4)) }.count, 1, a)
+            XCTAssertEqual(c.options.filter { $0 == c.answer }.count, 1, a)
             XCTAssertFalse(c.confirmed)
+            c.picked = c.answer
+            XCTAssertTrue(c.confirmed, a)
+        }
+    }
+
+    /// The card shows every character: head + highlighted ending + suffix is the address, and the highlight is the right option.
+    func testFullAddressIsWholeAndTheHighlightIsTheRightOption() {
+        let cases: [(String, String, String, String)] = [
+            ("pipfundmwg9zj4l.testnet", "pipfundmwg9", "zj4l", ".testnet"),
+            ("ana.near", "", "ana", ".near"),
+            (TestXchain.evm, String(TestXchain.evm.dropLast(4)), String(TestXchain.evm.suffix(4)), ""),
+            (String(repeating: "ab", count: 32), String(repeating: "ab", count: 30), "abab", ""),
+        ]
+        for (a, head, end, tail) in cases {
+            let c = AddressConfirm(a)
+            XCTAssertEqual(c.parts.head, head, a)
+            XCTAssertEqual(c.parts.end, end, a)
+            XCTAssertEqual(c.parts.tail, tail, a)
+            XCTAssertEqual(c.parts.head + c.parts.end + c.parts.tail, a, "nothing cut")
+            XCTAssertEqual(c.answer, c.parts.end)
+            XCTAssertTrue(c.options.contains(c.parts.end), a)
+        }
+    }
+
+    /// No wrong option differs from the right one by a lookalike: decoys use no 0/O/o/1/l/I/i and differ in 3 or more places.
+    func testDecoysAvoidConfusablesAndDifferVisibly() {
+        var addrs = [TestXchain.evm, "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t", "pipfundmwg9zj4l.testnet", "0x00000000000000000000000000000000000O1lI0",
+                     "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh", "ab.near"]
+        for n in 0..<200 { addrs.append("0x" + String(format: "%040x", n &* 2654435761)) }
+        for a in addrs {
+            let c = AddressConfirm(a)
+            let real = Array(c.answer)
+            for d in c.options where d != c.answer {
+                XCTAssertTrue(Set(d).isDisjoint(with: AddressConfirm.confusable), "\(a): \(d)")
+                XCTAssertEqual(d.count, real.count, a)
+                let diff = zip(d, real).filter { $0.lowercased() != $1.lowercased() }.count
+                XCTAssertGreaterThanOrEqual(diff, min(3, real.count), "\(a): \(d) vs \(c.answer)")
+            }
         }
     }
 }
