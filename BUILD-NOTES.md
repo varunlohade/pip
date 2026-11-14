@@ -1,5 +1,17 @@
 # Pip build notes
 
+## 0.3 (4)
+
+What to Test:
+
+1. Setup: open Pip after install. The steps now see on their own when Pip Keyboard is added and when Full Access is on.
+2. Panels: every keyboard panel has an X (close) button at the top. Its buttons sit above the globe row, so you can always reach them.
+3. Draw it: every explain answer has a Draw it button. Tap it to see the answer drawn.
+4. Wallet: on Home, tap "Create your NEAR wallet". One tap makes it. If it fails, Pip says why and offers Retry.
+5. Smoother: Home and Shortcuts open and scroll without lag.
+6. Pay on NEAR testnet works as before (play money).
+7. Cross-chain pay is not in the app yet. It comes in the next build.
+
 ## 0.2 (3)
 
 What to Test:
