@@ -17,12 +17,15 @@ const RPC: Record<string, string> = {
   gnosis: 'https://gnosis-rpc.publicnode.com',
   sol: 'https://api.mainnet-beta.solana.com',
   tron: 'https://api.trongrid.io/jsonrpc',
+  sui: 'https://graphql.mainnet.sui.io/graphql',
 };
 /** Native coins have no contract to ask; their decimals are fixed by the chain itself. */
 const NATIVE: Record<string, { symbol: string; decimals: number }> = {
   eth: { symbol: 'ETH', decimals: 18 }, base: { symbol: 'ETH', decimals: 18 }, arb: { symbol: 'ETH', decimals: 18 }, op: { symbol: 'ETH', decimals: 18 },
   pol: { symbol: 'POL', decimals: 18 }, avax: { symbol: 'AVAX', decimals: 18 }, bsc: { symbol: 'BNB', decimals: 18 }, gnosis: { symbol: 'XDAI', decimals: 18 },
   sol: { symbol: 'SOL', decimals: 9 }, tron: { symbol: 'TRX', decimals: 6 },
+  btc: { symbol: 'BTC', decimals: 8 }, ltc: { symbol: 'LTC', decimals: 8 }, bch: { symbol: 'BCH', decimals: 8 }, doge: { symbol: 'DOGE', decimals: 8 },
+  xrp: { symbol: 'XRP', decimals: 6 }, cardano: { symbol: 'ADA', decimals: 6 }, sui: { symbol: 'SUI', decimals: 9 }, ton: { symbol: 'TON', decimals: 9 },
 };
 
 async function rpc(url: string, method: string, params: unknown): Promise<unknown> {
@@ -47,11 +50,12 @@ export function createChainDecimals(): ChainDecimals {
   return async (t) => {
     const hit = cache.get(t.assetId);
     if (hit !== undefined) return hit;
+    if (!CHAINS[t.blockchain]) return null;
     const url = RPC[t.blockchain];
-    if (!url || !CHAINS[t.blockchain]) return null;
     const c = t.contractAddress;
     let d: number | null = null;
     if (!c) d = NATIVE[t.blockchain]?.symbol === t.symbol.toUpperCase() ? NATIVE[t.blockchain].decimals : null;
+    else if (!url) d = null;
     else if (t.blockchain === 'near') {
       const r = (await rpc(url, 'query', { request_type: 'call_function', finality: 'final', account_id: c, method_name: 'ft_metadata', args_base64: 'e30=' })) as { result?: number[] };
       const meta = r?.result ? JSON.parse(Buffer.from(r.result).toString()) as { decimals?: unknown } : null;
@@ -62,6 +66,12 @@ export function createChainDecimals(): ChainDecimals {
       const r = (await rpc(url, 'getAccountInfo', [c, { encoding: 'jsonParsed' }])) as { value?: { data?: { parsed?: { type?: string; info?: { decimals?: unknown } } } } };
       const p = r?.value?.data?.parsed;
       d = p?.type === 'mint' && typeof p.info?.decimals === 'number' ? p.info.decimals : null;
+    }
+    else if (t.blockchain === 'sui') {
+      // Sui retired public JSON-RPC; its GraphQL endpoint reads the coin's own metadata.
+      const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(8_000), body: JSON.stringify({ query: 'query($t: String!) { coinMetadata(coinType: $t) { decimals } }', variables: { t: c } }) });
+      const body = (await r.json()) as { data?: { coinMetadata?: { decimals?: unknown } | null } };
+      d = typeof body.data?.coinMetadata?.decimals === 'number' ? body.data.coinMetadata.decimals : null;
     }
     if (d !== null && Number.isInteger(d)) cache.set(t.assetId, d);
     return d;
