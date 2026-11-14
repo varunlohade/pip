@@ -80,7 +80,7 @@ struct SuggestionBar: View {
                     .accessibilityLabel(panelTitle(panel))
                     .accessibilityIdentifier("explain.title")
                 Spacer(minLength: 4)
-                barButton("keyboard", id: "explain.close", label: "Keyboard", action: model.closeExplain)
+                PanelCloseButton(id: "explain.close", action: model.closeExplain).padding(.trailing, 6)
             } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "pay" || first.id == "paid" {
                 dismissButton
                 PayBarRow(item: first, perform: model.perform)
@@ -452,6 +452,25 @@ struct WritePanelView: View {
                 .background(accent ? palette.accent : palette.key, in: RoundedRectangle(cornerRadius: M.cornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
+    }
+}
+
+/// The close button at the top of every panel (explain, drawing, calendar, pay): a clear ✕ in a round chip, one tap back to the keys.
+struct PanelCloseButton: View {
+    let id: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.Color.text1)
+                .frame(width: 32, height: 32)
+                .background(Theme.Color.button, in: Circle())
+                .overlay(Circle().strokeBorder(Theme.Color.edge, lineWidth: 1))
+                .frame(width: 44, height: 44).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
         .accessibilityIdentifier(id)
     }
 }

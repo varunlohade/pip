@@ -50,7 +50,7 @@ struct CalendarBar: View {
             if model.host?.needsGlobeKey == true {
                 icon("globe", id: "calendar.globe", label: "Next keyboard") { model.host?.nextKeyboard() }
             }
-            icon("keyboard", id: "calendar.close", label: "Keyboard") { model.toggleCalendar() }
+            PanelCloseButton(id: "calendar.close") { model.toggleCalendar() }
         }
         .padding(.horizontal, 4)
     }

@@ -378,15 +378,9 @@ struct PayPanelBar: View {
                         .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.skyDeep)
                 }
                 .accessibilityIdentifier("paycard.tx")
-            } else {
-                Button(action: close) {
-                    Image(systemName: "xmark").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.Color.text1)
-                        .frame(width: 36, height: 36).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
-                .accessibilityIdentifier("paycard.close")
             }
+            // Always there, sent or not: one tap back to the keys.
+            PanelCloseButton(id: "paycard.close", action: close)
         }
         .padding(.horizontal, 12)
         .frame(maxHeight: .infinity)

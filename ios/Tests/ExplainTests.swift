@@ -352,6 +352,18 @@ final class ExplainModelTests: XCTestCase {
         XCTAssertEqual(api.calls, [])
     }
 
+    /// The TestFlight 0.2 (3) report: "explain compound interest" did not draw. Every server answer offers Draw it,
+    /// even when the model says a drawing would not help; a dictionary meaning and an unpaired keyboard do not.
+    func testEveryServerAnswerOffersDrawIt() {
+        let noHint = ExplainOffer.answer(subject: "compound interest", ExplainResponse(short: "Interest on interest.", body: "", visual_ok: false))
+        XCTAssertTrue(model.paired)
+        XCTAssertTrue(model.explainCanDraw(noHint))
+        guard let btw = ExplainDictionary.shared.lookup("btw") else { return XCTFail("no btw") }
+        XCTAssertFalse(model.explainCanDraw(.meaning(btw)))
+        model.paired = false
+        XCTAssertFalse(model.explainCanDraw(noHint))
+    }
+
     func testShowVisuallyGetsTheSceneAndSendTypesTheLinkInOneTap() async {
         set("explain log function")
         await pass(KeyboardModel.explainDebounce)

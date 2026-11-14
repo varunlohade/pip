@@ -237,6 +237,13 @@ extension KeyboardModel {
         }
     }
 
+    /// A drawing needs the server. A dictionary term gets none; every server answer offers one, so "explain compound
+    /// interest" can always be drawn, even when the model's visual_ok hint says no.
+    func explainCanDraw(_ offer: ExplainOffer) -> Bool {
+        if case .answer = offer { return paired }
+        return false
+    }
+
     /// A meaning or answer has a card with more; a chart opens its drawing straight away.
     var explainOfferHasMore: Bool {
         switch explainOffer { case .chart, .calc: return false; default: break }

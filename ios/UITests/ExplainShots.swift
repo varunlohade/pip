@@ -145,6 +145,36 @@ final class ExplainShots: XCTestCase {
         XCTAssertTrue(UIPasteboard.general.hasImages, "no image on the pasteboard")
     }
 
+    /// TestFlight 0.2 (3) fixes: a long answer keeps Back, Draw it and Insert above the globe row; every panel has a ✕ at
+    /// the top. Run on iPhone 16 and iPhone SE with TEST_RUNNER_SHOT_PREFIX set to the device name.
+    func test8PanelsStayAboveTheGlobeRow() {
+        let field = openField()
+        let prefix = env["SHOT_PREFIX"] ?? ""
+        enter("explain log function", in: field)
+        let chip = element(messages, "chip.explain")
+        XCTAssertTrue(chip.waitForExistence(timeout: 8), "no explain chip from the server")
+        element(messages, "chip.explain.more").tap()
+        let draw = element(messages, "explain.visual")
+        XCTAssertTrue(draw.waitForExistence(timeout: 3))
+        XCTAssertTrue(draw.isHittable, "Draw it is off screen")
+        XCTAssertTrue(element(messages, "explain.insert").isHittable, "Insert is off screen")
+        XCTAssertTrue(element(messages, "explain.close").isHittable, "no close at the top")
+        Thread.sleep(forTimeInterval: 0.4)
+        shot("fix-explain-card-\(prefix)")
+        draw.tap()
+        // Drawn: the "Drawing…" line is gone and Send is on.
+        let status = element(messages, "visual.status")
+        let send = element(messages, "visual.send")
+        let done = Date().addingTimeInterval(25)
+        while status.exists || !send.isEnabled, Date() < done { Thread.sleep(forTimeInterval: 0.3) }
+        XCTAssertFalse(status.exists, "the drawing never arrived")
+        XCTAssertTrue(element(messages, "visual.insert").isHittable, "drawing buttons off screen")
+        Thread.sleep(forTimeInterval: 0.5)
+        shot("fix-draw-panel-\(prefix)")
+        element(messages, "explain.close").tap()
+        XCTAssertTrue(element(messages, "space").waitForExistence(timeout: 3), "close did not bring the keys back")
+    }
+
     /// The three drawing scenes in a Messages chat: log (mid-drawing and finished), a bar chart and a pie chart.
     /// It writes anim-start.txt (epoch seconds) when the log drawing starts, to cut a screen recording.
     func test7DrawingScenes() {
