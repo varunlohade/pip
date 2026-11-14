@@ -113,7 +113,7 @@ extension KeyboardModel {
             return true
         }
         // Everything below may ask the server, so a line with a secret stops here.
-        guard !secretLine, let ask = Explain.detect(text) ?? routedAsk(sentence) else { clearExplainOffer(); return false }
+        guard !lineHasSecret, let ask = Explain.detect(text) ?? routedAsk(sentence) else { clearExplainOffer(); return false }
         if ask.kind == .term, let m = ExplainDictionary.shared.lookup(ask.subject) {
             if drawTopic != nil { drawTopic = nil }
             explainTask?.cancel()

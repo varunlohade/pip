@@ -24,10 +24,10 @@ enum CryptoWords {
         return isAddress(w)
     }
 
-    /// 0x…, bech32 (bc1…), base58 of 25+ characters, and .near / .testnet / .eth names.
+    /// 0x…, bech32 (bc1…), base58 of 25+ characters, and .near / .testnet / .tg / .eth names.
     static func isAddress(_ w: String) -> Bool {
         let lower = w.lowercased()
-        if lower.hasSuffix(".near") || lower.hasSuffix(".testnet") || lower.hasSuffix(".eth") { return true }
+        if lower.hasSuffix(".near") || lower.hasSuffix(".testnet") || lower.hasSuffix(".tg") || lower.hasSuffix(".eth") { return true }
         if lower.range(of: #"^0x[0-9a-f]{6,}$"#, options: .regularExpression) != nil { return true }
         // A NEAR implicit account. Outside a payment the secret filter calls the same 64 hex a private key first.
         if lower.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil { return true }
