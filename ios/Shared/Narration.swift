@@ -79,8 +79,88 @@ final class NarrationSync {
     }
 }
 
-/// The phone's own voice: on-device, no network. It picks the best English voice installed (Premium, then Enhanced,
-/// then the default) and plays as "ambient" audio, so the ringer/silent switch silences it.
+/// One installed voice, as the ranking and the Voice screen see it.
+struct VoiceInfo: Equatable, Identifiable {
+    let id: String
+    let name: String
+    let quality: AVSpeechSynthesisVoiceQuality
+    let language: String
+
+    init(id: String, name: String, quality: AVSpeechSynthesisVoiceQuality, language: String) {
+        self.id = id; self.name = name; self.quality = quality; self.language = language
+    }
+
+    init(_ v: AVSpeechSynthesisVoice) { self.init(id: v.identifier, name: v.name, quality: v.quality, language: v.language) }
+
+    /// "Ava (Premium)" and "Ava" are both Ava.
+    var baseName: String { String(name.split(separator: " ").first ?? Substring(name)) }
+
+    var qualityBadge: String { quality == .premium ? "Premium" : quality == .enhanced ? "Enhanced" : "Compact" }
+
+    var accent: String { Locale.current.localizedString(forRegionCode: String(language.split(separator: "-").last ?? "")) ?? language }
+
+    static var installedEnglish: [VoiceInfo] {
+        AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }.map(VoiceInfo.init)
+    }
+}
+
+/// The voice Pip speaks with: the owner's pick from Settings → Voice, or the brightest good voice installed.
+/// Lives in the App Group, so the keyboard's drawing narration uses it too.
+struct VoiceChoice: Equatable {
+    static let defaultRate: Float = 0.53
+    static let defaultPitch: Float = 1.08
+    static let preDelay: TimeInterval = 0.12
+
+    var voiceID: String?
+    var rate: Float = defaultRate
+    var pitch: Float = defaultPitch
+
+    /// Warm, bright voices first, in this order; then the best quality installed.
+    static let preferred: [(name: String, qualities: [AVSpeechSynthesisVoiceQuality])] = [
+        ("Ava", [.premium, .enhanced]), ("Zoe", [.premium, .enhanced]), ("Samantha", [.enhanced]), ("Evan", [.enhanced]),
+    ]
+
+    static func best(_ voices: [VoiceInfo], lang: String) -> VoiceInfo? {
+        for p in preferred {
+            for q in p.qualities {
+                let hits = voices.filter { $0.baseName == p.name && $0.quality == q }
+                if let v = hits.first(where: { $0.language == lang }) ?? hits.first { return v }
+            }
+        }
+        let rank = { (v: VoiceInfo) -> Int in
+            let q = v.quality == .premium ? 3 : v.quality == .enhanced ? 2 : 1
+            return q * 10 + (v.language == lang ? 1 : 0)
+        }
+        return voices.max { rank($0) < rank($1) }
+    }
+
+    static func load(_ d: UserDefaults?) -> VoiceChoice {
+        VoiceChoice(voiceID: d?.string(forKey: StoreKey.voiceID.rawValue),
+                    rate: d?.object(forKey: StoreKey.voiceRate.rawValue) as? Float ?? defaultRate,
+                    pitch: d?.object(forKey: StoreKey.voicePitch.rawValue) as? Float ?? defaultPitch)
+    }
+
+    func save(_ d: UserDefaults?) {
+        d?.set(voiceID, forKey: StoreKey.voiceID.rawValue)
+        d?.set(rate, forKey: StoreKey.voiceRate.rawValue)
+        d?.set(pitch, forKey: StoreKey.voicePitch.rawValue)
+    }
+
+    /// The utterance for `text`: the chosen voice if it is still installed, else the best one.
+    func utterance(_ text: String, voices: [VoiceInfo] = VoiceInfo.installedEnglish) -> AVSpeechUtterance {
+        let lang = Locale.preferredLanguages.first(where: { $0.hasPrefix("en") }) ?? "en-US"
+        let id = voices.first(where: { $0.id == voiceID })?.id ?? Self.best(voices, lang: lang)?.id
+        let u = AVSpeechUtterance(string: text)
+        u.voice = id.flatMap(AVSpeechSynthesisVoice.init(identifier:)) ?? AVSpeechSynthesisVoice(language: lang)
+        u.rate = rate
+        u.pitchMultiplier = pitch
+        u.preUtteranceDelay = Self.preDelay
+        return u
+    }
+}
+
+/// The phone's own voice: on-device, no network. It speaks with the stored `VoiceChoice` and plays as "ambient" audio,
+/// so the ringer/silent switch silences it.
 @MainActor
 final class SystemSpeaker: NSObject, Speaker, AVSpeechSynthesizerDelegate {
     private let synth = AVSpeechSynthesizer()
@@ -91,25 +171,17 @@ final class SystemSpeaker: NSObject, Speaker, AVSpeechSynthesizerDelegate {
         synth.delegate = self
     }
 
-    static var bestVoice: AVSpeechSynthesisVoice? {
-        let lang = Locale.preferredLanguages.first(where: { $0.hasPrefix("en") }) ?? "en-US"
-        let english = AVSpeechSynthesisVoice.speechVoices().filter { $0.language.hasPrefix("en") }
-        let rank = { (v: AVSpeechSynthesisVoice) -> Int in
-            let q = v.quality == .premium ? 3 : v.quality == .enhanced ? 2 : 1
-            return q * 10 + (v.language == lang ? 1 : 0)
-        }
-        return english.max { rank($0) < rank($1) } ?? AVSpeechSynthesisVoice(language: lang)
+    func say(_ text: String, done: @escaping () -> Void) {
+        speak(text, choice: VoiceChoice.load(SharedStore.defaults), done: done)
     }
 
-    func say(_ text: String, done: @escaping () -> Void) {
+    func speak(_ text: String, choice: VoiceChoice, done: @escaping () -> Void = {}) {
         try? AVAudioSession.sharedInstance().setCategory(.ambient, mode: .spokenAudio)
         try? AVAudioSession.sharedInstance().setActive(true)
+        synth.stopSpeaking(at: .immediate)
         finish?()
         finish = done
-        let u = AVSpeechUtterance(string: text)
-        u.voice = Self.bestVoice
-        u.rate = AVSpeechUtteranceDefaultSpeechRate
-        synth.speak(u)
+        synth.speak(choice.utterance(text))
     }
 
     func stop() {
