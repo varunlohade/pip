@@ -413,7 +413,7 @@ struct FieldStyle: ViewModifier {
     }
 }
 
-/// The one main action on a screen: B2's glowing sky pill.
+/// The one main action on a screen: the sky pill.
 struct PrimaryButton: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         SkyPill().makeBody(configuration: configuration)

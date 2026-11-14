@@ -214,7 +214,7 @@ struct SuggestionBar: View {
         .padding(.trailing, 6)
     }
 
-    /// B2-3: the buddy, then the answer as a glowing sky chip ("btw → by the way"), then "Draw it" and "Explain more".
+    /// B2-3: the buddy, then the answer as a sky chip ("btw → by the way"), then "Draw it" and "Explain more".
     /// Before the answer comes, "Draw it" stands alone with the topic quoted.
     private func explainRow(_ answer: BarItems.Item?, draw: BarItems.Item?) -> some View {
         HStack(spacing: 8) {

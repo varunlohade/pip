@@ -2,13 +2,12 @@ import SwiftUI
 import UIKit
 
 /// All colors, type, sizes and motion. Direction B2: white ground, painted sky only on onboarding and the top of Home,
-/// glowing sky-blue pills, frosted white second pills, white cards with a thin ring shadow. Light only: B2 has no dark version.
+/// flat sky-blue pills, frosted white second pills, white cards with a thin ring shadow. Light only: B2 has no dark version.
 enum Theme {
     enum Color {
         // B2 palette (UMBRA.md, previous era): sky, ice, slate and mist greys on white.
         static let sky = SwiftUI.Color(hex: 0x00B3FF)
         static let skyDeep = SwiftUI.Color(hex: 0x0082F3)
-        static let skyGlow = SwiftUI.Color(hex: 0x00B3FF).opacity(0x63 / 255)
         /// Text on a sky pill that is quieter than white: the "btw" in "btw → by the way".
         static let skyOnText = SwiftUI.Color(hex: 0xD6F2FF)
         static let ice = SwiftUI.Color(hex: 0xDEF6FF)

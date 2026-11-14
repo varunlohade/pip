@@ -70,7 +70,7 @@ struct Wordmark: View {
     }
 }
 
-/// The glowing sky-blue pill for the one main action: background #00B3FF, glow 0 .7px 30px #00B3FF63, inner white glow.
+/// The sky-blue pill for the one main action: a flat #00B3FF fill, no glow.
 struct SkyPill: ButtonStyle {
     var height: CGFloat = 54
     var font: Font = Theme.Font.button
@@ -94,8 +94,6 @@ struct SkyPill: ButtonStyle {
 struct SkyFill: View {
     var body: some View {
         Capsule().fill(Theme.Color.sky)
-            .overlay(Capsule().strokeBorder(.white.opacity(0.6), lineWidth: 3).blur(radius: 4).clipShape(Capsule()))
-            .shadow(color: Theme.Color.skyGlow, radius: 15, y: 0.7)
     }
 }
 

@@ -57,7 +57,7 @@ struct AskBar: View {
                 RoundedRectangle(cornerRadius: 28, style: .continuous).fill(.white.opacity(0.8))
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).strokeBorder(Theme.Color.ring, lineWidth: 0.5))
-                    .shadow(color: Color(red: 0, green: 60 / 255, blue: 100 / 255).opacity(0.3), radius: 15, y: 10)
+                    .shadow(color: .black.opacity(0.1), radius: 1.5, y: 1)
             )
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: answer)

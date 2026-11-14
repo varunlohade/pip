@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The explain card, in place of the keys (B2): a white ring card with the answer, an example or a few lines,
-/// then Back, Draw it and the glowing Insert.
+/// then Back, Draw it and the sky Insert.
 struct ExplainCardView: View {
     @ObservedObject var model: KeyboardModel
     let offer: ExplainOffer
