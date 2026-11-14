@@ -23,6 +23,8 @@ npm run quote -- "send 5 usdc to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 on b
 - **You approve inside the keyboard.** Type the payment, enter your PIN, done. You never leave the chat for a wallet app.
 - **The key stays on your phone.** Pip makes a NEAR key on the device and seals it with your PIN (PBKDF2 + AES-GCM) in the iOS keychain. The server never holds it. The phone checks each transaction before it signs.
 - **Private AI you can check.** The server verifies the TEE attestation of the NEAR AI Cloud model, not just its name.
+- **Learn anything, drawn live.** Type `explain compound interest` or `explain log function`. Pip answers in one line, then draws it step by step in real time on an Excalidraw canvas inside the keyboard. The private AI on NEAR AI Cloud writes the scene.
+- **Calendar and reminders from any chat.** Type `dinner with Ana friday 7pm` and Pip offers to add it to your calendar, with a clash check. Type `remind me to call mom at 6pm` and it adds an iOS reminder. Nothing is saved until you tap.
 - **A secret filter.** Passwords, private keys and seed phrases never reach any AI. You can still type and send them.
 - **One router for every action.** jev on NEAR AI Cloud reads what you type and picks the action. There are no fixed keyword triggers.
 
@@ -44,6 +46,7 @@ Public beta: Apple is reviewing it. If the link says the beta isn't accepting te
 Things to type:
 
 - `dinner with Ana friday 7pm`
+- `remind me to call mom at 6pm`
 - `explain log function`
 - `send 0.02 NEAR to pipfundmwg9zj4l.testnet` (a real testnet account; paste it)
 - `send 5 USDC to 0x… on base`
@@ -106,7 +109,7 @@ The shots come from the iOS simulator against the fake server (`npm run fake`). 
 ## Other features
 
 - **Calendar panel.** Pip reads the time you typed, checks your calendar, warns about a clash and offers free times. Events stay on the phone.
-- **Explain + Draw it.** Ask what something means. Pip answers in a line, then draws it step by step.
+- **Explain + Draw it.** Learn about anything. Ask what something means. Pip answers in a line, then draws it step by step, live, on an Excalidraw canvas in the keyboard.
 - **Rewrite and fix.** Shorten, fix grammar or change the tone of your message.
 - **Sums.** Tips, splits, units and currency, worked out in the keyboard.
 
