@@ -23,6 +23,8 @@ struct KeyboardView: View {
                     }
                 }
                 .padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
+            } else if let c = model.calendar {
+                CalendarPanelView(model: model, panel: c, palette: p).padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if model.notesOpen {
                 NotesPanel(model: model, palette: p).padding(.top, M.barHeight).padding(.bottom, M.bottomInset)
             } else if model.writeOpen {
@@ -49,8 +51,17 @@ struct SuggestionBar: View {
     typealias M = Theme.SystemKeyboard
 
     var body: some View {
+        if let c = model.calendar {
+            CalendarBar(model: model, panel: c, palette: palette)
+                .padding(.bottom, M.barHeight - 2 * 23.8)
+        } else {
+            chipsBar
+        }
+    }
+
+    private var chipsBar: some View {
         let items = model.barItems
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             if let panel = model.explainPanel {
                 Buddy(size: 30).padding(.leading, 6)
                 // The canvas shows "Step n of m"; the title keeps it for VoiceOver.
@@ -112,6 +123,9 @@ struct SuggestionBar: View {
             if model.hasFullAccess && !showsWords && !model.writeOpen && model.explainPanel == nil && model.explainOffer == nil {
                 Rectangle().fill(palette.divider).frame(width: 1, height: M.dividerHeight)
                 barButton(model.notesOpen ? "keyboard" : "note.text", id: "notes.toggle", label: model.notesOpen ? "Keyboard" : "Notes", action: model.toggleNotes)
+                if !model.notesOpen {
+                    barButton("calendar", id: "calendar.toggle", label: "Calendar", action: model.toggleCalendar)
+                }
             }
         }
         .padding(.horizontal, 4)

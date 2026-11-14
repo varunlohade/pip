@@ -48,6 +48,7 @@ final class DemoWriter: SmartWriter {
     func addReminder(title: String, due: Date) throws -> String { UUID().uuidString }
     func removeEvent(_ id: String) throws {}
     func removeReminder(_ id: String) throws {}
+    func events(from: Date, to: Date, hasFullAccess: Bool) -> [Appointment]? { [] }
 }
 
 /// The intro never looks at the real pasteboard.

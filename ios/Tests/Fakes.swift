@@ -161,6 +161,14 @@ final class FakeWriter: SmartWriter {
     }
     func removeEvent(_ id: String) throws { events[id] = nil }
     func removeReminder(_ id: String) throws { reminders[id] = nil }
+    /// What the phone's calendar already holds. `canRead` false: write-only access, or none.
+    var calendar: [Appointment] = []
+    var canRead = true
+    func events(from: Date, to: Date, hasFullAccess: Bool) -> [Appointment]? {
+        guard hasFullAccess, canRead else { return nil }
+        let added = events.compactMap { id, e in e.end.map { Appointment(start: e.start, end: $0, title: e.title, color: nil) } }
+        return (calendar + added).filter { $0.start < to && $0.end > from }.sorted { $0.start < $1.start }
+    }
 }
 
 final class FakePasteboard: Pasteboard {

@@ -213,8 +213,13 @@ extension KeyboardModel {
 
     var visualOpen: Bool { if case .visual = explainPanel { return true }; return false }
 
-    /// The keyboard grows while the visual panel is open, so the drawing has room.
-    var keyboardHeight: CGFloat { visualOpen ? Theme.SystemKeyboard.visualHeight : Theme.SystemKeyboard.height }
+    /// The keyboard grows while the visual panel or the calendar is open, so they have room.
+    var keyboardHeight: CGFloat { Self.height(panel: explainPanel, calendarOpen: calendar != nil) }
+
+    static func height(panel: ExplainPanel?, calendarOpen: Bool) -> CGFloat {
+        if case .visual? = panel { return Theme.SystemKeyboard.visualHeight }
+        return calendarOpen ? Theme.SystemKeyboard.calendarHeight : Theme.SystemKeyboard.height
+    }
 
     func openExplainCard() {
         guard let o = currentExplainOffer() else { return }
@@ -222,6 +227,7 @@ extension KeyboardModel {
         host?.playClick()
         notesOpen = false
         writeOpen = false
+        closeCalendar()
         deps.store.recordLearned(Learned(subject: o.subject, line: o.line, kind: o.learnedKind, date: deps.now()))
         if case .chart(let subject, let scene, let question) = o {
             // Insert types "y = x^2" for a graph, or the data for a chart.

@@ -148,7 +148,7 @@ struct SmartAdded: Equatable {
 final class KeyboardModel: ObservableObject {
     @Published var bar: BarState = .idle
     @Published var copiedAvailable = false
-    /// Today's appointments, as the main app last wrote them. The keyboard never reads the calendar.
+    /// Today's appointments, as the main app last wrote them, for the ready chips. Only the calendar panel reads the calendar itself.
     @Published var appointments: [Appointment] = []
     @Published var notesOpen = false
     @Published var notes: [Note] = []
@@ -192,6 +192,9 @@ final class KeyboardModel: ObservableObject {
     @Published var explainOffer: ExplainOffer? { didSet { noteChipsShown() } }
     /// The explain card or the visual panel, in place of the keys. Nil when the keys show.
     @Published var explainPanel: ExplainPanel?
+    /// The calendar panel, in place of the keys. See KeyboardModel+Calendar.
+    @Published var calendar: CalendarPanel?
+    var calendarUndoTask: Task<Void, Never>?
     // Explain state, kept here because extensions cannot hold stored properties.
     var explainTask: Task<Void, Never>?
     var visualTask: Task<Void, Never>?
@@ -849,6 +852,7 @@ final class KeyboardModel: ObservableObject {
         narration = nil
         notes = []
         notesOpen = false
+        closeCalendar()
         appointments = []
         actions = ActionShortcut.defaults
         smart = []
@@ -878,6 +882,7 @@ final class KeyboardModel: ObservableObject {
         trackpad = false
         accents = nil
         notesOpen = false
+        closeCalendar()
         closeExplain()
         resetWriting()
         if case .working = bar { bar = .idle }
@@ -891,6 +896,7 @@ final class KeyboardModel: ObservableObject {
         forgetIfAccountChanged()
         host?.playClick()
         writeOpen = false
+        closeCalendar()
         if !notesOpen { notes = deps.store.notes }
         notesOpen.toggle()
     }
@@ -1229,6 +1235,7 @@ final class KeyboardModel: ObservableObject {
     func toggleWrite() {
         host?.playClick()
         notesOpen = false
+        closeCalendar()
         cancelRewrites()
         writePanel = .menu
         writeOpen.toggle()
@@ -1372,6 +1379,7 @@ final class KeyboardModel: ObservableObject {
         guard let p = calmOffer else { return }
         host?.playClick()
         notesOpen = false
+        closeCalendar()
         writePanel = .preview(p)
         writeOpen = true
     }

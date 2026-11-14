@@ -18,6 +18,9 @@ protocol SmartWriter: AnyObject {
     func addReminder(title: String, due: Date) throws -> String
     func removeEvent(_ id: String) throws
     func removeReminder(_ id: String) throws
+    /// Timed events that overlap the range, from every calendar. Nil when the keyboard may not read them:
+    /// Full Access is off, or the app was given write-only access or none.
+    func events(from: Date, to: Date, hasFullAccess: Bool) -> [Appointment]?
 }
 
 final class EventKitWriter: SmartWriter {
@@ -68,5 +71,19 @@ final class EventKitWriter: SmartWriter {
     func removeReminder(_ id: String) throws {
         guard let r = store.calendarItem(withIdentifier: id) as? EKReminder else { throw Failure.notFound }
         try store.remove(r, commit: true)
+    }
+
+    func events(from: Date, to: Date, hasFullAccess: Bool) -> [Appointment]? {
+        guard hasFullAccess, EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return nil }
+        return store.events(matching: store.predicateForEvents(withStart: from, end: to, calendars: nil))
+            .filter { !$0.isAllDay }
+            .sorted { $0.startDate < $1.startDate }
+            .map { Appointment(start: $0.startDate, end: $0.endDate, title: $0.title ?? "Event", color: $0.calendar.map { Self.hex($0.cgColor) }) }
+    }
+
+    private static func hex(_ c: CGColor?) -> UInt32 {
+        guard let rgb = c?.converted(to: CGColorSpace(name: CGColorSpace.sRGB)!, intent: .defaultIntent, options: nil)?.components, rgb.count >= 3 else { return 0x00B3FF }
+        func byte(_ v: CGFloat) -> UInt32 { UInt32(max(0, min(255, (v * 255).rounded()))) }
+        return byte(rgb[0]) << 16 | byte(rgb[1]) << 8 | byte(rgb[2])
     }
 }

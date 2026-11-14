@@ -47,11 +47,10 @@ final class KeyboardViewController: UIInputViewController, TextHost {
         model = m
         m.host = self
         hosting?.rootView = KeyboardView(model: m)
-        // The visual panel needs more room than the keys; the input view follows the model's height.
+        // The visual panel and the calendar need more room than the keys; the input view follows the model's height.
         // @Published sends before the property changes, so the height comes from the new value.
-        bag = m.$explainPanel.sink { [weak self] panel in
-            if case .visual? = panel { self?.heightConstraint?.constant = Theme.SystemKeyboard.visualHeight }
-            else { self?.heightConstraint?.constant = Theme.SystemKeyboard.height }
+        bag = m.$explainPanel.combineLatest(m.$calendar.map { $0 != nil }.removeDuplicates()).sink { [weak self] panel, calendarOpen in
+            self?.heightConstraint?.constant = KeyboardModel.height(panel: panel, calendarOpen: calendarOpen)
         }
     }
 

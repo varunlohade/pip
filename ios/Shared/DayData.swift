@@ -5,6 +5,8 @@ struct Appointment: Codable, Equatable, Identifiable {
     let start: Date
     let end: Date
     let title: String
+    /// The calendar's color, as 0xRRGGBB. Nil in snapshots the app wrote.
+    var color: UInt32? = nil
 
     var id: String { "\(start.timeIntervalSince1970)|\(title)" }
     var time: String {

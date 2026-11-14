@@ -38,6 +38,7 @@ final class CalendarModel: ObservableObject {
         guard connected else { today = []; SharedStore.appointments = []; return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-calendarDemo") { seedDemo() }
+        if ProcessInfo.processInfo.arguments.contains("-calendarWeekDemo") { seedWeek() }
         #endif
         let cal = Calendar.current
         let start = cal.startOfDay(for: Date())
@@ -62,6 +63,31 @@ final class CalendarModel: ObservableObject {
             e.title = title
             e.startDate = min(max(now.addingTimeInterval(offset), day), lastStart)
             e.endDate = e.startDate.addingTimeInterval(1800)
+            e.notes = marker
+            e.calendar = target
+            try? store.save(e, span: .thisEvent)
+        }
+    }
+
+    /// "-calendarWeekDemo": the calendar mock's day (Standup, Design review, Dentist, Gym) today, and a few events
+    /// over the next weeks, once. For the calendar panel's screenshots.
+    private func seedWeek() {
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: Date())
+        let marker = "pip-week-demo"
+        let existing = store.events(matching: store.predicateForEvents(withStart: day, end: day.addingTimeInterval(86_400), calendars: nil))
+        guard !existing.contains(where: { $0.notes == marker }), let target = store.defaultCalendarForNewEvents else { return }
+        let plan: [(String, Int, Double, Double)] = [
+            ("Standup", 0, 9.5, 10), ("Design review", 0, 11, 12), ("Dentist", 0, 15.5, 16.5), ("Gym", 0, 18, 19),
+            ("Lunch with Sam", 1, 12, 14), ("Standup", 1, 9.5, 10), ("Client call", 2, 10, 11), ("Standup", 3, 9.5, 10),
+            ("Yoga", 5, 8, 9), ("Standup", 7, 9.5, 10), ("Review", 9, 14, 15), ("Dinner", 12, 19, 21),
+        ]
+        for (title, offset, from, to) in plan {
+            guard let d = cal.date(byAdding: .day, value: offset, to: day) else { continue }
+            let e = EKEvent(eventStore: store)
+            e.title = title
+            e.startDate = d.addingTimeInterval(from * 3600)
+            e.endDate = d.addingTimeInterval(to * 3600)
             e.notes = marker
             e.calendar = target
             try? store.save(e, span: .thisEvent)

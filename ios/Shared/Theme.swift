@@ -107,6 +107,8 @@ enum Theme {
         static var height: CGFloat { barHeight + 4 * keyHeight + 3 * rowGap + bottomInset }
         /// The keyboard while the visual explanation panel is open.
         static let visualHeight: CGFloat = 470
+        /// The keyboard while the calendar panel is open: month beside the day, as drawn in design/calendar/C.png.
+        static let calendarHeight: CGFloat = 320
 
         static let letter = SwiftUI.Font.system(size: 22.5, weight: .regular)
         static let symbol = SwiftUI.Font.system(size: 22.5, weight: .regular)
