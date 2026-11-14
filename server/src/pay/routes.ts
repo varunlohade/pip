@@ -11,6 +11,7 @@ import { payConfig, type PayConfig } from './config.ts';
 import { checkPayment, fromUnits, parsePayment, toUnits, type ParseResult } from './parse.ts';
 import { openPayStore, type Intent } from './store.ts';
 import type { PhoneDeps } from './phone/routes.ts';
+import type { XchainDeps } from './xchain/routes.ts';
 
 export type PayDeps = {
   chain?: Chain;
@@ -19,6 +20,8 @@ export type PayDeps = {
   fallback?: (text: string) => Promise<{ amount: string; token: string; recipient: string } | null>;
   /** The phone-signed flow (src/pay/phone): fake chains and mainnet settings for tests. */
   phone?: PhoneDeps;
+  /** Cross-chain payments (src/pay/xchain): fake 1Click, prices, decimals and NEAR views for tests. */
+  xchain?: XchainDeps;
 };
 
 const ParseBody = z.object({ text: z.string().trim().min(1).max(500) }).strict();

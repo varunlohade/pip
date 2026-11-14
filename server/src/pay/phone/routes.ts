@@ -14,7 +14,15 @@ import { createPhoneChain, type PhoneChain } from './chain.ts';
 import { openPhoneStore, type PhoneIntent } from './store.ts';
 import { buildTransfer, implicitAccountId, nearPublicKey, parsePublicKey, parseSignature, sha256, signedBytes, verifySignature } from './tx.ts';
 
-export type PhoneDeps = { chains?: Partial<Record<Network, PhoneChain>>; mainnet?: MainnetConfig };
+/** Cross-chain payments (src/pay/xchain) ride on this flow: they describe their card, may refuse a build, and build their own deposit tx. */
+export type XchainHooks = {
+  describe(intentId: string): Record<string, unknown> | null;
+  /** Before a build: re-quotes an old quote onto the intent (requoted: true), or says why it cannot (status + error). */
+  refresh(i: PhoneIntent): Promise<{ status: 403 | 409 | 422 | 502 | 400; error: string } | { requoted: boolean }>;
+  /** The deposit transaction for an xchain intent, or null when the intent is not xchain. */
+  build(i: PhoneIntent, ctx: { signerId: string; publicKey: Uint8Array; nonce: bigint; blockHash: string }): Promise<{ bytes: Uint8Array; hash: Uint8Array } | null>;
+};
+export type PhoneDeps = { chains?: Partial<Record<Network, PhoneChain>>; mainnet?: MainnetConfig; xchain?: XchainHooks };
 
 const Fields = z.object({ amount: z.string().max(40), token: z.string().max(8), recipient: z.string().max(80) }).strict();
 const ParseBody = z.object({ text: z.string().trim().min(1).max(500) }).strict();
@@ -54,7 +62,7 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
     id: i.id, amount: i.amount, token: i.token, recipient: i.recipient, status: i.status, network: i.network, signing: 'phone',
     new_recipient: i.new_recipient === 1, expires_at: new Date(i.expires_at).toISOString(),
     tx_hash: i.tx_hash, explorer_url: i.tx_hash && ['sending', 'sent', 'failed', 'outcome_unknown'].includes(i.status) ? `${settings(i.network).explorerTx}${i.tx_hash}` : null,
-    deep_link: `pip://approve/${i.id}`,
+    deep_link: `pip://approve/${i.id}`, xchain: deps.xchain?.describe(i.id) ?? null,
   });
   /** Named accounts must exist. An implicit id may not exist yet: a NEAR transfer creates it. Undefined when the RPC failed. */
   const recipientOk = async (n: Network, recipient: string) => {
@@ -230,6 +238,14 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
     }
     if (fields.amount !== i.amount || fields.token !== i.token || fields.recipient !== i.recipient) return c.json({ error: 'the details do not match this payment' }, 409);
     if (i.new_recipient && !isApp(c)) return c.json({ error: 'approve a new recipient in the Pip app' }, 403);
+    // A re-quote changes the amount and deposit account: the answer carries the fresh card and requoted: true, so the app re-shows it.
+    let requoted = false;
+    if (deps.xchain?.describe(i.id)) {
+      const r = await deps.xchain.refresh(i);
+      if ('error' in r) return c.json({ error: r.error, ...view(i) }, r.status);
+      requoted = r.requoted;
+      i = store.intent(i.id)!;
+    }
     const a = store.account(userId, i.network);
     if (a?.status !== 'ready') return c.json({ error: 'register your key in the Pip app first' }, 409);
     const n = i.network;
@@ -241,10 +257,15 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
       if (chainNonce === null) return c.json({ error: `fund your account first: ${a.account_id}`, account_id: a.account_id, network: n }, 409);
       const last = store.lastNonce(n, a.public_key);
       const nonce = (chainNonce > last ? chainNonce : last) + 1n;
-      const storageDeposit = i.token === 'USDC' && !(await chain.storageRegistered(i.recipient)) ? await chain.storageMin() : null;
       const blockHash = await chain.recentBlockHash();
       const pk = parsePublicKey(a.public_key)!;
-      built = { nonce, ...buildTransfer({ signerId: a.account_id, publicKey: pk, nonce, blockHash, token: i.token, recipient: i.recipient, units, usdcContract: settings(n).usdcContract, storageDeposit }) };
+      const x = await deps.xchain?.build(i, { signerId: a.account_id, publicKey: pk, nonce, blockHash });
+      if (x) built = { nonce, ...x };
+      else {
+        if (i.token === 'USDT') throw new Error('USDT is only sent cross-chain');
+        const storageDeposit = i.token === 'USDC' && !(await chain.storageRegistered(i.recipient)) ? await chain.storageMin() : null;
+        built = { nonce, ...buildTransfer({ signerId: a.account_id, publicKey: pk, nonce, blockHash, token: i.token, recipient: i.recipient, units, usdcContract: settings(n).usdcContract, storageDeposit }) };
+      }
     } catch (e) {
       log('pay_rpc_failed', { network: n, err: (e as Error).message });
       return rpcDown(c, n);
@@ -264,7 +285,7 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
       return c.json({ error: claim }, 403);
     }
     pay.audit(userId, i.id, 'built');
-    return c.json(unsignedView(i));
+    return c.json(unsignedView(i, requoted));
   });
 
   // ---- submit: the phone's signature over sha256(tx). Checked against the registered key and the exact stored bytes, then one broadcast.
@@ -310,10 +331,10 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
     return c.json({ payments: store.history(userId, networks.get(userId), 50).map((i) => view(expireIfDue(i))) });
   });
 
-  function unsignedView(i: PhoneIntent) {
+  function unsignedView(i: PhoneIntent, requoted = false) {
     const bytes = Buffer.from(i.tx_b64!, 'base64');
     return {
-      ...view(i), signer_id: store.account(i.user_id, i.network)?.account_id ?? null, public_key: i.public_key, nonce: i.nonce,
+      ...view(i), requoted, signer_id: store.account(i.user_id, i.network)?.account_id ?? null, public_key: i.public_key, nonce: i.nonce,
       tx_base64: i.tx_b64, sign_hash_hex: Buffer.from(sha256(bytes)).toString('hex'), sign: 'Ed25519 over the 32 bytes of sign_hash_hex; send base64 (64 bytes) to /submit',
     };
   }

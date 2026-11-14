@@ -1,6 +1,7 @@
 const env = process.env;
 
-export type Token = 'NEAR' | 'USDC';
+/** USDT is used only as a cross-chain origin (src/pay/xchain); plain sends stay NEAR and USDC. */
+export type Token = 'NEAR' | 'USDC' | 'USDT';
 
 /** Payments run on NEAR testnet only. Nothing here can point at mainnet: see assertTestnet. */
 export const payConfig = {
@@ -12,11 +13,12 @@ export const payConfig = {
   funderSecretKey: env.PAY_FUNDER_PRIVATE_KEY ?? '',
   // Circle's testnet USDC on NEAR, 6 decimals.
   usdcContract: env.PAY_USDC_CONTRACT ?? '3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af',
-  decimals: { NEAR: 24, USDC: 6 } as Record<Token, number>,
+  decimals: { NEAR: 24, USDC: 6, USDT: 6 } as Record<Token, number>,
   // Caps in whole tokens, per payment and per rolling 24 hours, per user.
   caps: {
     NEAR: { perTx: env.PAY_MAX_PER_TX_NEAR ?? '1', daily: env.PAY_MAX_DAILY_NEAR ?? '2' },
     USDC: { perTx: env.PAY_MAX_PER_TX_USDC ?? '10', daily: env.PAY_MAX_DAILY_USDC ?? '25' },
+    USDT: { perTx: env.PAY_MAX_PER_TX_USDT ?? '10', daily: env.PAY_MAX_DAILY_USDT ?? '25' },
   } as Record<Token, { perTx: string; daily: string }>,
   // Each new wallet gets this much testnet NEAR from the funder, for gas and small sends.
   newWalletNear: env.PAY_NEW_WALLET_NEAR ?? '0.2',
