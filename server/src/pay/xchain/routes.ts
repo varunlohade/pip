@@ -10,7 +10,7 @@ import { toUnits } from '../parse.ts';
 import { openPhoneStore, type PhoneIntent } from '../phone/store.ts';
 import type { XchainHooks } from '../phone/routes.ts';
 import { CHAINS, ORIGINS, checkAddress, findOrigin, findToken, type Origin, type TokenRow } from './assets.ts';
-import { checkPin, type Pin } from './pins.ts';
+import { checkPin, type VerifiedPin as Pin } from './pins.ts';
 import { checkQuote, defaultLimits, quoteRequest, typedUnits, type Limits, type Mode, type Numbers } from './check.ts';
 import { createChainDecimals, type ChainDecimals } from './decimals.ts';
 import { chainName, parseXchain } from './parse.ts';
@@ -32,7 +32,7 @@ const DAY = 86_400_000;
 
 const Quote = z.object({
   amount: z.string().max(40), token: z.string().max(12), chain: z.string().max(16), recipient: z.string().max(100),
-  from: z.enum(['NEAR', 'USDC', 'USDT']).optional(), mode: z.enum(['exact_out', 'exact_in']).optional(), dry: z.boolean().optional(),
+  from: z.enum(['NEAR', 'USDC', 'USDT']).optional(), tag: z.string().regex(/^\d{1,10}$/).optional(), mode: z.enum(['exact_out', 'exact_in']).optional(), dry: z.boolean().optional(),
 }).strict();
 const ParseBody = z.object({ text: z.string().trim().min(1).max(500) }).strict();
 const IntentId = z.string().regex(/^[0-9a-f]{32}$/);
@@ -94,7 +94,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     };
   };
 
-  type Input = { amount: string; token: string; chain: string; recipient: string; from?: Origin; mode?: Mode; dry?: boolean };
+  type Input = { amount: string; token: string; chain: string; recipient: string; from?: Origin; tag?: string; mode?: Mode; dry?: boolean };
   type Fail = { ok: false; status: 200 | 400 | 403 | 409 | 422 | 502; body: Record<string, unknown> };
   const fail = (status: Fail['status'], error: string, extra: Record<string, unknown> = {}): Fail => ({ ok: false, status, body: { error, ...extra } });
   const answer = (body: Record<string, unknown>): Fail => ({ ok: false, status: 200, body });
@@ -107,6 +107,8 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     if (!CHAINS[chain]) return fail(400, `Pip does not pay to ${body.chain} yet`);
     const addr = checkAddress(chain, body.recipient);
     if (!addr.ok) return fail(400, addr.reason);
+    // How 1Click carries an XRP destination tag is not verified yet; a tagged payment is blocked rather than sent without its tag.
+    if (body.tag !== undefined) return fail(400, 'XRP destination tags are not supported yet');
     const token = body.token.toUpperCase();
     const from = body.from ?? defaultOrigin(token, chain);
     if (chain === 'near' && token === from && (token === 'NEAR' || token === 'USDC')) return fail(400, 'same token on NEAR: use a plain payment (/v1/pay/intents)');

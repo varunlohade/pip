@@ -1,14 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
+import { createHash, generateKeyPairSync, sign, type KeyObject } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { Transaction } from 'near-api-js';
+import { Transaction, baseEncode } from 'near-api-js';
 import { setup } from './helpers.ts';
 import { payConfig } from '../src/pay/config.ts';
 import { mainnetConfig } from '../src/pay/network.ts';
 import type { PhoneChain } from '../src/pay/phone/chain.ts';
 import { ORIGINS, checkAddress, findToken, type TokenRow } from '../src/pay/xchain/assets.ts';
-import { checkPin } from '../src/pay/xchain/pins.ts';
+import { PINS, checkPin } from '../src/pay/xchain/pins.ts';
+import { convertBits } from '../src/pay/xchain/addresses.ts';
 import { keccak256 } from '../src/pay/xchain/eip55.ts';
 import { agreedPrice, checkQuote, defaultLimits, quoteRequest, typedUnits, type Prices } from '../src/pay/xchain/check.ts';
 import { parseXchain } from '../src/pay/xchain/parse.ts';
@@ -557,4 +558,123 @@ test('pins: prices use Pip\'s own (chain, contract) record; a row that disagrees
   assert.equal(u.verified, false);
   assert.equal(u.intent, null);
   assert.match(u.not_verified[0], /not on Pip's pinned list/);
+});
+
+// ---- top tokens: pins, decimal classes, address validators, parser
+const B32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+function b32polymod(v: number[]) {
+  const G = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+  let c = 1;
+  for (const x of v) { const t = c >>> 25; c = ((c & 0x1ffffff) << 5) ^ x; for (let i = 0; i < 5; i++) if ((t >>> i) & 1) c ^= G[i]; }
+  return c >>> 0;
+}
+/** A test-only bech32/bech32m encoder, so validators are checked against addresses built from known bytes. */
+function bech32Encode(hrp: string, data: number[], m: boolean) {
+  const he = [...[...hrp].map((c) => c.charCodeAt(0) >> 5), 0, ...[...hrp].map((c) => c.charCodeAt(0) & 31)];
+  const pm = b32polymod([...he, ...data, 0, 0, 0, 0, 0, 0]) ^ (m ? 0x2bc830a3 : 1);
+  const chk = [0, 1, 2, 3, 4, 5].map((i) => (pm >>> (5 * (5 - i))) & 31);
+  return `${hrp}1${[...data, ...chk].map((d) => B32[d]).join('')}`;
+}
+const segwit = (hrp: string, v: number, prog: number[]) => bech32Encode(hrp, [v, ...convertBits(prog, 8, 5, true)!], v > 0);
+const b58check = (bytes: number[]) => baseEncode(Buffer.concat([Buffer.from(bytes), createHash('sha256').update(createHash('sha256').update(Buffer.from(bytes)).digest()).digest().subarray(0, 4)]));
+const h20 = Array.from({ length: 20 }, (_, i) => i + 1);
+
+test('top tokens: pins cover each decimal class, with a CoinGecko id from CoinGecko itself', () => {
+  const p = (k: string) => PINS[k];
+  const classes: [string, number][] = [
+    ['eth:0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', 6], ['bsc:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d', 18], ['bsc:0x55d398326f99059ff775485246999027b3197955', 18],
+    ['btc:native', 8], ['doge:native', 8], ['ltc:native', 8], ['bch:native', 8], ['eth:0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', 8],
+    ['sol:native', 9], ['sui:native', 9], ['xrp:native', 6], ['cardano:native', 6], ['tron:native', 6],
+    ['eth:native', 18], ['bsc:native', 18], ['avax:native', 18], ['eth:0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce', 18], ['near:wrap.near', 24],
+  ];
+  for (const [k, d] of classes) {
+    assert.equal(p(k)?.decimals, d, k);
+    assert.ok(p(k).coingeckoId && !p(k).unverified, `${k} verified`);
+    assert.equal(toBase(fromBase(1n, d), d), 1n, `smallest unit round trip at ${d}`);
+  }
+  assert.equal(toBase('0.001', 8), 100_000n, '0.001 BTC');
+  assert.equal(toBase('50', 6), 50_000_000n, '50 XRP');
+  assert.equal(toBase('0.000000001', 8), null, 'BTC has 8 decimals');
+  assert.equal(toBase('1000000', 18), 10n ** 24n, '1M SHIB');
+  assert.equal(p('bsc:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d').coingeckoId, 'binance-bridged-usdc-bnb-smart-chain', 'CoinGecko maps the BNB contract to its bridged coin');
+  assert.equal(p('bsc:0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d').oneclickCoingeckoId, 'usd-coin');
+  assert.ok(checkPin(tok('USDC', 'bsc')).ok, "1Click's own id is accepted when it is the recorded one");
+  for (const k of ['ton:EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', 'near:eth.bridge.near', 'sol:3ZLekZYq2qkZiSpnSvabjit34tUkjSwD1JFuW9as9wBG']) assert.ok(p(k).unverified, `${k} is blocked`);
+  const ton = checkPin({ assetId: 'x', blockchain: 'ton', symbol: 'USDT', decimals: 6, price: 1, contractAddress: 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs', coingeckoId: 'tether' });
+  assert.equal(ton.ok, false);
+  assert.match((ton as { reason: string }).reason, /not verified: decimals not readable/);
+});
+
+test('top tokens: address validators per chain', () => {
+  const yes = (chain: string, a: string) => assert.ok(checkAddress(chain, a).ok, `${chain} ${a}`);
+  const no = (chain: string, a: string) => assert.equal(checkAddress(chain, a).ok, false, `${chain} ${a}`);
+  // Bitcoin: legacy P2PKH and P2SH, segwit v0 (20 and 32 bytes, bech32), taproot (bech32m).
+  yes('btc', '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa');
+  yes('btc', '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy');
+  yes('btc', 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3');
+  yes('btc', 'bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0');
+  yes('btc', segwit('bc', 0, h20));
+  no('btc', bech32Encode('bc', [0, ...convertBits(h20, 8, 5, true)!], true)); // v0 with the bech32m checksum
+  no('btc', '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNb');
+  no('btc', segwit('tb', 0, h20));
+  // Litecoin: L/M legacy and ltc1 segwit; a Bitcoin bc1 is not Litecoin.
+  yes('ltc', b58check([0x30, ...h20]));
+  yes('ltc', b58check([0x32, ...h20]));
+  yes('ltc', segwit('ltc', 0, h20));
+  no('ltc', segwit('bc', 0, h20));
+  // Dogecoin: D (0x1e) and 9/A (0x16).
+  yes('doge', b58check([0x1e, ...h20]));
+  yes('doge', b58check([0x16, ...h20]));
+  no('doge', b58check([0x00, ...h20]));
+  // Bitcoin Cash: CashAddr with or without the prefix.
+  yes('bch', 'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a');
+  yes('bch', 'qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a');
+  no('bch', 'bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6b');
+  no('bch', '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa');
+  // XRP: r-address in Ripple's alphabet with its checksum.
+  yes('xrp', 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh');
+  yes('xrp', 'rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe');
+  no('xrp', 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTi');
+  // Cardano Shelley mainnet (CIP-19 vector); a testnet-network address is refused.
+  yes('cardano', 'addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x');
+  no('cardano', bech32Encode('addr', convertBits([0x00, ...Array(56).fill(7)], 8, 5, true)!, false));
+  no('cardano', 'addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3y');
+  // Sui: 0x + 64 hex. TON: friendly form with CRC16, or raw.
+  yes('sui', '0x' + 'ab'.repeat(32));
+  no('sui', '0x' + 'ab'.repeat(20));
+  yes('ton', 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs');
+  yes('ton', '0:' + 'ab'.repeat(32));
+  no('ton', 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDt');
+  yes('tron', TRON_ADDR);
+  yes('sol', SOL_ADDR);
+});
+
+test('top tokens: parser reads the new symbols, chains and XRP tags', () => {
+  const ok = (text: string, want: Record<string, unknown>) => {
+    const r = parseXchain(text);
+    assert.ok(r.valid, `${text}: ${!r.valid && r.reason}`);
+    for (const [k, v] of Object.entries(want)) assert.equal((r as Record<string, unknown>)[k], v, `${text} ${k}`);
+  };
+  ok('send 0.001 btc to bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3', { token: 'BTC', chain: 'btc', amount: '0.001' });
+  ok('send 50 xrp to rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh tag 123', { token: 'XRP', chain: 'xrp', tag: '123' });
+  ok(`pay 10 usdt on tron to ${TRON_ADDR}`, { token: 'USDT', chain: 'tron' });
+  ok('send 20 ada to addr1qx2fxv2umyhttkxyxp8x0dlpdt3k6cwng5pxj3jhsydzer3n0d3vllmyqwsx5wktcd8cc3sq835lu7drv2xwl2wywfgse35a3x', { chain: 'cardano', token: 'ADA' });
+  ok(`send 3 sui to 0x${'ab'.repeat(32)}`, { chain: 'sui' });
+  ok('send 1 doge to ' + b58check([0x1e, ...h20]), { chain: 'doge' });
+  ok('send 0.1 bch to bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a', { chain: 'bch' });
+  ok('send 1 ltc to 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy on litecoin', { chain: 'ltc' });
+  ok(`send 100 shib to ${EVM} on ethereum`, { token: 'SHIB', chain: 'eth' });
+  const amb = parseXchain('send 1 ltc to 3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy');
+  assert.match((amb as { reason: string }).reason, /say which chain/, 'a 3… address fits Bitcoin and Litecoin');
+  const tag = parseXchain(`send 5 usdt to ${TRON_ADDR} tag 9`);
+  assert.match((tag as { reason: string }).reason, /only XRP/);
+});
+
+test('top tokens: a tagged XRP payment is blocked at quote', async () => {
+  const w = world();
+  await w.start();
+  const r = await w.call('POST', '/v1/pay/xchain/quote', { amount: '50', token: 'XRP', chain: 'xrp', recipient: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh', tag: '123' });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /tags are not supported/);
+  assert.equal(w.quotes.length, 0);
 });

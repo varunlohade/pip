@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { baseDecode } from 'near-api-js';
+import { adaOk, bchOk, btcOk, dogeOk, ltcOk, suiOk, tonOk, xrpOk } from './addresses.ts';
 import { checksumOk } from './eip55.ts';
 
 /** One row of 1Click GET /v0/tokens. */
 export type TokenRow = { assetId: string; decimals: number; blockchain: string; symbol: string; price: number | string; contractAddress?: string; coingeckoId?: string };
 
-type AddressKind = 'evm' | 'sol' | 'tron' | 'near';
+type AddressKind = 'evm' | 'sol' | 'tron' | 'near' | 'btc' | 'ltc' | 'doge' | 'bch' | 'xrp' | 'ada' | 'sui' | 'ton';
 /** Destination chains Pip pays to. `id` is 1Click's blockchain name; `relayChainId` lets Relay price the destination asset. */
 export const CHAINS: Record<string, { name: string; kind: AddressKind; aliases: string[]; relayChainId?: number }> = {
   near: { name: 'NEAR', kind: 'near', aliases: ['near'] },
@@ -19,6 +20,14 @@ export const CHAINS: Record<string, { name: string; kind: AddressKind; aliases: 
   gnosis: { name: 'Gnosis', kind: 'evm', aliases: ['gnosis', 'xdai'], relayChainId: 100 },
   sol: { name: 'Solana', kind: 'sol', aliases: ['sol', 'solana'], relayChainId: 792703809 },
   tron: { name: 'Tron', kind: 'tron', aliases: ['tron', 'trx'] },
+  btc: { name: 'Bitcoin', kind: 'btc', aliases: ['btc', 'bitcoin'] },
+  ltc: { name: 'Litecoin', kind: 'ltc', aliases: ['ltc', 'litecoin'] },
+  bch: { name: 'Bitcoin Cash', kind: 'bch', aliases: ['bch', 'bitcoincash'] },
+  doge: { name: 'Dogecoin', kind: 'doge', aliases: ['doge', 'dogecoin'] },
+  xrp: { name: 'XRP Ledger', kind: 'xrp', aliases: ['xrp', 'xrpl', 'ripple'] },
+  cardano: { name: 'Cardano', kind: 'ada', aliases: ['cardano', 'ada'] },
+  sui: { name: 'Sui', kind: 'sui', aliases: ['sui'] },
+  ton: { name: 'TON', kind: 'ton', aliases: ['ton'] },
 };
 
 export function chainByName(raw: string): string | null {
@@ -37,13 +46,17 @@ export type Origin = keyof typeof ORIGINS;
 const B58 = /^[1-9A-HJ-NP-Za-km-z]+$/;
 const NEAR_ID = /^(?=.{2,64}$)(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 
-/** Which address kind a string looks like, or null. Used to infer the chain when the text names none. */
-export function addressKind(a: string): AddressKind | null {
-  if (/^0x[0-9a-fA-F]{40}$/.test(a)) return 'evm';
-  if (tronOk(a)) return 'tron';
-  if (solOk(a)) return 'sol';
-  if (nearOk(a)) return 'near';
-  return null;
+const VALID: Record<AddressKind, (a: string) => boolean> = {
+  evm: (a) => /^0x[0-9a-fA-F]{40}$/.test(a), sui: suiOk, tron: (a) => tronOk(a), btc: btcOk, ltc: ltcOk, doge: dogeOk, bch: bchOk,
+  xrp: xrpOk, ada: adaOk, ton: tonOk, sol: (a) => solOk(a), near: (a) => nearOk(a),
+};
+
+/** The chain an address belongs to, 'ambiguous' when several fit (a "3…" address is both Bitcoin and Litecoin), or null. */
+export function addressChain(a: string): string | 'ambiguous' | null {
+  const kinds = (Object.keys(VALID) as AddressKind[]).filter((k) => VALID[k](a));
+  const chains = [...new Set(kinds.map((k) => (k === 'evm' ? 'evm' : Object.keys(CHAINS).find((id) => CHAINS[id].kind === k)!)))];
+  if (chains.length === 0) return null;
+  return chains.length > 1 ? 'ambiguous' : chains[0];
 }
 
 function solOk(a: string) {
@@ -75,7 +88,7 @@ export function checkAddress(chain: string, a: string): { ok: true } | { ok: fal
   const c = CHAINS[chain];
   if (!c) return { ok: false, reason: `Pip does not pay to ${chain} yet` };
   if (c.kind === 'evm' && /^0x[0-9a-fA-F]{40}$/.test(a) && !checksumOk(a)) return { ok: false, reason: 'the address checksum is wrong; check the capital letters' };
-  const ok = c.kind === 'evm' ? /^0x[0-9a-fA-F]{40}$/.test(a) && !/^0x0{40}$/.test(a) : c.kind === 'sol' ? solOk(a) : c.kind === 'tron' ? tronOk(a) : nearOk(a);
+  const ok = c.kind === 'evm' ? VALID.evm(a) && !/^0x0{40}$/.test(a) : VALID[c.kind](a);
   return ok ? { ok: true } : { ok: false, reason: `not a ${c.name} address` };
 }
 

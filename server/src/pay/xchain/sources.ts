@@ -1,5 +1,5 @@
 import type { TokenRow } from './assets.ts';
-import type { Pin } from './pins.ts';
+import type { VerifiedPin as Pin } from './pins.ts';
 
 /** The parts of a 1Click quote response Pip reads. Every amount is a base-unit integer string. */
 export type OneClickQuote = {
