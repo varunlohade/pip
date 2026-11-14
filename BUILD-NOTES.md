@@ -1,5 +1,18 @@
 # Pip build notes
 
+## 0.2 (3)
+
+What to Test:
+
+1. New Pip: Pip is now a calm work helper. Home shows helper actions. Meanings are still there as one tool.
+2. Calendar: in any chat, tap the calendar button on the Pip bar. You see your day and the month. Try New event and Share a time.
+3. Private AI: replies made inside NEAR AI's secure hardware show a small Private mark. Tap Private AI on Home to see the proof.
+4. Pay on NEAR testnet (play money): open Pip, tap Pip Pay, then Set up Pip Pay. Pip makes a key on this phone. Copy your account id and get free testnet NEAR from a faucet.
+5. Type to pay: in any chat, type "send 0.01 NEAR to <account>.testnet". Tap the pay chip. A new person opens Pip first. Face ID signs the payment on your phone.
+6. Mainnet: when the switch shows in Pip Pay, Mainnet means real money. Pip shows a warning. Please do not send real money in this test.
+7. Log out keeps your Pip Pay key on this phone. "Remove wallet from this phone" deletes it, after a warning with your balance. There is no backup: a deleted key means lost funds.
+8. Rewrite still works: tap rewrite, and each tone shows as soon as it is ready.
+
 ## 0.1 (2)
 
 What to Test:
