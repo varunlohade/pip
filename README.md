@@ -8,7 +8,9 @@ Built for NEAR HACKATHON. The repo started on 2026-11-12, inside the hackathon w
 
 ## Try it
 
-**TestFlight: TESTFLIGHT_LINK_HERE**
+**TestFlight: https://testflight.apple.com/join/N35PJPEx**
+
+Public beta: Apple is reviewing it. If the link says the beta isn't accepting testers yet, check back soon.
 
 1. Install **TestFlight** from the App Store.
 2. Open the link above on your iPhone.
@@ -32,9 +34,10 @@ Things to type:
 | | | |
 | --- | --- | --- |
 | <img src="docs/shots/calendar-light-new-event-clash.png" width="220"><br>Calendar in the keyboard: clash check and free times | <img src="docs/shots/fix-draw-panel-iphone16.png" width="220"><br>Explain + Draw it: a step-by-step drawing | <img src="docs/shots/near-proof.png" width="220"><br>Private AI proof screen |
-| <img src="docs/shots/pin-pad-keyboard.png" width="220"><br>Approve a NEAR payment with your PIN, inside the keyboard | <img src="docs/shots/xchain-card.png" width="220"><br>Pay USDC on Base through NEAR Intents | |
+| <img src="docs/shots/near-approve.png" width="220"><br>Send on NEAR: the card, approved with your PIN | <img src="docs/shots/pin-pad-keyboard.png" width="220"><br>The PIN pad, inside the keyboard | <img src="docs/shots/first-time-full-address.png" width="220"><br>New address: check the whole address and tap its ending |
+| <img src="docs/shots/xchain-card.png" width="220"><br>Pay USDC on Base through NEAR Intents | <img src="docs/shots/swap-preview.png" width="220"><br>"swap 1 near to usdc": a NEAR Intents swap preview | |
 
-The shots come from the iOS simulator against the fake server (`npm run fake`). So the proof screen shows fake values. The cross-chain card is an older shot with a Face ID button. Current builds approve with the PIN.
+The shots come from the iOS simulator against the fake server (`npm run fake`). So the proof screen and the prices show fake values.
 
 ## NEAR integrations
 
@@ -154,4 +157,4 @@ More: [server/SECURITY.md](server/SECURITY.md), [docs/DATA.md](docs/DATA.md), [d
 
 ## Licence
 
-Licence: to be decided by the author.
+Licence: MIT (see LICENSE)

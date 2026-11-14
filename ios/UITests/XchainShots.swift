@@ -1,12 +1,13 @@
 import XCTest
 
 /// Cross-chain pay in the keyboard against `npm run fake` (a fake 1Click and NEAR; no network). Run SmartChipShots/test1Setup
-/// first to pair and turn the keyboard on. FAKE_URL names the fake server; shots go to SHOT_DIR. The simulator Keychain does
-/// not enforce Face ID, so no match has to be posted.
+/// first to pair and turn the keyboard on, and PayShots/test2 to set the Pip PIN (PAY_PIN). Every approve goes through the
+/// in-keyboard PIN pad. FAKE_URL names the fake server; shots go to SHOT_DIR.
 final class XchainShots: XCTestCase {
     private let env = ProcessInfo.processInfo.environment
     private let messages = XCUIApplication(bundleIdentifier: "com.apple.MobileSMS")
     private let text = "send 5 USDC to 0xd8da6bf26964af9d7eed9e10c19b4ae4ff1b9da3 on base"
+    private var pin: String { env["PAY_PIN"] ?? "482915" }
 
     override func setUp() { continueAfterFailure = false }
 
@@ -24,16 +25,26 @@ final class XchainShots: XCTestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", l)).firstMatch
     }
 
-    /// Moves the fake server's clock, so the next approve re-quotes.
-    private func tick(_ ms: Int) {
-        var r = URLRequest(url: URL(string: (env["FAKE_URL"] ?? "http://127.0.0.1:8799") + "/_tick")!)
+    private func post(_ path: String, _ json: String) {
+        var r = URLRequest(url: URL(string: (env["FAKE_URL"] ?? "http://127.0.0.1:8799") + path)!)
         r.httpMethod = "POST"
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = Data(#"{"ms":\#(ms)}"#.utf8)
-        let done = expectation(description: "tick")
+        r.httpBody = Data(json.utf8)
+        let done = expectation(description: path)
         URLSession.shared.dataTask(with: r) { _, _, _ in done.fulfill() }.resume()
         wait(for: [done], timeout: 5)
     }
+
+    /// Taps Approve with PIN and types the PIN on the in-keyboard pad.
+    private func approveWithPIN() {
+        XCTAssertTrue(element(messages, "paycard.approve").label.contains("Approve with PIN"), String(messages.debugDescription.suffix(4000)))
+        element(messages, "paycard.approve").tap()
+        XCTAssertTrue(element(messages, "pin.pad").waitForExistence(timeout: 8), String(messages.debugDescription.suffix(4000)))
+        for d in pin { element(messages, "pin.\(d)").tap() }
+    }
+
+    /// Moves the fake server's clock, so the next approve re-quotes.
+    private func tick(_ ms: Int) { post("/_tick", #"{"ms":\#(ms)}"#) }
 
     private func paste(_ s: String, into field: XCUIElement) {
         UIPasteboard.general.string = s
@@ -75,12 +86,12 @@ final class XchainShots: XCTestCase {
     }
 
     /// Pastes the ask and waits for `chipID`; a paste reads as typing past a chip, so it nudges once after the quiet time.
-    private func ask(_ chipID: String, in field: XCUIElement) -> XCUIElement {
+    private func ask(_ chipID: String, in field: XCUIElement, text: String? = nil) -> XCUIElement {
         let delete = element(messages, "delete")
         for _ in 0..<6 where !((field.value as? String) ?? "").isEmpty && (field.value as? String) != field.placeholderValue {
             delete.press(forDuration: 2.5)
         }
-        paste(text, into: field)
+        paste(text ?? self.text, into: field)
         element(messages, "space").tap()
         let chip = element(messages, chipID)
         if !chip.waitForExistence(timeout: 6) {
@@ -95,11 +106,14 @@ final class XchainShots: XCTestCase {
     private func pipPay(network: String) {
         let app = XCUIApplication()
         app.launch()
-        let row = element(app, "home.keyboardPay")
-        for _ in 0..<6 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
-        XCTAssertTrue(row.waitForExistence(timeout: 10), String(app.debugDescription.suffix(3000)))
-        row.tap()
         let setUp = element(app, "kbpay.turnOn")
+        // The app can reopen on the Pip Pay page it was left on.
+        if !setUp.waitForExistence(timeout: 2) {
+            let row = element(app, "home.keyboardPay")
+            for _ in 0..<6 where !(row.exists && row.isHittable) { app.swipeUp(velocity: .slow) }
+            XCTAssertTrue(row.waitForExistence(timeout: 10), String(app.debugDescription.suffix(3000)))
+            row.tap()
+        }
         XCTAssertTrue(setUp.waitForExistence(timeout: 6))
         if setUp.label == "Set up Pip Pay" { setUp.tap() }
         XCTAssertTrue(element(app, "pay.balance").waitForExistence(timeout: 15), String(app.debugDescription.suffix(3000)))
@@ -130,10 +144,10 @@ final class XchainShots: XCTestCase {
         element(messages, "paycard.end.9da3").tap()
         // Over a minute later: the server re-quotes before it builds.
         tick(61_000)
-        element(messages, "paycard.approve").tap()
+        approveWithPIN()
         XCTAssertTrue(element(messages, "xcard.requoted").waitForExistence(timeout: 15), String(messages.debugDescription.suffix(4000)))
         shot("xchain-requote")
-        element(messages, "paycard.approve").tap()
+        approveWithPIN()
         XCTAssertTrue(element(messages, "xcard.status").waitForExistence(timeout: 15), String(messages.debugDescription.suffix(4000)))
         XCTAssertTrue(element(messages, "xcard.explorer").waitForExistence(timeout: 20), String(messages.debugDescription.suffix(4000)))
         shot("xchain-status")
@@ -147,7 +161,20 @@ final class XchainShots: XCTestCase {
         chip.tap()
         XCTAssertTrue(element(messages, "paycard.approve").waitForExistence(timeout: 10), String(messages.debugDescription.suffix(4000)))
         XCTAssertFalse(element(messages, "paycard.firsttime").exists)
+        XCTAssertTrue(element(messages, "paycard.approve").label.contains("Approve with PIN"), String(messages.debugDescription.suffix(4000)))
         shot("xchain-card")
+        element(messages, "paycard.reject").tap()
+    }
+
+    /// Testnet: "swap 1 near to usdc" shows a live preview card (real prices, Approve off).
+    func test4SwapPreview() {
+        pipPay(network: "Testnet")
+        post("/_next", #"{"route":{"label":"swap","confidence":0.9}}"#)
+        let field = openField()
+        let chip = ask("chip.pay", in: field, text: "swap 1 near to usdc")
+        chip.tap()
+        XCTAssertTrue(element(messages, "swapcard.preview").waitForExistence(timeout: 10), String(messages.debugDescription.suffix(4000)))
+        shot("swap-preview")
         element(messages, "paycard.reject").tap()
     }
 }
