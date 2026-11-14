@@ -22,6 +22,7 @@ struct CalendarPanelView: View {
 }
 
 /// The bar while the calendar is open: the month and its arrows, + and the keys; or Back and the screen's name.
+/// The globe joins them when iOS draws none (Home button phones such as the SE).
 struct CalendarBar: View {
     @ObservedObject var model: KeyboardModel
     let panel: CalendarPanel
@@ -45,6 +46,9 @@ struct CalendarBar: View {
                 Text(isShare ? "Share a time" : "New event").font(.system(size: 17, weight: .semibold)).foregroundStyle(palette.label)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
+            }
+            if model.host?.needsGlobeKey == true {
+                icon("globe", id: "calendar.globe", label: "Next keyboard") { model.host?.nextKeyboard() }
             }
             icon("keyboard", id: "calendar.close", label: "Keyboard") { model.toggleCalendar() }
         }

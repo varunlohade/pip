@@ -38,6 +38,8 @@ struct CalendarDone: Equatable {
     let item: SmartAdded.Item
     /// The words Add also put in the message, so Undo can take them out.
     let inserted: String?
+    /// The spaces Add took off the end of the message to close the typed plan with a full stop. Undo puts them back.
+    var dropped = ""
 }
 
 extension KeyboardModel {
@@ -150,18 +152,21 @@ extension KeyboardModel {
             return
         }
         var inserted: String?
+        var dropped = ""
         if e.alsoMessage {
-            let before = host?.contextBeforeInput ?? ""
-            let text = (before.isEmpty || before.last?.isWhitespace == true ? "" : " ") + e.message
+            let join = CalendarPlan.newSentence(after: host?.contextBeforeInput ?? "")
+            for _ in 0..<join.drop.count { host?.deleteBackward() }
+            let text = join.prefix + e.message
             host?.insert(text)
             inserted = text
+            dropped = join.drop
             updateAutoShift()
         }
         c.screen = .month
         c.selected = cal.startOfDay(for: e.when.start)
         c.month = firstOfMonth(e.when.start)
         c.done = CalendarDone(line: "Added \(e.title), \(CalendarPlan.day(e.when.start, now: deps.now(), cal: cal)) \(CalendarPlan.clock(e.when.start, cal: cal, meridiem: true)).",
-                              item: .event(id), inserted: inserted)
+                              item: .event(id), inserted: inserted, dropped: dropped)
         calendar = c
         loadCalendar()
         startCalendarUndoWindow()
@@ -189,6 +194,7 @@ extension KeyboardModel {
         }
         if let text = d.inserted, (host?.contextBeforeInput ?? "").hasSuffix(text) {
             for _ in 0..<text.count { host?.deleteBackward() }
+            if !d.dropped.isEmpty { host?.insert(d.dropped) }
             updateAutoShift()
         }
         calendar?.done = nil

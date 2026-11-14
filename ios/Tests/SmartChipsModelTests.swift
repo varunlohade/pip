@@ -167,7 +167,7 @@ final class SmartChipsModelTests: XCTestCase {
         XCTAssertEqual(api.calls, [])
     }
 
-    func testTodayChipListsTheEvents() async {
+    func testTodayChipOpensTheCalendarOnToday() async {
         let now = clock.now
         store.appointments = [Appointment(start: now - 7200, end: now - 3600, title: "Dentist")]
         host.text = "hi"
@@ -175,7 +175,7 @@ final class SmartChipsModelTests: XCTestCase {
         host.text = ""
         model.textChanged()
         model.perform(item("today")!.action!)
-        guard case .done(let line) = model.bar else { return XCTFail("expected a line, got \(model.bar)") }
-        XCTAssertTrue(line.hasSuffix("Dentist"), line)
+        XCTAssertEqual(model.calendar?.selected, Calendar.current.startOfDay(for: now))
+        XCTAssertEqual(model.calendar?.screen, .month)
     }
 }

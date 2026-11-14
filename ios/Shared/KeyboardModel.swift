@@ -1449,7 +1449,7 @@ final class KeyboardModel: ObservableObject {
         case .openCalm: openCalmOffer()
         case .smart(let chip): tapSmart(chip)
         case .undoSmart: undoSmart()
-        case .today: showToday()
+        case .today: openCalendar()
         case .notes: toggleNotes()
         case .explain: openExplainCard()
         }
@@ -1527,11 +1527,6 @@ final class KeyboardModel: ObservableObject {
         }
         smartDone = smartDone.filter { !$0.sameReading(as: a.chip) }
         if !smart.contains(a.chip) { smart.insert(a.chip, at: 0) }
-    }
-
-    /// "9:20 Dentist · 11:00 Lunch with Ana", from the snapshot the app wrote.
-    private func showToday() {
-        bar = .done(appointments.isEmpty ? "Nothing on your calendar today" : appointments.map { "\($0.time) \($0.title)" }.joined(separator: " \u{00B7} "))
     }
 }
 

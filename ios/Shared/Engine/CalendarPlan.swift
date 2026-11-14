@@ -104,6 +104,16 @@ enum CalendarPlan {
         "\(day(start, now: now, cal: cal)) \(clock(start, cal: cal, meridiem: true)) works for me. See you there!"
     }
 
+    /// How the confirm line joins what is already typed, as its own sentence. "coffee with Ana at 3:30pm " drops the
+    /// space and gets ". "; after a stop, comma or emoji, a space; at the start or after a new line, nothing.
+    static func newSentence(after before: String) -> (drop: String, prefix: String) {
+        guard let last = before.last(where: { !$0.isWhitespace }) else { return ("", "") }
+        let tail = String(before.reversed().prefix { $0.isWhitespace && !$0.isNewline }.reversed())
+        if before.dropLast(tail.count).last?.isNewline == true { return ("", "") }
+        if !(last.isLetter || last.isNumber) { return ("", tail.isEmpty ? " " : "") }
+        return (tail, ". ")
+    }
+
     /// "Tue 17, 3:30-4:30 PM"
     static func whenText(_ i: DateInterval, cal: Calendar) -> String {
         format("EEE d", i.start, cal) + ", " + range(i, cal: cal)

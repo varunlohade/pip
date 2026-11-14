@@ -24,6 +24,18 @@ final class CalendarPlanTests: XCTestCase {
          ev("Gym", 17, 18, 0, 19, 0), ev("Lunch", 18, 12, 0, 14, 0)]
     }
 
+    // MARK: joining the confirm line
+
+    func testConfirmLineStartsANewSentence() {
+        XCTAssertTrue(CalendarPlan.newSentence(after: "") == ("", ""))
+        XCTAssertTrue(CalendarPlan.newSentence(after: "coffee at 3pm") == ("", ". "))
+        XCTAssertTrue(CalendarPlan.newSentence(after: "coffee at 3pm  ") == ("  ", ". "))
+        XCTAssertTrue(CalendarPlan.newSentence(after: "Sounds good.") == ("", " "))
+        XCTAssertTrue(CalendarPlan.newSentence(after: "Sounds good! ") == ("", ""))
+        XCTAssertTrue(CalendarPlan.newSentence(after: "Sure,") == ("", " "))
+        XCTAssertTrue(CalendarPlan.newSentence(after: "coffee at 3pm\n") == ("", ""))
+    }
+
     // MARK: free gaps
 
     func testFreeGapsBetweenEventsInWorkingHours() {
@@ -204,6 +216,17 @@ final class CalendarModelTests: XCTestCase {
         XCTAssertEqual(writer.events.count, 0)
         XCTAssertEqual(host.text, "Sounds good.")
         XCTAssertNil(model.calendar?.done)
+    }
+
+    func testConfirmLineAfterATypedPlanIsItsOwnSentenceAndUndoRestoresThePlan() {
+        host.text = "coffee with Ana at 3:30pm "
+        model.openCalendar()
+        model.startNewEvent()
+        guard case .newEvent(let e)? = model.calendar?.screen else { return XCTFail("no new event screen") }
+        model.addNewEvent()
+        XCTAssertEqual(host.text, "coffee with Ana at 3:30pm. " + e.message)
+        model.undoCalendarDone()
+        XCTAssertEqual(host.text, "coffee with Ana at 3:30pm ")
     }
 
     func testUntickedMessageAddsOnlyTheEvent() {

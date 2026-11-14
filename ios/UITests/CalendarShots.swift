@@ -154,7 +154,8 @@ final class CalendarShots: XCTestCase {
         shot("share-inserted")
         clear(field)
 
-        paste("coffee with Ana at 3:30pm", into: field)
+        // Tomorrow's seeded lunch (12-2), so the clash shows at any hour of the day.
+        paste("coffee with Ana tomorrow at 1pm", into: field)
         element(messages, "space").tap()
         wait("calendar.toggle").tap()
         wait("calendar.add").tap()
