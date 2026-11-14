@@ -62,6 +62,22 @@ final class KeyboardViewController: UIInputViewController, TextHost {
         model.keyboardAppeared()
     }
 
+    #if DEBUG
+    private var probed = false
+    /// Spike only: runs the on-device model probe once when the field holds the trigger text.
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !probed, textDocumentProxy.documentContextBeforeInput == OnDeviceProbe.trigger else { return }
+        probed = true
+        // The inserted words tell the UI test the probe started and ended.
+        textDocumentProxy.insertText(" started")
+        Task {
+            await OnDeviceProbe.run(host: "keyboard")
+            textDocumentProxy.insertText(" done")
+        }
+    }
+    #endif
+
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         model.keyboardDisappeared()

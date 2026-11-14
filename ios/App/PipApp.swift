@@ -7,9 +7,19 @@ struct PipApp: App {
 
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if UserDefaults.standard.bool(forKey: "ondeviceProbe") {
+                OnDeviceProbeScreen()
+            } else {
+                RootView()
+                    .environmentObject(session)
+                    .onOpenURL { session.handle(url: $0) }
+            }
+            #else
             RootView()
                 .environmentObject(session)
                 .onOpenURL { session.handle(url: $0) }
+            #endif
         }
     }
 }
@@ -246,3 +256,26 @@ struct RootView: View {
         .task { await session.migrateLegacyToken() }
     }
 }
+
+#if DEBUG
+/// Spike only: "-ondeviceProbe YES" runs the on-device model probe in the app, then holds a field with the
+/// keyboard trigger text, so the Pip keyboard runs the same probe when it appears.
+private struct OnDeviceProbeScreen: View {
+    @State private var text = OnDeviceProbe.trigger
+    @State private var done = false
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text(done ? "App probe done" : "App probe running").accessibilityIdentifier("probe.status")
+            TextField("", text: $text).textFieldStyle(.roundedBorder).focused($focused).accessibilityIdentifier("probe.field")
+        }
+        .padding()
+        .task {
+            await OnDeviceProbe.run(host: "app")
+            done = true
+            focused = true
+        }
+    }
+}
+#endif
