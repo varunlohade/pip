@@ -40,14 +40,16 @@ struct PayIntent: Decodable, Equatable, Identifiable {
     let tx_hash: String?
     let explorer_url: String?
     let deep_link: String
-    /// Never paid before: only the app may sign it, so the keyboard opens the app.
+    /// Never paid before: the card asks the owner to confirm the address, and the keyboard sends a Face ID proof.
     var new_recipient: Bool?
+    /// Cross-chain: the real destination and the checked numbers.
+    var xchain: XchainCard?
 
     /// The NearBlocks link, from the tx hash and network, not from the server's URL.
     var explorer: String? { tx_hash.map { PayNetwork.explorer($0, network: network) } }
 }
 
-/// The server will not build this without the app: a new recipient, or over a limit.
+/// The server will not build this: over a limit, or (for the app's own card) a new recipient without its key.
 func needsApp(_ error: Error) -> Bool {
     if case APIError.http(403, _) = error { return true }
     return false
@@ -112,6 +114,13 @@ struct PaySent: Codable, Equatable {
     let line: String
     let at: Date
 
+    init(id: String, label: String, line: String, at: Date) {
+        self.id = id
+        self.label = label
+        self.line = line
+        self.at = at
+    }
+
     init(_ i: PayIntent, at: Date) {
         id = i.id
         label = "Sent \(i.amount) \(i.token) to \(i.recipient)"
@@ -134,12 +143,18 @@ extension APIClient {
         try await send(request("GET", "/v1/pay/intents/\(id)"), as: PayIntent.self)
     }
 
-    /// Asks the server to build the exact transaction. The app passes its approver key; the keyboard passes none, so the
-    /// server builds only for a recipient paid before.
+    /// Asks the server to build the exact transaction. The app passes its approver key.
     func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned {
+        try await unsignedPay(i, approverKey: approverKey, proof: nil)
+    }
+
+    /// The keyboard passes `proof`: the phone key's signature over PayApproval.proofHash(i), made after Face ID. The server
+    /// needs it (or the app's key) to build for a recipient never paid before.
+    func unsignedPay(_ i: PayIntent, approverKey: String?, proof: Data?) async throws -> PayUnsigned {
         var r = try request("POST", "/v1/pay/intents/\(i.id)/unsigned", body: ["amount": i.amount, "token": i.token, "recipient": i.recipient],
                             tap: true, timeout: 40)
         if let approverKey { r.setValue(approverKey, forHTTPHeaderField: "X-Pay-Approver") }
+        if let proof { r.setValue(proof.base64EncodedString(), forHTTPHeaderField: "X-Pay-Proof") }
         return try await send(r, as: PayUnsigned.self)
     }
 

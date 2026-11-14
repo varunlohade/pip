@@ -113,6 +113,8 @@ final class FakeAPI: KeyboardAPI {
     var unsignedError: Error?
     private(set) var proposed: [PayDraft] = []
     private(set) var unsignedWith: [String?] = []
+    /// The X-Pay-Proof of each unsigned call.
+    private(set) var proofs: [Data?] = []
     private(set) var submitted: [(id: String, signature: Data, hash: Data)] = []
     private(set) var rejected: [String] = []
     private var built: [String: Data] = [:]
@@ -120,12 +122,31 @@ final class FakeAPI: KeyboardAPI {
         calls.append("payIntent"); proposed.append(d)
         return PayIntent.fake(d, newRecipient: newRecipient)
     }
-    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned {
-        calls.append("unsigned"); unsignedWith.append(approverKey)
+    func unsignedPay(_ i: PayIntent, approverKey: String?, proof: Data?) async throws -> PayUnsigned {
+        calls.append("unsigned"); unsignedWith.append(approverKey); proofs.append(proof)
         if let e = unsignedError { throw e }
+        if let x = unsignedXchain { let u = x(i); built[i.id] = Data(base64Encoded: u.tx_base64); return u }
         let bytes = tamper?(i) ?? TestTx.forIntent(i, signer: account)
         built[i.id] = bytes
         return TestTx.unsigned(i.id, bytes)
+    }
+
+    // Cross-chain.
+    var parseReply = XchainParsed(valid: true, kind: "xchain", amount: "5", token: "USDC", chain: "base", recipient: TestXchain.evm)
+    var quoteReply: XchainQuote?
+    /// What /unsigned answers for a cross-chain intent (the honest deposit, or a re-quote).
+    var unsignedXchain: ((PayIntent) -> PayUnsigned)?
+    var statusReplies: [XchainStatus] = []
+    private(set) var parsed: [String] = []
+    private(set) var quoted: [XchainParsed] = []
+    func parseXchain(_ text: String) async throws -> XchainParsed { calls.append("xparse"); parsed.append(text); return parseReply }
+    func quoteXchain(_ p: XchainParsed) async throws -> XchainQuote {
+        calls.append("xquote"); quoted.append(p)
+        return quoteReply ?? TestXchain.quote(account: account)
+    }
+    func xchainStatus(_ id: String) async throws -> XchainStatus {
+        calls.append("xstatus")
+        return statusReplies.count > 1 ? statusReplies.removeFirst() : (statusReplies.first ?? XchainStatus(status: "swapping"))
     }
     func submitPay(_ id: String, signature: Data) async throws -> PayIntent {
         calls.append("submit")
@@ -215,6 +236,16 @@ final class FakeSigner: PaySigner, @unchecked Sendable {
         asks += 1
         if let answer { return answer }
         return .signed(try! key.signature(for: hash))
+    }
+    private(set) var prompts: [String] = []
+    func session(prompt: String) async -> PaySession {
+        asks += 1
+        prompts.append(prompt)
+        switch answer {
+        case .denied?: return .denied
+        case .unavailable?: return .unavailable
+        default: return .ready { [key] h in try? key.signature(for: h) }
+        }
     }
 }
 

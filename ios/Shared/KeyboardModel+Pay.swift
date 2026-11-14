@@ -1,18 +1,51 @@
 import Foundation
 
-/// The keyboard's approval card: one payment, where it is, and what the keyboard may still send today.
+/// The keyboard's approval card: one payment, where it is, and what the owner still has to do.
 struct PayPanel: Equatable {
     var intent: PayIntent
     var phase: PayPhase = .ready
     /// One quiet line, such as "Not approved. Nothing was sent."
     var note: String?
+    /// Cross-chain: the checked quote the card shows.
+    var xchain: XchainCard?
+    /// First time paying this address: the owner taps how it ends before Face ID.
+    var confirm: AddressConfirm?
+    /// A re-quote's transaction, built and waiting for a second Face ID on the new card.
+    var pending: PayUnsigned?
+    /// Cross-chain, after the deposit landed.
+    var swap: SwapState?
+
+    init(intent: PayIntent, xchain: XchainCard? = nil) {
+        self.intent = intent
+        self.xchain = xchain
+        if let card = xchain {
+            if card.firstTime, let to = card.destination?.recipient { confirm = AddressConfirm(to) }
+        } else if intent.new_recipient != false {
+            confirm = AddressConfirm(intent.recipient)
+        }
+    }
+
+    var requoted: Bool { pending != nil }
+    /// Approve is on: a ready card, a verified quote, and the address confirmed when it is new.
+    var canApprove: Bool {
+        phase == .ready && (xchain?.approvable ?? true) && (confirm?.confirmed ?? true)
+    }
+    /// What the system Face ID sheet says.
+    var prompt: String {
+        if let n = xchain?.numbers, let d = xchain?.destination {
+            return "Send \(n.amount_out.text) \(n.amount_out.symbol) on \(d.chain_name) to \(XchainCardText.short(d.recipient))"
+        }
+        return "Send \(intent.amount) \(intent.token) to \(intent.recipient)"
+    }
 }
 
-/// Type-to-pay in the keyboard (design C). The keyboard proposes a payment on the server. If this phone has its NEAR key and
-/// the recipient was paid before, the keyboard shows its own card, checks the server's transaction, and signs it after Face ID
-/// with the key it shares with the app. The server builds it only within its caps. A new recipient, a refusal, or no Face ID
-/// here opens the app, which alone holds the approver key.
+/// Type-to-pay in the keyboard (design C). Every payment, same-chain or cross-chain, to a known or a new recipient, is approved
+/// here with Face ID. One Face ID reads the phone key once: it signs a proof over the intent (the server needs it for a new
+/// recipient), then the transaction, after the phone has checked it against the card. The server keeps the caps.
 extension KeyboardModel {
+    /// How often a sent cross-chain payment is checked. Tests make it short.
+    static var swapPollEvery: Duration = .seconds(3)
+
     /// Reads a payment from the text. True when one shows, so the sentence does not also go to /v1/suggest.
     func updatePay(_ text: String, quiet: Bool) -> Bool {
         let found = PayDetect.detect(text)
@@ -20,22 +53,69 @@ extension KeyboardModel {
         if found == nil, !payDone.isEmpty { payDone = [] }
         guard !quiet, payPanel == nil, let d = found, !payDone.contains(d) else {
             if payOffer != nil { payOffer = nil }
-            return false
+            return updateXchain(text, quiet: quiet || found != nil)
         }
         if payOffer != d { payOffer = d }
+        if xchainOffer != nil { xchainOffer = nil }
+        return true
+    }
+
+    /// Cross-chain: a cheap regex decides when to ask; the server's parse decides what the payment is.
+    private func updateXchain(_ text: String, quiet: Bool) -> Bool {
+        let words = quiet || payPanel != nil ? nil : XchainDetect.candidate(text)
+        if words == nil, !xchainDone.isEmpty { xchainDone = [] }
+        guard let words, !xchainDone.contains(words) else {
+            xchainTask?.cancel()
+            xchainAsked = nil
+            if xchainOffer != nil { xchainOffer = nil }
+            return false
+        }
+        if PayNetwork.name != "mainnet" {
+            let offer = XchainOffer.needsMainnet(trigger: words)
+            if xchainOffer != offer { xchainOffer = offer }
+            return true
+        }
+        guard words != xchainAsked else { return true }
+        xchainAsked = words
+        xchainTask?.cancel()
+        let api = deps.api()
+        xchainTask = Task { [weak self] in
+            // Typing on: ask once the words settle.
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            let parsed = try? await api.parseXchain(words)
+            guard let self, !Task.isCancelled, self.xchainAsked == words else { return }
+            switch parsed {
+            case .some(let p) where p.valid && p.kind == "xchain": self.xchainOffer = .ready(p, trigger: words)
+            case .some(let p) where !p.valid: self.xchainOffer = .refused(p.reason ?? "Pip cannot send this yet", trigger: words)
+            default: self.xchainOffer = nil
+            }
+        }
         return true
     }
 
     var payItem: BarItems.Item? {
-        payOffer.map { BarItems.Item(id: "pay", title: $0.label, detail: "Approve", action: .pay, trigger: $0.trigger) }
+        if let d = payOffer { return BarItems.Item(id: "pay", title: d.label, detail: "Approve", action: .pay, trigger: d.trigger) }
+        switch xchainOffer {
+        case .ready(let p, let t):
+            let to = XchainCardText.short(p.recipient ?? "")
+            return BarItems.Item(id: "pay", title: "Send \(p.amount ?? "") \(p.token ?? "") to \(to)", detail: "Review", action: .pay, trigger: t)
+        case .needsMainnet(let t):
+            return BarItems.Item(id: "pay", title: XchainOffer.mainnetLine, tone: .secondary, trigger: t)
+        case .refused(let why, let t):
+            return BarItems.Item(id: "pay", title: why, tone: .secondary, trigger: t)
+        case nil:
+            return nil
+        }
     }
 
     var paidItem: BarItems.Item? {
         paySent.map { BarItems.Item(id: "paid", title: $0.label, detail: $0.line, tone: .success) }
     }
 
-    /// Tap on the chip: the server keeps the exact fields for 10 minutes and says whether the recipient is new.
+    /// Tap on the chip: the server keeps the exact fields (10 minutes; 2 for a cross-chain quote), and the card opens here.
     func tapPay() {
+        if case .ready(let p, let words) = xchainOffer { return tapXchain(p, words: words) }
         guard let d = payOffer else { return }
         host?.playClick()
         payTask?.cancel()
@@ -48,14 +128,7 @@ extension KeyboardModel {
                 let intent = try await api.createPayIntent(d)
                 guard let self, !Task.isCancelled else { return }
                 self.deps.store.payPending = intent.id
-                if intent.new_recipient == false, signer.accountID() != nil {
-                    self.bar = .idle
-                    self.notesOpen = false
-                    self.writeOpen = false
-                    self.payPanel = PayPanel(intent: intent)
-                } else {
-                    self.openAppToApprove(intent)
-                }
+                if signer.accountID() != nil { self.showPanel(PayPanel(intent: intent)) } else { self.openAppToSetUp(intent) }
             } catch {
                 guard let self, !Task.isCancelled else { return }
                 self.payDone.remove(d)
@@ -64,45 +137,115 @@ extension KeyboardModel {
         }
     }
 
-    /// New recipient, over a limit, no key on this phone, or no Face ID here: the app shows its full approval card.
-    func openAppToApprove(_ intent: PayIntent) {
-        payPanel = nil
-        let opened = URL(string: intent.deep_link).map { host?.open($0) ?? false } ?? false
-        bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Open \(AppConfig.displayName) to approve")
+    private func tapXchain(_ p: XchainParsed, words: String) {
+        host?.playClick()
+        payTask?.cancel()
+        xchainDone.insert(words)
+        xchainOffer = nil
+        bar = .working("Getting a price\u{2026}")
+        let api = deps.api(), signer = deps.signer()
+        payTask = Task { [weak self] in
+            do {
+                let q = try await api.quoteXchain(p)
+                guard let self, !Task.isCancelled else { return }
+                if let id = q.intent?.id { self.deps.store.payPending = id }
+                guard signer.accountID() != nil else {
+                    if let i = q.intent { self.openAppToSetUp(i) } else { self.bar = .error("Set up Pip Pay in \(AppConfig.displayName) first") }
+                    return
+                }
+                // An unverified quote still shows its card, with the reason and Approve off.
+                let intent = q.intent ?? PayIntent(id: "", amount: "", token: p.from ?? "", recipient: "", status: "refused", network: "mainnet",
+                                                   tx_hash: nil, explorer_url: nil, deep_link: "", new_recipient: true)
+                var card = q.card
+                if card.destination == nil, let chain = p.chain, let to = p.recipient {
+                    card.destination = .init(chain: chain, chain_name: chain.capitalized, recipient: to, first_time: true)
+                }
+                self.showPanel(PayPanel(intent: intent, xchain: card))
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                self.xchainDone.remove(words)
+                self.bar = .error(plainLine(error))
+            }
+        }
     }
 
-    /// "Approve with Face ID" on the keyboard card: check the server's transaction, then Face ID signs it.
+    private func showPanel(_ p: PayPanel) {
+        bar = .idle
+        notesOpen = false
+        writeOpen = false
+        payPanel = p
+    }
+
+    /// No NEAR key on this phone yet: Pip Pay is set up in the app.
+    func openAppToSetUp(_ intent: PayIntent) {
+        payPanel = nil
+        let opened = URL(string: intent.deep_link).map { host?.open($0) ?? false } ?? false
+        bar = .done(opened ? "Opening \(AppConfig.displayName)\u{2026}" : "Set up Pip Pay in \(AppConfig.displayName) first")
+    }
+
+    /// First time paying this address: one of the three endings.
+    func pickAddressEnd(_ end: String) {
+        guard var p = payPanel, var c = p.confirm, p.phase == .ready else { return }
+        host?.playClick()
+        c.picked = end
+        p.confirm = c
+        p.note = c.confirmed ? nil : "That is not how this address ends. Check it and try again."
+        payPanel = p
+    }
+
+    /// "Approve with Face ID": one Face ID, a proof for the server, then the checked transaction is signed.
     func approvePayInKeyboard() {
-        guard var p = payPanel, p.phase == .ready else { return }
+        guard var p = payPanel, p.canApprove else { return }
         host?.playClick()
         p.phase = .approving
         p.note = nil
         payPanel = p
-        let i = p.intent
         let api = deps.api(), signer = deps.signer()
         payTask = Task { [weak self] in
+            let session = await signer.session(prompt: p.prompt)
+            guard let self, !Task.isCancelled else { return }
+            guard case .ready(let sign) = session, let account = signer.accountID() else {
+                self.payPanel?.phase = .ready
+                self.payPanel?.note = session.denied ? "Not approved. Nothing was sent." : "Pip could not ask for Face ID here. Nothing was sent."
+                return
+            }
             do {
-                let u = try await api.unsignedPay(i, approverKey: nil)
-                guard let self, !Task.isCancelled else { return }
-                guard let account = signer.accountID(), case .success(let ok) = PayTxCheck.check(u, intent: i, account: account) else {
+                var i = p.intent
+                let u: PayUnsigned
+                if let built = p.pending {
+                    u = built
+                } else {
+                    guard let proof = sign(PayApproval.proofHash(i)) else { throw APIError.message("Pip could not sign here. Nothing was sent.") }
+                    u = try await api.unsignedPay(i, approverKey: nil, proof: proof)
+                    guard !Task.isCancelled else { return }
+                    if u.requoted == true {
+                        // A new price: show the new card. It needs its own Face ID.
+                        guard let card = u.xchain, card.approvable else {
+                            self.payPanel?.phase = .failed("The new price could not be checked. Nothing was sent.")
+                            return
+                        }
+                        var next = self.payPanel ?? p
+                        next.intent = u.intent(updating: i)
+                        next.xchain = card
+                        next.pending = u
+                        next.phase = .ready
+                        next.note = nil
+                        self.payPanel = next
+                        return
+                    }
+                }
+                i = p.pending.map { $0.intent(updating: i) } ?? i
+                guard case .success(let ok) = PayTxCheck.check(u, intent: i, account: account, xchain: p.xchain) else {
                     self.payPanel?.phase = .failed(PayTxCheck.refusedLine)
                     Task { _ = try? await api.rejectPay(i.id) }
                     return
                 }
-                switch await signer.sign(ok.hash, prompt: "Send \(i.amount) \(i.token) to \(i.recipient)") {
-                case .signed(let sig):
-                    let done = try await api.submitPay(i.id, signature: sig)
-                    guard !Task.isCancelled else { return }
-                    self.finishKeyboardSend(done)
-                case .denied:
-                    self.payPanel?.phase = .ready
-                    self.payPanel?.note = "Not approved. Nothing was sent."
-                case .unavailable:
-                    self.openAppToApprove(i)
-                }
+                guard let sig = sign(ok.hash) else { throw APIError.message("Pip could not sign here. Nothing was sent.") }
+                let done = try await api.submitPay(i.id, signature: sig)
+                guard !Task.isCancelled else { return }
+                self.finishKeyboardSend(done)
             } catch {
-                guard let self, !Task.isCancelled else { return }
-                if needsApp(error) { self.openAppToApprove(i); return }
+                guard !Task.isCancelled else { return }
                 self.payPanel?.phase = .ready
                 self.payPanel?.note = plainLine(error)
             }
@@ -113,12 +256,31 @@ extension KeyboardModel {
         deps.store.payPending = nil
         guard var p = payPanel else { return }
         p.intent = done
+        p.pending = nil
         switch done.status {
-        case "sent": p.phase = .sent
+        case "sent":
+            p.phase = .sent
+            if p.xchain != nil { p.swap = .swapping }
         case "failed": p.phase = .failed("It did not go through. Nothing left your wallet.")
         default: p.phase = .failed("Not confirmed yet. Check the link on NearBlocks.")
         }
         payPanel = p
+        if p.swap != nil { pollSwap(done.id) }
+    }
+
+    /// Cross-chain after the deposit: asks where the swap is until it lands, is refunded or fails.
+    private func pollSwap(_ id: String) {
+        let api = deps.api(), every = Self.swapPollEvery
+        payTask = Task { [weak self] in
+            for _ in 0..<200 {
+                try? await Task.sleep(for: every)
+                guard !Task.isCancelled else { return }
+                guard let s = try? await api.xchainStatus(id), let state = SwapState(s) else { continue }
+                guard let self, !Task.isCancelled, self.payPanel?.intent.id == id else { return }
+                self.payPanel?.swap = state
+                return
+            }
+        }
     }
 
     func rejectPayInKeyboard() {
@@ -128,14 +290,21 @@ extension KeyboardModel {
         deps.store.payPending = nil
         payPanel = nil
         bar = .done("Declined. Nothing was sent.")
-        Task { _ = try? await api.rejectPay(p.intent.id) }
+        if !p.intent.id.isEmpty { Task { _ = try? await api.rejectPay(p.intent.id) } }
     }
 
     /// "Insert in chat" on the sent card.
     func insertKeyboardSent() {
         guard let p = payPanel, p.phase == .sent else { return }
         payPanel = nil
-        paySent = PaySent(p.intent, at: deps.now())
+        if let card = p.xchain, let n = card.numbers, let d = card.destination {
+            guard case .delivered(let url) = p.swap else { return }
+            paySent = PaySent(id: p.intent.id, label: "Sent \(n.amount_out.text) \(n.amount_out.symbol) on \(d.chain_name)",
+                              line: "Sent you \(n.amount_out.text) \(n.amount_out.symbol) on \(d.chain_name) \u{2713}" + (url.map { " \($0)" } ?? ""),
+                              at: deps.now())
+        } else {
+            paySent = PaySent(p.intent, at: deps.now())
+        }
         insertPaid()
     }
 
@@ -163,6 +332,8 @@ extension KeyboardModel {
         // A payment typed in the field ("send 5 USDC to ana.testnet") is replaced by its receipt.
         if let d = PayDetect.detect(before), before.hasSuffix(d.trigger) {
             for _ in 0..<d.trigger.count { host.deleteBackward() }
+        } else if let w = XchainDetect.candidate(before), before.hasSuffix(w) {
+            for _ in 0..<w.count { host.deleteBackward() }
         }
         let now = host.contextBeforeInput ?? ""
         host.insert((now.isEmpty || now.last?.isWhitespace == true ? "" : " ") + s.line)
@@ -174,4 +345,8 @@ extension KeyboardModel {
         if paySent != nil { paySent = nil }
         if deps.store.paySent != nil { deps.store.paySent = nil }
     }
+}
+
+extension PaySession {
+    var denied: Bool { if case .denied = self { true } else { false } }
 }

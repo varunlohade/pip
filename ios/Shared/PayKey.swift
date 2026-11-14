@@ -11,11 +11,17 @@ enum PayKey {
 
 enum SignResult: Equatable { case signed(Data), denied, unavailable }
 
+/// One Face ID for one approval. `.ready` signs 32-byte hashes with the key read by that Face ID; the key lives only as long as
+/// the closure, which the approval drops when it ends.
+enum PaySession { case ready((Data) -> Data?), denied, unavailable }
+
 /// Signs the 32-byte transaction hash after Face ID. The app and the keyboard share one key (see PayKeychain).
 protocol PaySigner {
     /// The account id of the key on this phone, or nil before setup. Reading it needs no Face ID.
     func accountID() -> String?
     func sign(_ hash: Data, prompt: String) async -> SignResult
+    /// Face ID once, then the keyboard signs its approval proof and the transaction with the same read.
+    func session(prompt: String) async -> PaySession
 }
 
 /// Where the raw key bytes live. PayKeychain is the real one; tests pass memory.
@@ -53,6 +59,16 @@ struct PayKeyVault: PaySigner {
         // The App Group copy of the public key must belong to this private key.
         guard PayKey.accountID(key.publicKey) == id, let sig = try? key.signature(for: hash) else { return .unavailable }
         return .signed(sig)
+    }
+
+    func session(prompt: String) async -> PaySession {
+        guard let id = accountID() else { return .unavailable }
+        let (raw, status) = storage.load(prompt: prompt)
+        guard let raw, let key = try? Curve25519.Signing.PrivateKey(rawRepresentation: raw) else {
+            return [errSecUserCanceled, errSecAuthFailed].contains(status) ? .denied : .unavailable
+        }
+        guard PayKey.accountID(key.publicKey) == id else { return .unavailable }
+        return .ready { hash in hash.count == 32 ? try? key.signature(for: hash) : nil }
     }
 
     func forget() {
@@ -118,6 +134,18 @@ struct PayUnsigned: Decodable, Equatable {
     let id: String
     let tx_base64: String
     let sign_hash_hex: String
+    /// Cross-chain: the old quote was replaced. The intent below and `xchain` are the new card; it needs Face ID again.
+    var requoted: Bool?
+    var xchain: XchainCard?
+    var amount: String?
+    var token: String?
+    var recipient: String?
+
+    /// The intent as this answer has it (a re-quote changes the amount and the deposit account).
+    func intent(updating i: PayIntent) -> PayIntent {
+        PayIntent(id: i.id, amount: amount ?? i.amount, token: token ?? i.token, recipient: recipient ?? i.recipient, status: i.status,
+                  network: i.network, tx_hash: nil, explorer_url: nil, deep_link: i.deep_link, new_recipient: i.new_recipient)
+    }
 }
 
 /// Reads the transaction the server built and checks it against the card. A lying or buggy server cannot get a signature for
@@ -143,11 +171,13 @@ enum PayTxCheck {
     static let maxStorageDeposit = "10000000000000000000000"
 
     /// The hash to sign, or why not.
-    static func check(_ u: PayUnsigned, intent i: PayIntent, account: String) -> Result<(hash: Data, seen: Seen), Refusal> {
+    /// A cross-chain intent passes its `xchain` card: the transaction must fund exactly that quote.
+    static func check(_ u: PayUnsigned, intent i: PayIntent, account: String, xchain: XchainCard? = nil) -> Result<(hash: Data, seen: Seen), Refusal> {
         guard let bytes = Data(base64Encoded: u.tx_base64), let tx = try? Tx(bytes) else { return .failure(.unreadable) }
         let hash = Data(SHA256.hash(data: bytes))
         guard hash.hex == u.sign_hash_hex.lowercased() else { return .failure(.hashMismatch) }
         guard tx.signer == account, tx.publicKey.hex == account else { return .failure(.mismatch("signer")) }
+        if let card = xchain { return checkXchain(tx, intent: i, account: account, card: card).map { (hash, $0) } }
         let seen: Seen
         switch i.token {
         case "NEAR":
@@ -186,10 +216,10 @@ enum PayTxCheck {
         return digits.isEmpty ? "0" : String(digits)
     }
 
-    private static func json(_ d: Data) -> [String: Any]? { (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] }
+    static func json(_ d: Data) -> [String: Any]? { (try? JSONSerialization.jsonObject(with: d)) as? [String: Any] }
 
     /// Compares two non-negative decimal strings with no leading zeros.
-    private static func compare(_ a: String, _ b: String) -> Int {
+    static func compare(_ a: String, _ b: String) -> Int {
         a.count != b.count ? (a.count < b.count ? -1 : 1) : (a == b ? 0 : (a < b ? -1 : 1))
     }
 
