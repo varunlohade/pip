@@ -23,7 +23,7 @@ Things to type:
 
 - `dinner with Ana friday 7pm`
 - `explain log function`
-- `send 0.1 NEAR to ana.testnet`
+- `send 0.02 NEAR to pipfundmwg9zj4l.testnet` (a real testnet account; paste it)
 - `send 5 USDC to 0x… on base`
 - `swap 1 NEAR to USDC`
 
