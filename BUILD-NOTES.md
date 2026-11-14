@@ -79,3 +79,11 @@ Pip 0.4: pay any top token to any chain from the keyboard, through NEAR Intents.
 5. If the price changes, you see "Price updated" and approve again.
 6. After sending: watch "Swapping..." turn into "Sent". If it fails, it says refunded.
 7. Also check: the fixes from 0.3 (onboarding, close buttons, Draw it, wallet).
+## 0.6
+
+Pip 0.6
+
+1. Voice: open Pip, tap Voice on Home. Pick a voice and tap Play sample (it only plays when you tap). For the best sound, download Ava or Zoe (Premium) in iPhone Settings > Accessibility > Spoken Content > Voices.
+2. Payments: typing or pasting an account like name.testnet no longer flips to "Sensitive text detected". Try: send 0.02 near to pipfundmwg9zj4l.testnet
+3. A wrong ending like .mainnet now says: NEAR accounts end in .near (mainnet) or .testnet.
+4. Passwords and keys still turn AI off (the lock shows after you finish the word).

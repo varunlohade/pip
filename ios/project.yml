@@ -9,8 +9,8 @@ settings:
     DEVELOPMENT_TEAM: GV3ZK5CT6G
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.5"
-    CURRENT_PROJECT_VERSION: "7"
+    MARKETING_VERSION: "0.6"
+    CURRENT_PROJECT_VERSION: "8"
     # The one place for the app name. Both Info.plists read it.
     PRODUCT_DISPLAY_NAME: Pip
     KEYBOARD_DISPLAY_NAME: $(PRODUCT_DISPLAY_NAME) Keyboard
