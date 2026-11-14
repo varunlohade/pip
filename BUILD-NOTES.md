@@ -1,5 +1,11 @@
 # Pip build notes
 
+## 0.9 (12)
+
+What to Test:
+
+1. Removed the read-aloud voice. Drawings still play step by step.
+
 ## 0.7 (10)
 
 What to Test:

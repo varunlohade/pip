@@ -431,30 +431,16 @@ final class FakeClock {
     }
 }
 
-/// A voice that makes no sound: it records each line and finishes only when the test says so.
-@MainActor
-final class FakeSpeaker: Speaker {
-    private(set) var said: [String] = []
-    private(set) var stops = 0
-    private var pending: (() -> Void)?
-    nonisolated init() {}
-    /// Like the real one, a new line ends the one before it (its completion runs first).
-    func say(_ text: String, done: @escaping () -> Void) { let p = pending; pending = nil; p?(); said.append(text); pending = done }
-    func stop() { stops += 1; let p = pending; pending = nil; p?() }
-    /// The current line ends.
-    func finish() { let p = pending; pending = nil; p?() }
-}
-
 @MainActor
 extension KeyboardDeps {
     static func fake(api: FakeAPI, store: FakeStore = FakeStore(), pasteboard: FakePasteboard = FakePasteboard(),
-                     clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(), speaker: FakeSpeaker = FakeSpeaker(),
+                     clock: FakeClock = FakeClock(), writer: FakeWriter = FakeWriter(),
                      haptics: HapticSpy = HapticSpy(), signer: FakeSigner = FakeSigner(), pin: PayPINVault? = nil) -> KeyboardDeps {
         // The model tests cover the 0.6 router path; RouterFlagOffTests covers 0.5 with it off.
         Flags.router = true; Flags.memory = true; Flags.dollarPay = true
         return KeyboardDeps(api: { api }, store: store, pasteboard: pasteboard,
                      now: { MainActor.assumeIsolated { clock.now } },
-                     sleep: { d in try await clock.sleep(d) }, writer: writer, speaker: { speaker },
+                     sleep: { d in try await clock.sleep(d) }, writer: writer,
                      wipeProcess: { store.processWipes += 1 }, haptics: { haptics }, signer: { signer },
                      pin: { [pin = pin ?? signer.readyPINVault()] in pin })
     }

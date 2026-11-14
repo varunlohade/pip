@@ -595,7 +595,5 @@ final class FakePage: VisualPage {
     func setTool(_ tool: VisualState.Tool) { tools.append(tool) }
     func undo() { undos += 1 }
     func redo() {}
-    func setVoice(_ on: Bool) {}
-    func next() {}
     func exportPNG() { exports += 1 }
 }

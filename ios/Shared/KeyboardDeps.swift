@@ -142,8 +142,6 @@ struct KeyboardDeps {
     var sleep: (Duration) async throws -> Void
     /// The phone's calendar and reminders, for smart chips.
     var writer: SmartWriter = EventKitWriter()
-    /// The voice for "Play with voice". Only a tap starts it; tests pass a silent fake.
-    var speaker: @MainActor () -> Speaker = { SystemSpeaker() }
     /// Clears this process's caches after a logout. Tests pass a recorder.
     var wipeProcess: @MainActor () async -> Void = { await LocalWipe.wipeProcess() }
     /// Key haptics. Tests pass a spy.

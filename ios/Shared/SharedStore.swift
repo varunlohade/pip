@@ -29,10 +29,6 @@ enum StoreKey: String, CaseIterable {
     case payNetwork = "pay_network"
     /// What the keyboard last saw (KeyboardHeartbeat JSON), for the app's Keyboard status screen. It only lands with Full Access.
     case keyboardHeartbeat = "keyboard_heartbeat"
-    /// The voice the owner picked in Settings → Voice (an AVSpeechSynthesisVoice identifier); missing means the best installed.
-    case voiceID = "voice_id"
-    case voiceRate = "voice_rate"
-    case voicePitch = "voice_pitch"
 }
 
 /// The keyboard's own report: written on each appearance and after each router call.

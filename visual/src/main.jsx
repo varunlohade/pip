@@ -3,7 +3,7 @@ import { CaptureUpdateAction, Excalidraw, FONT_FAMILY, convertToExcalidrawElemen
 import '@excalidraw/excalidraw/index.css'
 
 // The Pip drawing page (Excalidraw, MIT). Native calls window.pip.*; the page answers on webkit.messageHandlers.pip with
-// {type: 'ready' | 'step' | 'stepDrawn' | 'done' | 'png' | 'error'}. A scene is {title, canvas, steps: [{say, shapes}]} from
+// {type: 'ready' | 'step' | 'done' | 'png' | 'error'}. A scene is {title, canvas, steps: [{say, shapes}]} from
 // POST /v1/explain/visual or the phone's chart builder. Pip's look: clean strokes (no sketchy wobble), the sky palette,
 // solid fills, a sans for labels and the hand font only for callout notes.
 
@@ -22,9 +22,6 @@ const fontFor = (s) => (s.size !== 's' && s.color === 'blue' ? FONT_FAMILY.Excal
 let api
 let scene
 let run = 0
-// With voice on, each step waits after drawing until the app says its line is spoken (pip.next()).
-let voice = false
-let release = null
 const Cancelled = Symbol('cancelled')
 const pen = Object.assign(document.createElement('div'), { className: 'pip-pen' })
 pen.style.opacity = '0'
@@ -183,7 +180,6 @@ function fit() {
 
 async function play() {
   const token = ++run
-  release?.()
   done = []
   show()
   fit()
@@ -194,14 +190,7 @@ async function play() {
       post({ type: 'step', n: i + 1, m, say: st.say })
       for (let j = 0; j < st.shapes.length; j++) await drawShape(st.shapes[j], `s${i}-${j}`, token)
       pen.style.opacity = '0'
-      post({ type: 'stepDrawn', n: i + 1 })
-      if (voice) {
-        await new Promise((resolve) => { release = resolve })
-        release = null
-        if (token !== run) throw Cancelled
-      } else {
-        await wait(i === m - 1 ? 0 : 700, token)
-      }
+      await wait(i === m - 1 ? 0 : 700, token)
     }
     pen.style.opacity = '0'
     // The finished drawing becomes the first undo step, so Undo removes only what the owner draws on it.
@@ -246,8 +235,6 @@ function shortcut(redo) {
 window.pip = {
   play(json) { scene = typeof json === 'string' ? JSON.parse(json) : json; play() },
   replay() { if (scene) play() },
-  voice(on) { voice = !!on; if (!voice) release?.() },
-  next() { release?.() },
   tool(name) { api.setActiveTool({ type: name === 'draw' ? 'freedraw' : name === 'eraser' ? 'eraser' : 'hand' }) },
   undo() { shortcut(false) },
   redo() { shortcut(true) },
