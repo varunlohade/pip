@@ -43,3 +43,25 @@ test('task plan: a model failure is a 502, not a crash', async () => {
   const { token } = device();
   assert.equal((await call(token, 'POST', '/v1/task/plan', { text: 'book a table for two' })).status, 502);
 });
+
+import { parseBrave } from '../src/web-search.ts';
+
+test('task search: returns cleaned web results; no search set up is 501; a failure is 502', async () => {
+  const asked: string[] = [];
+  const { call, device } = setup({ search: async (q) => { asked.push(q); return parseBrave({ web: { results: [
+    { title: '<b>Trident</b> BKC', url: 'https://example.com/trident', description: 'Hotel &amp; spa near BKC' },
+    { title: 'bad link', url: 'javascript:alert(1)', description: '' },
+  ] } }); } });
+  const { token } = device();
+  const res = await call(token, 'POST', '/v1/task/search', { text: ' hotels near BKC ' });
+  assert.equal(res.status, 200);
+  const out = await res.json();
+  assert.deepEqual(out.results, [{ title: 'Trident BKC', url: 'https://example.com/trident', snippet: 'Hotel & spa near BKC' }]);
+  assert.deepEqual(asked, ['hotels near BKC']);
+  assert.equal((await call(null, 'POST', '/v1/task/search', { text: 'x' })).status, 401);
+
+  const none = setup();
+  assert.equal((await none.call(none.device().token, 'POST', '/v1/task/search', { text: 'hotels' })).status, 501);
+  const down = setup({ search: async () => { throw new Error('down'); } });
+  assert.equal((await down.call(down.device().token, 'POST', '/v1/task/search', { text: 'hotels' })).status, 502);
+});

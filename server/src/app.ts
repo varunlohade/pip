@@ -12,6 +12,7 @@ import { isPng, jpegSize, pngSize } from './image.ts';
 import type { Ai, DeviceAction } from './ai.ts';
 import { log } from './log.ts';
 import { tracked } from './nearai.ts';
+import { defaultSearch, type SearchProvider } from './web-search.ts';
 import { clean } from './text.ts';
 import { deviceSignal, deviceTitle, deviceTrigger, lastSentence, nameIn } from './quick.ts';
 import { createAppleVerifier, type AppleVerifier } from './apple.ts';
@@ -30,6 +31,8 @@ export type Deps = {
   apple?: AppleVerifier;
   /** Sends emailed codes. The default only logs (see mailer.ts); no real email goes out yet. */
   mailer?: Mailer;
+  /** Web search for agent tasks. Defaults to Brave when BRAVE_SEARCH_API_KEY is set. */
+  search?: SearchProvider | null;
   /** GET /v1/auth/config reports it. Default false: the app hides email sign-in. */
   emailEnabled?: boolean;
   /** Runs once for each new user (device, Apple or email). */
@@ -385,6 +388,21 @@ export function createApp(deps: Deps) {
   app.post('/v1/explain/visual', async (c) => {
     const { topic } = await body(c, VisualBody);
     return explaining(c, 'visual', topic.length, () => ai.visual(topic));
+  });
+  // ---- task search: real web results for a find-style ask ("hotels near BKC"). Only sizes and timings are logged.
+  const search = deps.search === undefined ? defaultSearch() : deps.search ?? undefined;
+  app.post('/v1/task/search', async (c) => {
+    const { text } = await body(c, TaskBody);
+    if (!search) return c.json({ error: 'web search is not available' }, 501);
+    const t = performance.now();
+    try {
+      const results = await search(text);
+      log('task_search', { user_id: c.get('userId'), chars: text.length, results: results.length, ms: Math.round(performance.now() - t), ok: true });
+      return c.json({ query: text, results });
+    } catch (e) {
+      log('task_search', { user_id: c.get('userId'), chars: text.length, ms: Math.round(performance.now() - t), ok: false, err: (e as Error).name });
+      return c.json({ error: 'web search is not available right now' }, 502);
+    }
   });
   // ---- task plan: the steps a task agent would take for a booking-style ask. It never books or pays; the plan says so.
   app.post('/v1/task/plan', async (c) => {
