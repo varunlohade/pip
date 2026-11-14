@@ -7,7 +7,7 @@ import { payConfig } from '../src/pay/config.ts';
 import { mainnetConfig } from '../src/pay/network.ts';
 import { toUnits } from '../src/pay/parse.ts';
 import type { PhoneChain } from '../src/pay/phone/chain.ts';
-import { buildTransfer, sha256 } from '../src/pay/phone/tx.ts';
+import { approvalMessage, buildTransfer, sha256 } from '../src/pay/phone/tx.ts';
 
 const BLOCK = 'GJ8ThW5tGmvBbGr8Kto6Ahtv1mhK5cXhkRMdNsJxbVkK';
 
@@ -65,7 +65,7 @@ function world(o: { mainnet?: boolean; chain?: Parameters<typeof fakeChain>[0]; 
   };
   const unsigned = (i: { id: string; fields: object }, app = true) => call('POST', `/v1/pay/intents/${i.id}/unsigned`, i.fields, app);
   const submit = (id: string, signature: string) => call('POST', `/v1/pay/intents/${id}/submit`, { signature });
-  return { s, fake, key, call, start, intent, unsigned, submit };
+  return { s, fake, key, token, call, start, intent, unsigned, submit };
 }
 
 // ---- the pure builder
@@ -174,6 +174,43 @@ test('phone: a new recipient needs the app key; the legacy approve route refuses
   assert.equal((await w.call('POST', `/v1/pay/intents/${i.id}/approve`, i.fields, true)).status, 409);
   assert.equal((await w.call('POST', '/v1/pay/register', { publicKey: phoneKey().hex })).status, 403);
   assert.equal((await w.call('PUT', '/v1/pay/network', { network: 'testnet' })).status, 403);
+});
+
+test('phone: the keyboard approves a new recipient with a Face ID proof from the phone key over that exact intent', async () => {
+  const w = world();
+  await w.start();
+  const i = await w.intent({ amount: '0.1', token: 'NEAR', recipient: 'ana.testnet' });
+  const proof = (msg: Uint8Array, key: KeyObject = w.key.privateKey) => sign(null, sha256(msg), key).toString('base64');
+  const intent = { id: i.id, network: 'testnet', ...i.fields };
+  const tryWith = (p: string) => w.s.call(w.token, 'POST', `/v1/pay/intents/${i.id}/unsigned`, i.fields, { 'x-pay-proof': p });
+  // Refused: another key, another intent id, other fields, a signature over the raw text, junk.
+  assert.equal((await tryWith(proof(approvalMessage(intent), phoneKey().privateKey))).status, 403, 'another key');
+  assert.equal((await tryWith(proof(approvalMessage({ ...intent, id: 'cd'.repeat(16) })))).status, 403, 'another intent');
+  assert.equal((await tryWith(proof(approvalMessage({ ...intent, recipient: 'bob.testnet' })))).status, 403, 'other fields');
+  assert.equal((await tryWith(proof(approvalMessage({ ...intent, network: 'mainnet' })))).status, 403, 'another network');
+  assert.equal((await tryWith(sign(null, approvalMessage(intent), w.key.privateKey).toString('base64'))).status, 403, 'not hashed');
+  assert.equal((await tryWith('junk')).status, 403);
+  const ok = await tryWith(proof(approvalMessage(intent)));
+  assert.equal(ok.status, 200, await ok.clone().text());
+  const u = await ok.json();
+  assert.equal((await w.submit(i.id, signHash(u.sign_hash_hex, w.key.privateKey))).status, 200);
+  const events = w.s.db.raw.prepare('SELECT event FROM pay_audit WHERE intent_id = ? ORDER BY id').all(i.id).map((r) => (r as { event: string }).event);
+  assert.ok(events.includes('bad_keyboard_proof') && events.includes('keyboard_proof'), events.join());
+});
+
+test('phone: a keyboard proof does not lift the caps', async () => {
+  const w = world();
+  await w.start();
+  const withProof = async (recipient: string) => {
+    const i = await w.intent({ amount: '1', token: 'NEAR', recipient });
+    const p = sign(null, sha256(approvalMessage({ id: i.id, network: 'testnet', ...i.fields })), w.key.privateKey).toString('base64');
+    return w.s.call(w.token, 'POST', `/v1/pay/intents/${i.id}/unsigned`, i.fields, { 'x-pay-proof': p });
+  };
+  assert.equal((await withProof('ana.testnet')).status, 200);
+  assert.equal((await withProof('bob.testnet')).status, 200);
+  const r = await withProof('ana.testnet');
+  assert.equal(r.status, 403);
+  assert.match((await r.json()).error, /daily limit/);
 });
 
 test('phone: the unsigned call needs the exact fields the card showed', async () => {

@@ -5,6 +5,9 @@
 // Each /_next value answers the next matching model call once.
 // Pay runs the phone-signed flow on a fake NEAR testnet and mainnet in memory (ana/bob .testnet and .near exist; mainnet is on,
 // with no network); the phone's real signature is checked. AI replies say they ran in an attested TEE.
+// Cross-chain runs on a fake 1Click (the recorded token list, fixed prices, a 0.1% fee): POST /_tick {"ms"} moves the clock
+// (61000 makes the next approve re-quote, with a new deposit account), and a sent swap reads "swapping", then "delivered".
+// A recipient ending in "dead" is refunded instead.
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import type { DeviceAction, ToneCheck } from '../src/ai.ts';
@@ -17,6 +20,11 @@ import { payConfig } from '../src/pay/config.ts';
 import { mainnetConfig } from '../src/pay/network.ts';
 import type { PhoneChain } from '../src/pay/phone/chain.ts';
 import { toUnits } from '../src/pay/parse.ts';
+import { readFileSync } from 'node:fs';
+import type { TokenRow } from '../src/pay/xchain/assets.ts';
+import { defaultLimits } from '../src/pay/xchain/check.ts';
+import type { OneClick, OneClickQuote, OneClickStatus, PriceSource } from '../src/pay/xchain/sources.ts';
+import { fromBase, parsePrice, usdText, usdValue } from '../src/pay/xchain/units.ts';
 import { setup } from '../test/helpers.ts';
 
 if (process.env.NODE_ENV === 'production') {
@@ -80,6 +88,55 @@ function fakePhoneChain(suffix: string): PhoneChain {
   };
 }
 
+const TOKENS = JSON.parse(readFileSync(new URL('../test/fixtures/oneclick-tokens.json', import.meta.url), 'utf8')) as TokenRow[];
+const PRICE: Record<string, string> = { 'usd-coin': '0.9997', tether: '0.9994', 'wrapped-near': '3.33', ethereum: '1890', solana: '75.5', bitcoin: '91000' };
+
+/** NEAR Intents 1Click stand-in: quotes at fixed prices with a 0.1% fee; each re-quote gets a new deposit account. */
+function fakeOneClick(now: () => number): OneClick {
+  let n = 0;
+  const polls = new Map<string, number>();
+  const recipients = new Map<string, string>();
+  return {
+    async tokens() { return TOKENS; },
+    async quote(req) {
+      n++;
+      const o = TOKENS.find((t) => t.assetId === req.originAsset)!, d = TOKENS.find((t) => t.assetId === req.destinationAsset)!;
+      const pIn = parsePrice(PRICE[o.coingeckoId!])!, pOut = parsePrice(PRICE[d.coingeckoId!])!;
+      const slip = BigInt(req.slippageTolerance as number), fee = 10n;
+      const sIn = 10n ** BigInt(o.decimals), sOut = 10n ** BigInt(d.decimals);
+      let aIn: bigint, aOut: bigint, minIn: bigint, minOut: bigint;
+      if (req.swapType === 'EXACT_OUTPUT') {
+        aOut = BigInt(req.amount as string); minOut = aOut;
+        aIn = (aOut * pOut * sIn * (10_000n + fee + slip) + pIn * sOut * 10_000n - 1n) / (pIn * sOut * 10_000n);
+        minIn = (aIn * (10_000n - slip)) / 10_000n;
+      } else {
+        aIn = BigInt(req.amount as string); minIn = aIn;
+        aOut = (aIn * pIn * sOut * (10_000n - fee)) / (pOut * sIn * 10_000n);
+        minOut = (aOut * (10_000n - slip)) / 10_000n;
+      }
+      const depositAddress = n.toString(16).padStart(2, '0').repeat(32);
+      recipients.set(depositAddress, String(req.recipient));
+      return {
+        quote: {
+          amountIn: aIn.toString(), amountInFormatted: fromBase(aIn, o.decimals), amountInUsd: usdText(usdValue(aIn, o.decimals, pIn)), minAmountIn: minIn.toString(),
+          amountOut: aOut.toString(), amountOutFormatted: fromBase(aOut, d.decimals), amountOutUsd: usdText(usdValue(aOut, d.decimals, pOut)), minAmountOut: minOut.toString(),
+          timeEstimate: 22, ...(req.dry ? {} : { depositAddress, deadline: new Date(now() + 30 * 60_000).toISOString() }),
+        },
+        quoteRequest: { ...req }, signature: 'ed25519:fake', timestamp: new Date(now()).toISOString(), correlationId: `fake-${n}`,
+      } satisfies OneClickQuote;
+    },
+    async status(dep): Promise<OneClickStatus> {
+      const k = (polls.get(dep) ?? 0) + 1;
+      polls.set(dep, k);
+      if (k < 2) return { status: 'PROCESSING' };
+      if (recipients.get(dep)?.toLowerCase().endsWith('dead')) return { status: 'REFUNDED', swapDetails: { refundReason: 'the price moved past the slippage limit' } };
+      return { status: 'SUCCESS', swapDetails: { destinationChainTxHashes: [{ hash: '0xfa4e', explorerUrl: 'https://basescan.org/tx/0xfa4e' }] } };
+    },
+    async submitDeposit() {},
+  };
+}
+const fakePrices: PriceSource[] = ['coingecko', 'relay'].map((name) => ({ name, price: async (_t, pin) => PRICE[pin.coingeckoId] ?? null }));
+
 const attestation: AttestationSnapshot = {
   provider: 'near-ai', tier: 'Confidential TEE (NEAR-run)', verify_url: 'https://cloud.near.ai/verify',
   models: [{ model: 'deepseek-ai/DeepSeek-V3.1', ok: true, checked_at: '2026-11-14T16:00:00.000Z', nonce: '00'.repeat(32), gateway: { ok: true, signing_address: '0xfake' }, model_reports: [{ ok: true, signing_address: '0xfake' }] }],
@@ -88,7 +145,11 @@ const attestation: AttestationSnapshot = {
   not_checked: ['Intel TCB status and revocation lists', 'NVIDIA GPU evidence', 'An allowlist of the measured app and OS hashes', "Pip's server sees your text before it reaches the TEE"],
 };
 
+let offset = 0;
+const now = () => Date.now() + offset;
+
 function build() {
+  offset = 0;
   const next: Next = {};
   const take = <K extends keyof Next>(k: K): Next[K] => {
     const v = next[k];
@@ -101,11 +162,16 @@ function build() {
     get tone() { return take('tone'); },
     get explain() { return take('explain'); },
     get visual() { return take('visual'); },
+    now,
     apple: async () => { throw new Error('no Sign in with Apple on the fake server'); },
     pay: {
       chain: fakeChain(),
       config: { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:fake' },
       phone: { chains: { testnet: fakePhoneChain('.testnet'), mainnet: fakePhoneChain('.near') }, mainnet: { ...mainnetConfig, enabled: true } },
+      xchain: {
+        oneclick: fakeOneClick(now), prices: fakePrices, chainDecimals: async (t) => t.decimals, limits: defaultLimits({}),
+        views: { async storageRegistered() { return true; }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a) { return a === 'ana.near' || a === 'bob.near'; } },
+      },
     },
     served: { model: 'deepseek-ai/DeepSeek-V3.1', private: true, attested: true },
     attestation,
@@ -127,6 +193,11 @@ fake.get('/_mail', (c) => c.json({ mails: state.mails }));
 fake.post('/_reset', (c) => {
   state = build();
   return c.json({ ok: true });
+});
+fake.post('/_tick', async (c) => {
+  const { ms } = (await c.req.json().catch(() => ({}))) as { ms?: number };
+  offset += Number(ms) || 0;
+  return c.json({ ok: true, offset });
 });
 fake.post('/_next', async (c) => {
   const b = (await c.req.json().catch(() => ({}))) as Next;

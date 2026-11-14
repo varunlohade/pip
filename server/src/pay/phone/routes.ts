@@ -12,7 +12,7 @@ import { approverOk } from '../routes.ts';
 import { openPayStore } from '../store.ts';
 import { createPhoneChain, type PhoneChain } from './chain.ts';
 import { openPhoneStore, type PhoneIntent } from './store.ts';
-import { buildTransfer, implicitAccountId, nearPublicKey, parsePublicKey, parseSignature, sha256, signedBytes, verifySignature } from './tx.ts';
+import { approvalMessage, buildTransfer, implicitAccountId, nearPublicKey, parsePublicKey, parseSignature, sha256, signedBytes, verifySignature } from './tx.ts';
 
 /** Cross-chain payments (src/pay/xchain) ride on this flow: they describe their card, may refuse a build, and build their own deposit tx. */
 export type XchainHooks = {
@@ -53,6 +53,18 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
   const isApp = (c: Context<Env>) => {
     const a = pay.approver(c.get('userId'));
     return !!a && approverOk(c, a.key_hash);
+  };
+  /**
+   * The keyboard's Face ID proof for a new recipient: X-Pay-Proof is the registered phone key's Ed25519 signature over
+   * sha256(approvalMessage(intent)). Only a read of the Face ID Keychain item can make it.
+   */
+  const keyboardProof = (c: Context<Env>, i: PhoneIntent) => {
+    const sig = parseSignature(c.req.header('x-pay-proof') ?? '');
+    const a = store.account(i.user_id, i.network);
+    const pk = a?.status === 'ready' ? parsePublicKey(a.public_key) : null;
+    const ok = !!sig && !!pk && verifySignature(pk, sha256(approvalMessage(i)), sig);
+    if (sig) pay.audit(i.user_id, i.id, ok ? 'keyboard_proof' : 'bad_keyboard_proof');
+    return ok;
   };
   const phoneMode = (userId: string) => networks.get(userId) === 'mainnet' || !cfg.legacyCustody || !!store.account(userId, 'testnet');
   const mainnetOff = (c: Context<Env>, n: Network) => (n === 'mainnet' && !main.enabled ? c.json({ error: 'mainnet payments are off on this server' }, 503) : undefined);
@@ -237,7 +249,7 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
       return c.json({ error: `this payment is ${i.status}`, ...view(i) }, 409);
     }
     if (fields.amount !== i.amount || fields.token !== i.token || fields.recipient !== i.recipient) return c.json({ error: 'the details do not match this payment' }, 409);
-    if (i.new_recipient && !isApp(c)) return c.json({ error: 'approve a new recipient in the Pip app' }, 403);
+    if (i.new_recipient && !isApp(c) && !keyboardProof(c, i)) return c.json({ error: 'approve a new recipient with Face ID' }, 403);
     // A re-quote changes the amount and deposit account: the answer carries the fresh card and requoted: true, so the app re-shows it.
     let requoted = false;
     if (deps.xchain?.describe(i.id)) {

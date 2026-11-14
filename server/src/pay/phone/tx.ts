@@ -61,6 +61,13 @@ export function verifySignature(publicKey: Uint8Array, hash: Uint8Array, signatu
   return verify(null, hash, key, signature);
 }
 
+/**
+ * What the keyboard signs to approve an intent for a recipient never paid before: the phone key over sha256 of this text.
+ * Plain UTF-8 with a fixed prefix, so it can never be read as a NEAR transaction (those start with a u32 length).
+ */
+export const approvalMessage = (i: { id: string; network: string; amount: string; token: string; recipient: string }) =>
+  new TextEncoder().encode(['pip-approve/v1', i.id, i.network, i.amount, i.token, i.recipient].join('\n'));
+
 /** The signed transaction, ready to broadcast. */
 export function signedBytes(txBytes: Uint8Array, signature: Uint8Array): Uint8Array {
   return new SignedTransaction({ transaction: Transaction.decode(txBytes), signature: new Signature({ keyType: KeyType.ED25519, data: signature }) }).encode();
