@@ -103,3 +103,14 @@ Pip 0.7: approve payments in the keyboard
 4. Or tap "Approve in Pip" to approve in the app with Face ID.
 5. Payment card and Sent screen are readable in dark mode now.
 6. If it still fails: Pip > Account > Keyboard status, screenshot it.
+## 0.8
+
+Pip 0.8: NEAR Intents in the keyboard
+
+1. Approve in the keyboard only: Approve with PIN opens the number pad right in the keyboard. No app hops.
+2. New address: the card shows the full address with the ending highlighted. Tap the matching ending, then Approve with PIN.
+3. Swap: type "swap 1 near to usdc". On testnet you see a live NEAR Intents quote preview with real numbers (rate, fee, slippage, route).
+4. Cross-chain: "send 1 usdc to 0x... on base" shows a live preview on testnet; on mainnet you can approve it with your PIN.
+5. Request: "request 5 usdc on base" puts a payment request with a Base address into the chat. Money arrives in your Pip wallet.
+6. Top up: in Pip > Pip Pay, top up from Base or another chain (address + QR).
+7. My addresses: save your own addresses per chain in Pip Pay.
