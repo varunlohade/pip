@@ -173,6 +173,7 @@ Pick the **Pip** scheme and an iPhone simulator. Debug builds talk to `http://lo
 
 ## What's next
 
+- **Agent tasks from the keyboard.** jev already picks the action for what you type. Next it routes bigger asks, like "book me a train ticket to Pune on Friday", to a task agent that browses, compares and fills in the details. It shows you the plan and the price, and acts only after you approve with your PIN.
 - **Merlin: an always-watching agent for your computer.** It watches everything that happens on your computer. It spots when something is about to leak, like a password, a private key or a seed phrase, and when you need help. Then it helps on its own, or asks you first. It runs on private AI and tells no one what it sees.
 - **Multi-signature wallets, coming soon.** Your phone key signs first, and a passkey gives the second signature for bigger payments.
 - **Key backup and recovery.** Today the wallet key lives only on your phone, by design. Uninstalling the app deletes it.
