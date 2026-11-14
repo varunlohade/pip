@@ -41,7 +41,7 @@ Public beta: Apple is reviewing it. If the link says the beta isn't accepting te
 3. Install **Pip**.
 4. Go to **Settings → General → Keyboard → Keyboards → Add New Keyboard**. Add **Pip**, then turn on **Allow Full Access**.
 5. Open the Pip app once.
-6. Create a wallet. It uses **NEAR testnet**, so no real money moves.
+6. Create a wallet. It starts on **NEAR testnet**, so no real money moves. Mainnet is live too: switch in Pip Pay.
 7. Set a payment PIN.
 8. Open any chat, switch to the Pip keyboard, and type.
 
@@ -84,7 +84,8 @@ The shots come from the iOS simulator against the fake server (`npm run fake`). 
 - The server builds the exact unsigned transaction. The phone signs it. The server checks the signature and broadcasts once.
 - You approve in the keyboard with your Pip PIN.
 - The server enforces per-payment and daily limits.
-- Testnet is the default. Mainnet stays off unless `PAY_MAINNET=1`.
+- **Testnet and mainnet are both live.** New wallets start on testnet. Switch to mainnet in Pip Pay to send real money.
+- Mainnet has small caps: 2 NEAR or 10 USDC/USDT per payment, and 5 NEAR or 20 USDC/USDT a day.
 
 ### 4. NEAR Intents (1Click)
 
@@ -173,6 +174,7 @@ Pick the **Pip** scheme and an iPhone simulator. Debug builds talk to `http://lo
 ## What's next
 
 - **Merlin: an always-watching agent for your computer.** It watches everything that happens on your computer. It spots when something is about to leak, like a password, a private key or a seed phrase, and when you need help. Then it helps on its own, or asks you first. It runs on private AI and tells no one what it sees.
+- **Multi-signature wallets.** Bigger payments need a second approval, from another of your devices or a person you trust.
 - **Key backup and recovery.** Today the wallet key lives only on your phone, by design. Uninstalling the app deletes it.
 - **jev inside a TEE.** jev runs on NEAR AI Cloud; Qwen, the main writing model, is already TEE-attested.
 - **Deeper attestation.** Add the Intel TCB and revocation check, NVIDIA GPU evidence, and an allowlist of builds.

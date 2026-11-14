@@ -857,14 +857,18 @@ struct PINPadCard: View {
     }
 }
 
+/// Which network the payment uses, so test money and real money never look alike: amber for testnet, green for mainnet.
 private func networkBadge(_ network: String) -> some View {
-    HStack(spacing: 6) {
+    let main = network == "mainnet"
+    return HStack(spacing: 6) {
         Text("N").font(.system(size: 11, weight: .heavy)).foregroundStyle(K.markInk).frame(width: 20, height: 20).background(K.mark, in: Circle())
-        Text("NEAR \(network)").font(.system(size: 14, weight: .medium)).foregroundStyle(K.ink1)
+        Text(main ? "Mainnet · real money" : "Testnet · test money").font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(main ? K.successInk : K.warning)
     }
     .padding(.leading, 5).padding(.trailing, 10).padding(.vertical, 5)
-    .background(K.panel, in: Capsule())
+    .background(main ? K.successChip : K.warning.opacity(0.14), in: Capsule())
     .accessibilityIdentifier("paycard.network")
+    .accessibilityLabel(main ? "NEAR mainnet, real money" : "NEAR testnet, test money")
 }
 
 // MARK: app: Pip Pay setup (C-3)
