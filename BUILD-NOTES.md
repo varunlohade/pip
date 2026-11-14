@@ -52,3 +52,14 @@ Pip is a keyboard. After install, open the app and follow the steps to add Pip K
 5. Sign in with Apple. Email sign-in is off until the email service is set up.
 6. Log out: it wipes everything Pip keeps on the phone, in the app and in the keyboard.
 7. Delete account: it removes your account and data from the server. You can sign in again as a new user.
+## 0.4
+
+Pip 0.4: pay any top token to any chain from the keyboard, through NEAR Intents.
+
+1. Wallet: open Pip, go to Pip Pay, tap Create wallet. Switch to Mainnet only if you want to try real money (small limits: 2 NEAR or 10 USDC per payment).
+2. Same-chain (testnet): in any chat type "send 0.01 NEAR to <name>.testnet". Approve in the keyboard with Face ID.
+3. Cross-chain (mainnet only): type "send 1 USDC to 0x... on base". The card shows exactly what they get, the most you pay, the fee, the route and time. Approve with Face ID in the keyboard.
+4. New address: you see "First time paying this address" and pick its last 4 characters before Face ID.
+5. If the price changes, you see "Price updated" and approve again.
+6. After sending: watch "Swapping..." turn into "Sent". If it fails, it says refunded.
+7. Also check: the fixes from 0.3 (onboarding, close buttons, Draw it, wallet).
