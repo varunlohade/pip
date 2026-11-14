@@ -23,7 +23,7 @@ npm run quote -- "send 5 usdc to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 on b
 ## What makes Pip different
 
 - **You approve inside the keyboard.** Type the payment, enter your PIN, done. You never leave the chat for a wallet app.
-- **The key stays on your phone.** Pip makes a NEAR key on the device and seals it with your PIN (PBKDF2 + AES-GCM) in the iOS keychain. The server never holds it. The phone checks each transaction before it signs.
+- **The key stays on your phone.** Pip makes a NEAR key on the device and seals it with your PIN (PBKDF2 + AES-GCM) in the iOS keychain. The server never holds it. The phone checks each transaction before it signs. In the app, Face ID guards the key. In the keyboard, you approve with your PIN, because iOS does not let Face ID run inside a keyboard.
 - **Private AI you can check.** The server verifies the TEE attestation of the NEAR AI Cloud model, not just its name.
 - **Learn anything, drawn live.** Type `explain compound interest` or `explain log function`. Pip answers in one line, then draws it step by step in real time on an Excalidraw canvas inside the keyboard. The private AI on NEAR AI Cloud writes the scene.
 - **Calendar and reminders from any chat.** Type `dinner with Ana friday 7pm` and Pip offers to add it to your calendar, with a clash check. Type `remind me to call mom at 6pm` and it adds an iOS reminder. Nothing is saved until you tap.
@@ -174,7 +174,6 @@ Pick the **Pip** scheme and an iPhone simulator. Debug builds talk to `http://lo
 
 - **Merlin: an always-watching agent for your computer.** It watches everything that happens on your computer. It spots when something is about to leak, like a password, a private key or a seed phrase, and when you need help. Then it helps on its own, or asks you first. It runs on private AI and tells no one what it sees.
 - **Key backup and recovery.** Today the wallet key lives only on your phone, by design. Uninstalling the app deletes it.
-- **Face ID in the app.** The keyboard uses a PIN, because iOS does not let Face ID run inside a keyboard.
 - **jev inside a TEE.** jev runs on NEAR AI Cloud; Qwen, the main writing model, is already TEE-attested.
 - **Deeper attestation.** Add the Intel TCB and revocation check, NVIDIA GPU evidence, and an allowlist of builds.
 - **Encryption straight to the TEE**, so Pip's own server never sees the text.
