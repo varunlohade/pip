@@ -24,8 +24,11 @@ export type OneClick = {
   submitDeposit(body: { txHash: string; depositAddress: string; nearSenderAccount: string }): Promise<void>;
 };
 
-/** A USD price per whole token, as the source sent it (string or number). Null when the source has none. */
-export type PriceSource = { name: string; price(t: TokenRow): Promise<string | number | null> };
+/**
+ * A USD price per whole token, as the source sent it (string or number). Null when the source has none.
+ * `label` names the answer for one token when it differs from `name` (a Relay price found through 1Click's address).
+ */
+export type PriceSource = { name: string; label?(t: TokenRow): string; price(t: TokenRow): Promise<string | number | null> };
 
 const env = process.env;
 const TIMEOUT = 8_000;
@@ -77,9 +80,10 @@ export function coingeckoSource(base = 'https://api.coingecko.com/api/v3'): Pric
 }
 
 /** Relay's keyless token price API (v2). Relay has no NEAR chain; NEAR-side coins are priced through their Ethereum twin. */
-export function relaySource(locate: (t: TokenRow) => { chainId: number; address: string } | null, base = 'https://api.relay.link'): PriceSource {
+export function relaySource(locate: (t: TokenRow) => { chainId: number; address: string; from: 'pip' | 'row' } | null, base = 'https://api.relay.link'): PriceSource {
   return {
     name: 'relay',
+    label: (t) => (locate(t)?.from === 'row' ? 'relay-via-1click-address' : 'relay'),
     async price(t) {
       const a = locate(t);
       if (!a) return null;

@@ -33,13 +33,17 @@ export function quoteRequest(p: { mode: Mode; units: bigint; origin: TokenRow; d
   };
 }
 
-/** One price per asset from at least two sources that agree. The first source in the list is the reference. */
+/** Sources that do not depend on 1Click's own data for this token. */
+const INDEPENDENT = new Set(['coingecko', 'relay']);
+
+/** One price per asset from at least two sources that agree, one of them independent of 1Click. The first source is the reference. */
 export function agreedPrice(prices: Prices, maxSpreadBps: bigint): { ok: true; price: bigint; sources: string[] } | { ok: false; reason: string } {
   const ok = prices.map((p) => ({ source: p.source, v: parsePrice(p.price) })).filter((p): p is { source: string; v: bigint } => p.v !== null);
   if (ok.length < 2) return { ok: false, reason: `only ${ok.length} price source answered` };
   const ref = ok[0].v;
   const off = ok.find((p) => diffBps(p.v, ref) > maxSpreadBps);
   if (off) return { ok: false, reason: `${off.source} and ${ok[0].source} prices differ by more than ${maxSpreadBps} bps` };
+  if (!ok.some((p) => INDEPENDENT.has(p.source))) return { ok: false, reason: 'no price source independent of 1Click answered' };
   return { ok: true, price: ref, sources: ok.map((p) => p.source) };
 }
 
@@ -74,9 +78,12 @@ export function checkQuote(p: {
     if (live !== t.decimals) return refuse(`${side} ${t.symbol} decimals differ: token list ${t.decimals}, chain ${live}`);
   }
   // 2. The quote answers the request we sent, field by field.
-  for (const k of ['dry', 'swapType', 'originAsset', 'destinationAsset', 'amount', 'recipient', 'refundTo', 'depositType', 'recipientType', 'refundType']) {
+  for (const k of ['dry', 'swapType', 'originAsset', 'destinationAsset', 'amount', 'recipient', 'refundTo', 'depositType', 'recipientType', 'refundType', 'slippageTolerance', 'depositMode']) {
     if (q.quoteRequest?.[k] !== p.sent[k]) return refuse(`the quote does not match the request (${k})`);
   }
+  if (Date.parse(String(q.quoteRequest?.deadline)) !== Date.parse(String(p.sent.deadline))) return refuse('the quote does not match the request (deadline)');
+  const slip = Number(p.sent.slippageTolerance);
+  if (!Number.isInteger(slip) || slip < 0 || slip > limits.slippageBps) return refuse(`slippage ${p.sent.slippageTolerance} is above the ${limits.slippageBps} bps limit`);
   // 3. Integers, and each formatted amount is its base units at that asset's decimals.
   const x = q.quote;
   for (const k of ['amountIn', 'minAmountIn', 'amountOut', 'minAmountOut'] as const) if (!INT.test(String(x?.[k]))) return refuse(`the quote has a bad ${k}`);
@@ -87,6 +94,8 @@ export function checkQuote(p: {
   // 4. The side the user typed is exact.
   if (p.mode === 'exact_out' && (aOut !== p.typed || minOut !== p.typed)) return refuse('the quote does not deliver the exact amount typed');
   if (p.mode === 'exact_in' && aIn !== p.typed) return refuse('the quote does not spend the exact amount typed');
+  // The worst case the recipient can get must sit within the slippage we asked for.
+  if (minOut < (aOut * (10_000n - BigInt(slip))) / 10_000n) return refuse(`the quote's minimum output is more than ${slip} bps below its amount`);
   // 5. A real quote: a NEAR deposit account, no memo, and enough time before the deposit address goes cold.
   if (p.sent.dry === false) {
     const dep = String(x.depositAddress ?? '');
@@ -109,15 +118,15 @@ export function checkQuote(p: {
   if (!pin.ok || !pout.ok) {
     return { ok: false, verified: false, refused: null, not_verified: notVerified, numbers: numbersBase(0n, { in: null, out: null, price_sources: {} }, { usd: null, bps: null }) };
   }
-  // 7. Value, fee and rate in micro-dollars. The fee is what the max input is worth above the output.
-  const vin = usdValue(aIn, o.decimals, pin.price), vout = usdValue(aOut, d.decimals, pout.price);
+  // 7. Value, fee and rate in micro-dollars. The fee is the worst case: the max input against the minimum output.
+  const vin = usdValue(aIn, o.decimals, pin.price), vout = usdValue(minOut, d.decimals, pout.price), voutQuoted = usdValue(aOut, d.decimals, pout.price);
   const feeUsd = vin > vout ? vin - vout : 0n;
   const feeBps = vin > 0n ? (feeUsd * 10_000n + vin - 1n) / vin : 10_000n;
-  const outAsIn = (aOut * pout.price * 10n ** BigInt(o.decimals)) / (pin.price * 10n ** BigInt(d.decimals));
+  const outAsIn = (minOut * pout.price * 10n ** BigInt(o.decimals)) / (pin.price * 10n ** BigInt(d.decimals));
   const feeIn = aIn > outAsIn ? aIn - outAsIn : 0n;
   const numbers = numbersBase(feeIn, { in: usdText(vin), out: usdText(vout), price_sources: { origin: pin.sources, destination: pout.sources } }, { usd: usdText(feeUsd), bps: feeBps.toString() });
   // 1Click's own USD figures must match ours: catches a wrong price or decimals on its side.
-  for (const [k, ours] of [['amountInUsd', vin], ['amountOutUsd', vout]] as const) {
+  for (const [k, ours] of [['amountInUsd', vin], ['amountOutUsd', voutQuoted]] as const) {
     const theirs = toBase(String(x[k] ?? '').replace(/^(\d+\.\d{6})\d*$/, '$1'), 6);
     if (theirs === null) return { ok: false, verified: false, refused: null, not_verified: [`1Click gave no ${k}`], numbers };
     if (diffBps(theirs, ours) > limits.maxRateDiffBps) return refuse(`the quote's rate is more than ${limits.maxRateDiffBps} bps from market prices`, numbers);

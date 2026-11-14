@@ -17,8 +17,8 @@ import { buildTransfer, implicitAccountId, nearPublicKey, parsePublicKey, parseS
 /** Cross-chain payments (src/pay/xchain) ride on this flow: they describe their card, may refuse a build, and build their own deposit tx. */
 export type XchainHooks = {
   describe(intentId: string): Record<string, unknown> | null;
-  /** A reason to refuse building now (an old quote), or null. Only asked for xchain intents. */
-  guard(i: PhoneIntent): string | null;
+  /** Before a build: re-quotes an old quote onto the intent, or says why it cannot (status + error). Null when ready. */
+  refresh(i: PhoneIntent): Promise<{ status: 403 | 409 | 422 | 502 | 400; error: string } | null>;
   /** The deposit transaction for an xchain intent, or null when the intent is not xchain. */
   build(i: PhoneIntent, ctx: { signerId: string; publicKey: Uint8Array; nonce: bigint; blockHash: string }): Promise<{ bytes: Uint8Array; hash: Uint8Array } | null>;
 };
@@ -238,8 +238,11 @@ export function phoneRoutes(app: Hono<Env>, base: { db: Db; now: () => number },
     }
     if (fields.amount !== i.amount || fields.token !== i.token || fields.recipient !== i.recipient) return c.json({ error: 'the details do not match this payment' }, 409);
     if (i.new_recipient && !isApp(c)) return c.json({ error: 'approve a new recipient in the Pip app' }, 403);
-    const stale = deps.xchain?.describe(i.id) ? deps.xchain.guard(i) : null;
-    if (stale) return c.json({ error: stale, ...view(i) }, 409);
+    if (deps.xchain?.describe(i.id)) {
+      const stale = await deps.xchain.refresh(i);
+      if (stale) return c.json({ error: stale.error, ...view(i) }, stale.status);
+      i = store.intent(i.id)!;
+    }
     const a = store.account(userId, i.network);
     if (a?.status !== 'ready') return c.json({ error: 'register your key in the Pip app first' }, 409);
     const n = i.network;

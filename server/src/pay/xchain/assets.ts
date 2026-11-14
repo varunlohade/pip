@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { baseDecode } from 'near-api-js';
+import { checksumOk } from './eip55.ts';
 
 /** One row of 1Click GET /v0/tokens. */
 export type TokenRow = { assetId: string; decimals: number; blockchain: string; symbol: string; price: number | string; contractAddress?: string; coingeckoId?: string };
@@ -69,10 +70,11 @@ function tronOk(a: string) {
 /** Mainnet NEAR: implicit (64 hex) or a named .near account. */
 const nearOk = (a: string) => NEAR_ID.test(a) && (/^[0-9a-f]{64}$/.test(a) || a.endsWith('.near'));
 
-/** Checks an address against the chain's format. EVM checksums are not verified (mixed case is taken as typed). */
+/** Checks an address against the chain's format. A mixed-case EVM address must pass EIP-55. */
 export function checkAddress(chain: string, a: string): { ok: true } | { ok: false; reason: string } {
   const c = CHAINS[chain];
   if (!c) return { ok: false, reason: `Pip does not pay to ${chain} yet` };
+  if (c.kind === 'evm' && /^0x[0-9a-fA-F]{40}$/.test(a) && !checksumOk(a)) return { ok: false, reason: 'the address checksum is wrong; check the capital letters' };
   const ok = c.kind === 'evm' ? /^0x[0-9a-fA-F]{40}$/.test(a) && !/^0x0{40}$/.test(a) : c.kind === 'sol' ? solOk(a) : c.kind === 'tron' ? tronOk(a) : nearOk(a);
   return ok ? { ok: true } : { ok: false, reason: `not a ${c.name} address` };
 }
@@ -101,12 +103,17 @@ const RELAY_BY_COINGECKO: Record<string, { chainId: number; address: string }> =
   ethereum: { chainId: 1, address: '0x0000000000000000000000000000000000000000' },
 };
 
-/** Where Relay prices this token, or null (Relay has no NEAR chain, so NEAR-only coins have no Relay price). */
-export function relayAsset(t: TokenRow): { chainId: number; address: string } | null {
+/**
+ * Where Relay prices this token, or null (Relay has no NEAR chain, so NEAR-only coins have no Relay price).
+ * `from: 'row'` means the contract address came from 1Click's own token row, so that price is not independent of 1Click.
+ */
+export function relayAsset(t: TokenRow): { chainId: number; address: string; from: 'pip' | 'row' } | null {
   const c = CHAINS[t.blockchain];
   if (c?.relayChainId && t.blockchain !== 'near') {
-    const address = t.contractAddress ?? (c.kind === 'evm' ? '0x0000000000000000000000000000000000000000' : RELAY_NATIVE[t.blockchain]);
-    if (address) return { chainId: c.relayChainId, address };
+    if (t.contractAddress) return { chainId: c.relayChainId, address: t.contractAddress, from: 'row' };
+    const address = c.kind === 'evm' ? '0x0000000000000000000000000000000000000000' : RELAY_NATIVE[t.blockchain];
+    if (address) return { chainId: c.relayChainId, address, from: 'pip' };
   }
-  return (t.coingeckoId && RELAY_BY_COINGECKO[t.coingeckoId]) || null;
+  const known = t.coingeckoId ? RELAY_BY_COINGECKO[t.coingeckoId] : undefined;
+  return known ? { ...known, from: 'pip' } : null;
 }

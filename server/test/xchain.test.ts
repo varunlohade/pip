@@ -7,11 +7,12 @@ import { setup } from './helpers.ts';
 import { payConfig } from '../src/pay/config.ts';
 import { mainnetConfig } from '../src/pay/network.ts';
 import type { PhoneChain } from '../src/pay/phone/chain.ts';
-import { ORIGINS, checkAddress, findToken, type TokenRow } from '../src/pay/xchain/assets.ts';
+import { ORIGINS, checkAddress, findToken, relayAsset, type TokenRow } from '../src/pay/xchain/assets.ts';
+import { keccak256 } from '../src/pay/xchain/eip55.ts';
 import { agreedPrice, checkQuote, defaultLimits, quoteRequest, typedUnits, type Prices } from '../src/pay/xchain/check.ts';
 import { parseXchain } from '../src/pay/xchain/parse.ts';
 import { mapStatus } from '../src/pay/xchain/routes.ts';
-import type { OneClick, OneClickQuote, OneClickStatus, PriceSource } from '../src/pay/xchain/sources.ts';
+import { relaySource, type OneClick, type OneClickQuote, type OneClickStatus, type PriceSource } from '../src/pay/xchain/sources.ts';
 import { buildDeposit } from '../src/pay/xchain/tx.ts';
 import { diffBps, fromBase, parsePrice, toBase, usdText, usdValue } from '../src/pay/xchain/units.ts';
 
@@ -251,7 +252,7 @@ test('xchain check: refusals for fee, rate, echo, exactness, deadline, memo; one
   const one = r({ prices: [{ source: 'coingecko', price: '1' }, { source: 'relay', price: null }] });
   assert.equal(one.verified, false);
   assert.match((one as { not_verified: string[] }).not_verified[0], /only 1 price source/);
-  assert.equal(agreedPrice([{ source: 'a', price: '1' }, { source: 'b', price: '1.019' }], 200n).ok, true);
+  assert.equal(agreedPrice([{ source: 'coingecko', price: '1' }, { source: '1click', price: '1.019' }], 200n).ok, true);
 });
 
 test('xchain status mapping', () => {
@@ -298,6 +299,7 @@ function fakeChain(): { chain: PhoneChain; sent: Uint8Array[] } {
 }
 
 function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = {}) {
+  let feeBps = o.feeBps;
   let clock = Date.parse('2026-11-14T15:00:00Z');
   const now = () => clock;
   const fake = fakeChain();
@@ -306,7 +308,11 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = 
   let ocStatus: OneClickStatus['status'] = 'PROCESSING';
   const oneclick: OneClick = {
     async tokens() { return TOKENS; },
-    async quote(req) { quotes.push(req); return fakeQuote(req, { feeBps: o.feeBps, now: clock }); },
+    async quote(req) {
+      quotes.push(req);
+      const n = quotes.length;
+      return fakeQuote(req, { feeBps, now: clock, tweak: (q) => { if (q.quote.depositAddress && n > 1) q.quote.depositAddress = 'ef'.repeat(32); } });
+    },
     async status() { return { status: ocStatus, swapDetails: { destinationChainTxHashes: ocStatus === 'SUCCESS' ? [{ hash: '0xdead', explorerUrl: 'https://basescan.org/tx/0xdead' }] : [] } }; },
     async submitDeposit(b) { deposits.push(b); },
   };
@@ -315,7 +321,7 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = 
     { name: 'relay', price: async (t) => (o.relayDown ? null : PRICE[t.coingeckoId!] ?? null) },
   ];
   const registered = new Set<string>();
-  const views = { async storageRegistered(_c: string, a: string) { return registered.has(a); }, async storageMin() { return 1_250_000_000_000_000_000_000n; } };
+  const views = { async storageRegistered(_c: string, a: string) { return registered.has(a); }, async storageMin() { return 1_250_000_000_000_000_000_000n; }, async accountExists(a: string) { return a === 'ana.near'; } };
   const mainnet = { ...mainnetConfig, enabled: o.mainnet ?? true };
   const s = setup({ now, pay: { config: { ...payConfig, funderAccountId: 'pipfund.testnet', funderSecretKey: 'ed25519:x' }, phone: { chains: { testnet: fake.chain, mainnet: fake.chain }, mainnet }, xchain: { oneclick, prices, chainDecimals: async (t) => t.decimals, views, limits: defaultLimits({}) } } });
   const { token } = s.device();
@@ -329,7 +335,7 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean } = 
     assert.equal((await call('POST', '/v1/pay/register', { publicKey: keyHex }, true)).status, 200);
   };
   const signHash = (hex: string, k: KeyObject = privateKey) => sign(null, Buffer.from(hex, 'hex'), k).toString('base64');
-  return { s, fake, call, start, quotes, deposits, keyHex, signHash, tick: (ms: number) => { clock += ms; }, setStatus: (st: OneClickStatus['status']) => { ocStatus = st; } };
+  return { s, fake, call, start, quotes, deposits, keyHex, signHash, tick: (ms: number) => { clock += ms; }, setFee: (f: bigint) => { feeBps = f; }, setStatus: (st: OneClickStatus['status']) => { ocStatus = st; } };
 }
 
 const quoteBody = { amount: '5', token: 'USDC', chain: 'base', recipient: EVM };
@@ -397,23 +403,46 @@ test('xchain route: quote -> phone intent -> exact deposit tx -> submit -> depos
   assert.equal(w.deposits.length, 1, 'the deposit notice goes once');
 });
 
-test('xchain route: NEAR origin wraps; a quote older than 60 s is refused before build', async () => {
+test('xchain route: NEAR origin wraps; the signing window is 2 minutes; an old quote is re-quoted and re-checked before build', async () => {
   const w = world();
   await w.start();
-  const q = await (await w.call('POST', '/v1/pay/xchain/quote', { amount: '0.5', token: 'USDC', chain: 'base', recipient: EVM, from: 'NEAR' })).json();
+  const body = { amount: '0.5', token: 'USDC', chain: 'base', recipient: EVM, from: 'NEAR' };
+  const q = await (await w.call('POST', '/v1/pay/xchain/quote', body)).json();
   assert.equal(q.intent.token, 'NEAR');
   assert.equal(q.max_amount_in.decimals, 24);
+  assert.equal(Date.parse(q.intent.expires_at) - Date.parse(q.quote_at), 120_000, 'fix 6: 2-minute window');
   const fields = { amount: q.intent.amount, token: q.intent.token, recipient: q.intent.recipient };
   w.tick(61_000);
-  const old = await w.call('POST', `/v1/pay/intents/${q.intent.id}/unsigned`, fields, true);
-  assert.equal(old.status, 409);
-  assert.match((await old.json()).error, /60 seconds/);
-  const q2 = await (await w.call('POST', '/v1/pay/xchain/quote', { amount: '0.5', token: 'USDC', chain: 'base', recipient: EVM, from: 'NEAR' })).json();
-  const u = await (await w.call('POST', `/v1/pay/intents/${q2.intent.id}/unsigned`, { amount: q2.intent.amount, token: 'NEAR', recipient: DEPOSIT }, true)).json();
-  const tx = Transaction.decode(Buffer.from(u.tx_base64, 'base64'));
+  const u = await w.call('POST', `/v1/pay/intents/${q.intent.id}/unsigned`, fields, true);
+  assert.equal(u.status, 200, await u.clone().text());
+  const ub = await u.json();
+  assert.equal(w.quotes.length, 2, 'the old quote was replaced by a fresh one');
+  assert.equal(ub.recipient, 'ef'.repeat(32), 'the tx and card use the new deposit account');
+  assert.equal(ub.xchain.deposit_address, 'ef'.repeat(32));
+  assert.equal(Date.parse(ub.xchain.quote_at), Date.parse(q.quote_at) + 61_000);
+  const tx = Transaction.decode(Buffer.from(ub.tx_base64, 'base64'));
   assert.equal(tx.receiverId, 'wrap.near');
   assert.deepEqual(tx.actions.map((a) => a.functionCall!.methodName), ['storage_deposit', 'storage_deposit', 'near_deposit', 'ft_transfer']);
-  assert.equal(tx.actions[2].functionCall!.deposit.toString(), q2.max_amount_in.units);
+  assert.equal(tx.actions[2].functionCall!.deposit.toString(), ub.xchain.max_amount_in.units);
+  assert.equal(JSON.parse(Buffer.from(tx.actions[3].functionCall!.args).toString()).receiver_id, 'ef'.repeat(32));
+
+  // A re-quote that fails its checks blocks the build.
+  const q2 = await (await w.call('POST', '/v1/pay/xchain/quote', body)).json();
+  w.setFee(400n);
+  w.tick(61_000);
+  const bad = await w.call('POST', `/v1/pay/intents/${q2.intent.id}/unsigned`, { amount: q2.intent.amount, token: 'NEAR', recipient: q2.intent.recipient }, true);
+  assert.equal(bad.status, 422);
+  assert.match((await bad.json()).error, /new quote: the fee is/);
+});
+
+test('xchain route: a named NEAR recipient must exist (fix 3)', async () => {
+  const w = world();
+  await w.start();
+  const typo = await w.call('POST', '/v1/pay/xchain/quote', { amount: '5', token: 'USDT', chain: 'near', recipient: 'typo.near' });
+  assert.equal(typo.status, 400);
+  assert.match((await typo.json()).error, /typo.near does not exist/);
+  assert.equal(w.quotes.length, 0);
+  assert.equal((await w.call('POST', '/v1/pay/xchain/quote', { amount: '5', token: 'USDT', chain: 'near', recipient: 'ana.near' })).status, 201);
 });
 
 test('xchain route: caps on the max input; not verified makes no intent; dry makes no intent; too many decimals', async () => {
@@ -445,4 +474,49 @@ test('xchain route: caps on the max input; not verified makes no intent; dry mak
   const fee = world({ feeBps: 400n });
   await fee.start();
   assert.equal((await fee.call('POST', '/v1/pay/xchain/quote', quoteBody)).status, 422);
+});
+
+// ---- audit fixes
+test('fix 1: exact input with a minAmountOut far below the slippage is refused', () => {
+  const v = judge({ mode: 'exact_in', amount: '10', from: 'USDC', dest: tok('USDC', 'base'), tweak: (q) => { q.quote.minAmountOut = '1'; } });
+  assert.equal(v.verified, false);
+  assert.match((v as { refused: string }).refused, /minimum output/);
+  // The fee is judged on the worst case: 10 in, minimum 9.8901 out (10 bps fee, 100 bps slippage) is 110 bps.
+  const ok = judge({ mode: 'exact_in', amount: '10', from: 'USDC', dest: tok('USDC', 'base') });
+  assert.ok(ok.ok);
+  assert.equal(ok.numbers.fee.bps, '110');
+});
+
+test('fix 2: slippage, deadline and deposit mode must echo; slippage above the limit is refused', () => {
+  const base = tok('USDC', 'base');
+  const r = (tweak: (q: OneClickQuote) => void) => judge({ mode: 'exact_in', amount: '10', from: 'USDC', dest: base, tweak }) as { refused: string };
+  assert.match(r((q) => { q.quoteRequest.slippageTolerance = 5000; q.quote.minAmountOut = '4995000'; }).refused, /\(slippageTolerance\)/);
+  assert.match(r((q) => { q.quoteRequest.deadline = new Date(Date.now() + 9e6).toISOString(); }).refused, /\(deadline\)/);
+  assert.match(r((q) => { q.quoteRequest.depositMode = 'MEMO'; }).refused, /\(depositMode\)/);
+  const origin = TOKENS.find((t) => t.assetId === ORIGINS.USDC.assetId)!;
+  const sent = quoteRequest({ mode: 'exact_in', units: 10_000_000n, origin, dest: base, recipient: EVM, refundTo: 'cd'.repeat(32), deadline: new Date(Date.now() + 1_800_000), slippageBps: 500, dry: false });
+  const v = checkQuote({ mode: 'exact_in', typed: 10_000_000n, origin, dest: base, chainDecimals: { origin: 6, dest: 6 }, sent, q: fakeQuote(sent), prices: { origin: twoSources(origin), dest: twoSources(base) }, limits: defaultLimits({}), now: Date.now(), minDeadlineMs: 0 });
+  assert.match((v as { refused: string }).refused, /slippage 500 is above the 100 bps limit/);
+});
+
+test('fix 4: a mixed-case EVM address must pass EIP-55', () => {
+  assert.ok(checkAddress('base', '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed').ok);
+  assert.ok(checkAddress('base', '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed').ok, 'all lower case has no checksum');
+  assert.ok(checkAddress('base', '0x5AAEB6053F3E94C9B9A09F33669435E7EF1BEAED').ok, 'all upper case has no checksum');
+  const bad = checkAddress('base', '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD');
+  assert.equal(bad.ok, false);
+  assert.match((bad as { reason: string }).reason, /checksum/);
+  const p = parseXchain('send 5 USDC to 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAeD on base');
+  assert.equal(p.valid, false);
+  assert.equal(Buffer.from(keccak256(new Uint8Array())).toString('hex'), 'c5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470');
+});
+
+test('fix 5: a price needs a source independent of 1Click', () => {
+  assert.match((agreedPrice([{ source: '1click', price: '1' }, { source: 'relay-via-1click-address', price: '1' }], 200n) as { reason: string }).reason, /independent of 1Click/);
+  assert.equal(agreedPrice([{ source: '1click', price: '1' }], 200n).ok, false);
+  assert.ok(agreedPrice([{ source: 'relay', price: '1' }, { source: '1click', price: '1' }], 200n).ok);
+  const relay = relaySource(relayAsset);
+  assert.equal(relay.label!(tok('USDC', 'base')), 'relay-via-1click-address', 'the address came from the 1Click row');
+  assert.equal(relay.label!(tok('ETH', 'base')), 'relay', 'a native coin uses Pip\'s own address');
+  assert.equal(relay.label!(TOKENS.find((t) => t.assetId === ORIGINS.USDC.assetId)!), 'relay', 'NEAR USDC is priced through Pip\'s Ethereum twin');
 });

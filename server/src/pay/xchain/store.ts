@@ -25,6 +25,14 @@ export function openXchainStore(db: Db, now: () => number) {
     setStatus(intentId: string, status: string, json: string) {
       q('UPDATE pay_xchain SET status = ?, status_json = ?, status_at = ? WHERE intent_id = ?').run(status, json, now(), intentId);
     },
+    /** Moves a still-pending intent onto a new quote: new max input, deposit account, expiry and numbers. False when it is no longer pending. */
+    requote(intentId: string, n: { amount: string; units: string; depositAddress: string; expiresAt: number; numbersJson: string; quoteJson: string; quoteAt: number; deadline: number }): boolean {
+      const moved = q("UPDATE pay_phone_intents SET amount = ?, units = ?, recipient = ?, expires_at = ? WHERE id = ? AND status = 'pending'")
+        .run(n.amount, n.units, n.depositAddress, n.expiresAt, intentId).changes > 0;
+      if (moved) q('UPDATE pay_xchain SET deposit_address = ?, numbers_json = ?, quote_json = ?, quote_at = ?, deadline = ? WHERE intent_id = ?')
+        .run(n.depositAddress, n.numbersJson, n.quoteJson, n.quoteAt, n.deadline, intentId);
+      return moved;
+    },
     /** True for the one caller that claims the deposit notice. */
     claimNotice(intentId: string): boolean {
       return q('UPDATE pay_xchain SET deposit_notified = 1 WHERE intent_id = ? AND deposit_notified = 0').run(intentId).changes > 0;

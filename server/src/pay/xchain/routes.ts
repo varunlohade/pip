@@ -21,6 +21,8 @@ import { createNearViews, type NearViews } from './views.ts';
 export type XchainDeps = { oneclick?: OneClick; prices?: PriceSource[]; chainDecimals?: ChainDecimals; views?: NearViews; limits?: Limits; mainnet?: MainnetConfig };
 
 const QUOTE_MAX_AGE_MS = 60_000;
+// An xchain intent can be signed for 2 minutes after its quote (or re-quote).
+const SIGN_WINDOW_MS = 2 * 60_000;
 const DEADLINE_MS = 30 * 60_000;
 // The deposit must land well before 1Click's deadline: the intent expires at least this long before it.
 const DEADLINE_MARGIN_MS = 15 * 60_000;
@@ -54,8 +56,9 @@ export function mapStatus(intent: PhoneIntent['status'], oc?: OneClickStatus['st
   }
 }
 
-/** The default origin: the same stablecoin on NEAR when the destination is USDC or USDT, else NEAR. */
-export const defaultOrigin = (token: string): Origin => (token === 'USDC' || token === 'USDT' ? token : 'NEAR');
+/** The default origin: the same stablecoin on NEAR when the destination is USDC or USDT elsewhere, USDC for USDT on NEAR, else NEAR. */
+export const defaultOrigin = (token: string, chain: string): Origin =>
+  (chain === 'near' && token === 'USDT' ? 'USDC' : token === 'USDC' || token === 'USDT' ? token : 'NEAR');
 
 /**
  * Pay any token on any chain from the user's NEAR account through NEAR Intents (1Click). Mainnet only.
@@ -76,7 +79,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
   const json = async <T extends z.ZodTypeAny>(c: Context<Env>, schema: T): Promise<z.infer<T>> => schema.parse(await c.req.json().catch(() => {
     throw new HttpError(400, 'body must be JSON');
   }));
-  const priceAll = (t: TokenRow) => Promise.all(prices.map(async (s) => ({ source: s.name, price: await s.price(t).catch(() => null) })));
+  const priceAll = (t: TokenRow) => Promise.all(prices.map(async (s) => ({ source: s.label?.(t) ?? s.name, price: await s.price(t).catch(() => null) })));
 
   const describe = (r: XchainRow) => {
     const n = JSON.parse(r.numbers_json) as Numbers;
@@ -90,15 +93,107 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     };
   };
 
+  type Input = { amount: string; token: string; chain: string; recipient: string; from?: Origin; mode?: Mode; dry?: boolean };
+  type Fail = { ok: false; status: 200 | 400 | 403 | 409 | 422 | 502; body: Record<string, unknown> };
+  const fail = (status: Fail['status'], error: string, extra: Record<string, unknown> = {}): Fail => ({ ok: false, status, body: { error, ...extra } });
+  const answer = (body: Record<string, unknown>): Fail => ({ ok: false, status: 200, body });
+
+  /** Validates, quotes and checks one payment, then applies the caps. Shared by /quote and the re-quote before signing. */
+  async function runQuote(userId: string, body: Input) {
+    const account = phone.account(userId, 'mainnet');
+    if (account?.status !== 'ready') return fail(409, 'register your key in the Pip app first');
+    const chain = body.chain.toLowerCase();
+    if (!CHAINS[chain]) return fail(400, `Pip does not pay to ${body.chain} yet`);
+    const addr = checkAddress(chain, body.recipient);
+    if (!addr.ok) return fail(400, addr.reason);
+    const token = body.token.toUpperCase();
+    const from = body.from ?? defaultOrigin(token, chain);
+    if (chain === 'near' && token === from && (token === 'NEAR' || token === 'USDC')) return fail(400, 'same token on NEAR: use a plain payment (/v1/pay/intents)');
+    // A named NEAR account must exist, as for plain sends. An implicit id may not exist yet.
+    if (chain === 'near' && !/^[0-9a-f]{64}$/.test(body.recipient)) {
+      const exists = await views.accountExists(body.recipient).catch((e: Error) => {
+        log('pay_rpc_failed', { network: 'mainnet', err: e.message });
+        return undefined;
+      });
+      if (exists === undefined) return fail(502, 'could not reach NEAR mainnet; try again');
+      if (!exists) return fail(400, `${body.recipient} does not exist on mainnet`);
+    }
+    const mode: Mode = body.mode ?? 'exact_out';
+
+    let list: TokenRow[];
+    try {
+      list = await oneclick.tokens();
+    } catch (e) {
+      log('xchain_oneclick_failed', { step: 'tokens', err: (e as Error).message });
+      return fail(502, 'could not reach NEAR Intents; try again');
+    }
+    const origin = findOrigin(list, from);
+    if (!origin) return fail(400, `${from} on NEAR is not supported by NEAR Intents`);
+    const found = findToken(list, token, chain);
+    if (!found.ok) return fail(400, found.reason);
+    const dest = found.token;
+    if (dest.assetId === origin.assetId) return fail(400, 'same token on NEAR: use a plain payment');
+    const typed = typedUnits(body.amount, mode, origin, dest);
+    if (!typed.ok) return fail(400, typed.reason);
+
+    const at = now();
+    const sent = quoteRequest({ mode, units: typed.units, origin, dest, recipient: body.recipient, refundTo: account.account_id, deadline: new Date(at + DEADLINE_MS), slippageBps: limits.slippageBps, dry: body.dry ?? false });
+    const [liveIn, liveOut, pIn, pOut, q] = await Promise.all([
+      chainDecimals(origin).catch(() => null), chainDecimals(dest).catch(() => null), priceAll(origin), priceAll(dest),
+      oneclick.quote(sent).catch((e: Error) => e),
+    ]);
+    if (q instanceof Error) {
+      log('xchain_oneclick_failed', { step: 'quote', err: q.message });
+      return fail(502, `NEAR Intents could not quote this: ${q.message}`);
+    }
+    const v = checkQuote({ mode, typed: typed.units, origin, dest, chainDecimals: { origin: liveIn, dest: liveOut }, sent, q, prices: { origin: pIn, dest: pOut }, limits, now: at, minDeadlineMs: DEADLINE_MARGIN_MS + SIGN_WINDOW_MS });
+    log('xchain_quote', {
+      user_id: userId, mode, chain, typed_text: body.amount, typed_units: typed.units.toString(), origin: origin.assetId, dest: dest.assetId,
+      amount_in: v.numbers?.amount_in.text ?? null, amount_in_units: q.quote?.amountIn ?? null, amount_out: v.numbers?.amount_out.text ?? null, amount_out_units: q.quote?.amountOut ?? null,
+      fee_usd: v.numbers?.fee.usd ?? null, verified: v.verified, refused: v.ok ? null : v.refused, correlation_id: q.correlationId,
+    });
+    if (!v.ok) {
+      if (v.refused) return fail(422, v.refused, { verified: false, numbers: v.numbers });
+      return answer({ verified: false, not_verified: v.not_verified, numbers: v.numbers, intent: null });
+    }
+    const destination = { chain, chain_name: chainName(chain), recipient: body.recipient };
+    if (body.dry) return answer({ verified: true, dry: true, numbers: v.numbers, destination, route: 'NEAR Intents (1Click)', refund_to: account.account_id, intent: null });
+
+    // Caps on the max input, in the origin token, with the same per-network limits as plain sends.
+    const tok = from as Token;
+    const units = BigInt(q.quote.amountIn);
+    const amount = v.numbers.amount_in.text;
+    if (toUnits(amount, tok) !== units) return fail(422, 'decimals for the origin token disagree with the wallet');
+    const cap = main.caps[tok];
+    if (units > toUnits(cap.perTx, tok)) return fail(403, `over the ${cap.perTx} ${tok} limit per payment`, { verified: true, numbers: v.numbers });
+    if (phone.spentSince(userId, 'mainnet', tok, at - DAY) + units > toUnits(cap.daily, tok)) return fail(403, `over the ${cap.daily} ${tok} daily limit`, { verified: true, numbers: v.numbers });
+    return { ok: true as const, v, q, origin, dest, at, tok, units, amount, account, chain, mode, deadline: Date.parse(q.quote.deadline!) };
+  }
+
   const hooks: XchainHooks = {
     describe(id) {
       const r = store.get(id);
       return r ? describe(r) : null;
     },
-    guard(i) {
+    /** A quote older than 60 s is quoted and checked again before the tx is built; the intent takes the new numbers. */
+    async refresh(i) {
       const r = store.get(i.id);
-      if (!r) return null;
-      return now() - r.quote_at > QUOTE_MAX_AGE_MS ? 'this quote is over 60 seconds old; get a new quote' : null;
+      if (!r || now() - r.quote_at <= QUOTE_MAX_AGE_MS) return null;
+      const n = JSON.parse(r.numbers_json) as Numbers;
+      const from = (Object.keys(ORIGINS) as Origin[]).find((o) => ORIGINS[o].assetId === r.origin_asset)!;
+      const res = await runQuote(i.user_id, {
+        amount: r.mode === 'exact_out' ? n.amount_out.text : n.amount_in.text, token: n.amount_out.symbol, chain: r.dest_chain, recipient: r.dest_recipient, from, mode: r.mode as Mode,
+      });
+      if (!res.ok) {
+        const why = String(res.body.error ?? (res.body.not_verified as string[] | undefined)?.join('; ') ?? 'not verified');
+        return { status: res.status === 200 ? 409 : res.status, error: `new quote: ${why}` };
+      }
+      if (res.dest.assetId !== r.dest_asset) return { status: 409, error: 'new quote: the destination token changed; start again' };
+      const moved = db.tx(() => {
+        if (!store.requote(i.id, { amount: res.amount, units: res.units.toString(), depositAddress: res.q.quote.depositAddress!, expiresAt: Math.min(res.at + SIGN_WINDOW_MS, res.deadline - DEADLINE_MARGIN_MS), numbersJson: JSON.stringify(res.v.numbers), quoteJson: JSON.stringify(res.q), quoteAt: res.at, deadline: res.deadline })) return false;
+        return true;
+      });
+      return moved ? null : { status: 409, error: 'this payment changed; open it again' };
     },
     async build(i, ctx) {
       const r = store.get(i.id);
@@ -118,71 +213,14 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     if (networks.get(userId) !== 'mainnet') return c.json({ error: 'cross-chain payments run on mainnet only; NEAR Intents has no testnet' }, 409);
     if (!main.enabled) return c.json({ error: 'mainnet payments are off on this server' }, 503);
     const body = await json(c, Quote);
-    const account = phone.account(userId, 'mainnet');
-    if (account?.status !== 'ready') return c.json({ error: 'register your key in the Pip app first' }, 409);
-    const chain = body.chain.toLowerCase();
-    if (!CHAINS[chain]) return c.json({ error: `Pip does not pay to ${body.chain} yet` }, 400);
-    const addr = checkAddress(chain, body.recipient);
-    if (!addr.ok) return c.json({ error: addr.reason }, 400);
-    const token = body.token.toUpperCase();
-    const from = body.from ?? defaultOrigin(token);
-    if (chain === 'near' && token === from && (token === 'NEAR' || token === 'USDC')) return c.json({ error: 'same token on NEAR: use a plain payment (/v1/pay/intents)' }, 400);
-    const mode: Mode = body.mode ?? 'exact_out';
-
-    let list: TokenRow[];
-    try {
-      list = await oneclick.tokens();
-    } catch (e) {
-      log('xchain_oneclick_failed', { step: 'tokens', err: (e as Error).message });
-      return c.json({ error: 'could not reach NEAR Intents; try again' }, 502);
-    }
-    const origin = findOrigin(list, from);
-    if (!origin) return c.json({ error: `${from} on NEAR is not supported by NEAR Intents` }, 400);
-    const found = findToken(list, token, chain);
-    if (!found.ok) return c.json({ error: found.reason }, 400);
-    const dest = found.token;
-    if (dest.assetId === origin.assetId) return c.json({ error: 'same token on NEAR: use a plain payment' }, 400);
-    const typed = typedUnits(body.amount, mode, origin, dest);
-    if (!typed.ok) return c.json({ error: typed.reason }, 400);
-
-    const at = now();
-    const sent = quoteRequest({ mode, units: typed.units, origin, dest, recipient: body.recipient, refundTo: account.account_id, deadline: new Date(at + DEADLINE_MS), slippageBps: limits.slippageBps, dry: body.dry ?? false });
-    const [liveIn, liveOut, pIn, pOut, q] = await Promise.all([
-      chainDecimals(origin).catch(() => null), chainDecimals(dest).catch(() => null), priceAll(origin), priceAll(dest),
-      oneclick.quote(sent).catch((e: Error) => e),
-    ]);
-    if (q instanceof Error) {
-      log('xchain_oneclick_failed', { step: 'quote', err: q.message });
-      return c.json({ error: `NEAR Intents could not quote this: ${q.message}` }, 502);
-    }
-    const v = checkQuote({ mode, typed: typed.units, origin, dest, chainDecimals: { origin: liveIn, dest: liveOut }, sent, q, prices: { origin: pIn, dest: pOut }, limits, now: at, minDeadlineMs: DEADLINE_MARGIN_MS + cfg.intentTtlMs });
-    log('xchain_quote', {
-      user_id: userId, mode, chain, typed_text: body.amount, typed_units: typed.units.toString(), origin: origin.assetId, dest: dest.assetId,
-      amount_in: v.numbers?.amount_in.text ?? null, amount_in_units: q.quote?.amountIn ?? null, amount_out: v.numbers?.amount_out.text ?? null, amount_out_units: q.quote?.amountOut ?? null,
-      fee_usd: v.numbers?.fee.usd ?? null, verified: v.verified, refused: v.ok ? null : v.refused, correlation_id: q.correlationId,
-    });
-    if (!v.ok) {
-      if (v.refused) return c.json({ error: v.refused, verified: false, numbers: v.numbers }, 422);
-      return c.json({ verified: false, not_verified: v.not_verified, numbers: v.numbers, intent: null });
-    }
-    const destination = { chain, chain_name: chainName(chain), recipient: body.recipient };
-    if (body.dry) return c.json({ verified: true, dry: true, numbers: v.numbers, destination, route: 'NEAR Intents (1Click)', refund_to: account.account_id, intent: null });
-
-    // Caps on the max input, in the origin token, with the same per-network limits as plain sends.
-    const tok = from as Token;
-    const units = BigInt(q.quote.amountIn);
-    const amount = v.numbers.amount_in.text;
-    if (toUnits(amount, tok) !== units) return c.json({ error: 'decimals for the origin token disagree with the wallet' }, 422);
-    const cap = main.caps[tok];
-    if (units > toUnits(cap.perTx, tok)) return c.json({ error: `over the ${cap.perTx} ${tok} limit per payment`, verified: true, numbers: v.numbers }, 403);
-    if (phone.spentSince(userId, 'mainnet', tok, at - DAY) + units > toUnits(cap.daily, tok)) return c.json({ error: `over the ${cap.daily} ${tok} daily limit`, verified: true, numbers: v.numbers }, 403);
-
-    const deadline = Date.parse(q.quote.deadline!);
+    const res = await runQuote(userId, body);
+    if (!res.ok) return c.json(res.body, res.status);
+    const { v, q, origin, dest, at, tok, units, amount, account, chain, mode, deadline } = res;
     const id = randomBytes(16).toString('hex');
     db.tx(() => {
       phone.addIntent({
         id, user_id: userId, network: 'mainnet', token: tok, amount, units: units.toString(), recipient: q.quote.depositAddress!,
-        new_recipient: 1, created_at: at, expires_at: Math.min(at + cfg.intentTtlMs, deadline - DEADLINE_MARGIN_MS),
+        new_recipient: 1, created_at: at, expires_at: Math.min(at + SIGN_WINDOW_MS, deadline - DEADLINE_MARGIN_MS),
       });
       store.add({
         intent_id: id, user_id: userId, origin_asset: origin.assetId, dest_asset: dest.assetId, dest_chain: chain, dest_recipient: body.recipient,
