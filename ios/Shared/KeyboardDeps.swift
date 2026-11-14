@@ -56,6 +56,15 @@ protocol KeyboardStore: AnyObject {
     var payPending: String? { get set }
     /// The payment the app last sent; the keyboard offers its Insert line, then clears it.
     var paySent: PaySent? { get set }
+    /// The keyboard's report for the app's Keyboard status screen.
+    var heartbeat: KeyboardHeartbeat? { get set }
+}
+
+extension KeyboardStore {
+    var heartbeat: KeyboardHeartbeat? {
+        get { nil }
+        set {}
+    }
 }
 
 final class SharedKeyboardStore: KeyboardStore {
@@ -98,6 +107,10 @@ final class SharedKeyboardStore: KeyboardStore {
     var paySent: PaySent? {
         get { SharedStore.paySent }
         set { SharedStore.paySent = newValue }
+    }
+    var heartbeat: KeyboardHeartbeat? {
+        get { SharedStore.keyboardHeartbeat }
+        set { SharedStore.keyboardHeartbeat = newValue }
     }
 }
 

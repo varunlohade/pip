@@ -285,6 +285,53 @@ struct EmailAuthView: View {
     }
 }
 
+/// What the keyboard last reported, for a screenshot when its chips do not show. The keyboard writes it only with Full Access,
+/// so "never" means it has not opened with Full Access since this build.
+struct KeyboardStatusView: View {
+    @State private var beat = SharedStore.keyboardHeartbeat
+    @State private var lastSeen = SharedStore.keyboardLastSeen
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Theme.Metric.cardGap) {
+                Text("Keyboard status").font(Theme.Font.title).tracking(Theme.Tracking.title).foregroundStyle(Theme.Color.text1)
+                Card {
+                    VStack(alignment: .leading, spacing: Theme.Space.xs) {
+                        line("App build", KeyboardHeartbeat.thisBuild)
+                        line("App signed in", SharedStore.signedIn ? "yes" : "no")
+                        line("Keyboard seen", Self.when(beat?.at ?? lastSeen))
+                        line("Keyboard build", beat?.build ?? "never")
+                        line("Full Access", beat.map { $0.fullAccess ? "on" : "off" } ?? "never seen on")
+                        line("Keyboard has sign-in", beat.map { $0.hasToken ? "yes" : "no" } ?? "unknown")
+                        line("Last server call", beat?.lastCall ?? "none")
+                        line("Call time", Self.when(beat?.lastCallAt))
+                    }
+                }
+                .accessibilityIdentifier("keyboardStatus.card")
+            }
+            .padding(Theme.Metric.cardInset)
+        }
+        .background(Theme.Color.bg.ignoresSafeArea())
+        .onChange(of: scenePhase) { _, p in
+            if p == .active { beat = SharedStore.keyboardHeartbeat; lastSeen = SharedStore.keyboardLastSeen }
+        }
+    }
+
+    private func line(_ name: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(name).font(Theme.Font.label).foregroundStyle(Theme.Color.text2)
+            Spacer()
+            Text(value).font(Theme.Font.label).foregroundStyle(Theme.Color.text1).multilineTextAlignment(.trailing)
+        }
+    }
+
+    static func when(_ d: Date?) -> String {
+        guard let d else { return "never" }
+        return d.formatted(date: .abbreviated, time: .standard)
+    }
+}
+
 /// Account: who is signed in, ways to save the account, and Log out, Log out everywhere and Delete account, each with a plain confirm.
 struct AccountView: View {
     @EnvironmentObject var session: Session
@@ -316,6 +363,18 @@ struct AccountView: View {
                     Text(error).font(Theme.Font.label).foregroundStyle(Theme.Color.warning).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("account.error")
                 }
+                NavigationLink { KeyboardStatusView() } label: {
+                    HStack {
+                        Text("Keyboard status").font(Theme.Font.label).foregroundStyle(Theme.Color.text2)
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(Theme.Color.text3)
+                    }
+                    .padding(.horizontal, Theme.Metric.cardPadding)
+                    .frame(minHeight: Theme.Metric.secondaryButton)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("account.keyboardStatus")
                 VStack(spacing: 0) {
                     row("Log out", id: "account.logout") { confirm = .logout }
                     row("Log out everywhere", id: "account.logoutAll") { confirm = .everywhere }

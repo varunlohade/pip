@@ -201,6 +201,10 @@ final class KeyboardModel: ObservableObject {
     var routed: (sentence: String, label: String)?
     /// The current line holds a secret (a key, a seed phrase, a password, a code). No AI for that line; the bar says so quietly.
     @Published var secretLine = false
+    /// Why the last text that would have had a server chip got none: Full Access, no session, or a failed router call.
+    @Published var keyStatus: KeyStatus?
+    /// The server refused the session in the Keychain. Typing does not pair again with it; the next appearance tries it again.
+    private var sessionDead = false
     /// The lines typed in this conversation, in memory only, for the router's context.
     private(set) var memory = TypingMemory()
     /// "send 5 USDC to ana.testnet": the chip that proposes it for approval in the app. See KeyboardModel+Pay.
@@ -305,11 +309,12 @@ final class KeyboardModel: ObservableObject {
         guard epoch == deps.store.accountEpoch else { return }
         forgetMemory()
         paired = false
+        sessionDead = true
     }
 
     func refreshAccess() {
         hasFullAccess = host?.hasFullAccess ?? false
-        paired = hasFullAccess && deps.store.signedIn
+        paired = hasFullAccess && !sessionDead && deps.store.signedIn
         returnStyle = ReturnStyle(host?.returnKeyType ?? .default)
         let kind = FieldKind(keyboardType: host?.keyboardType ?? .default, contentType: host?.textContentType)
         if kind != field { field = kind; layout = kind.layout; memory.clear() }
@@ -805,6 +810,7 @@ final class KeyboardModel: ObservableObject {
     /// On appear: note that the keyboard is on, and offer copied text (without reading it).
     func keyboardAppeared() {
         forgetIfAccountChanged()
+        sessionDead = false
         refreshAccess()
         layout = field.layout
         updateAutoShift()
@@ -813,6 +819,7 @@ final class KeyboardModel: ObservableObject {
         if hapticsOn { haptics.prepare() }
         scheduleWordSlots()
         guard hasFullAccess else { copiedAvailable = false; return }
+        beat()
         deps.store.keyboardLastSeen = deps.now()
         reloadShortcuts()
         guard paired else { return }
@@ -823,6 +830,27 @@ final class KeyboardModel: ObservableObject {
         dismissedText = nil
         chipSeen = nil
         offerCopied()
+    }
+
+    /// Unpaired (refreshAccess read Full Access and the Keychain on this key): text the router would have read gets the one
+    /// line that says why it did not.
+    private func updateKeyStatus(_ text: String, quiet: Bool) {
+        let wouldAsk = Flags.router && !quiet && suggest.route(text, clear: false, field: field) != nil
+        let st: KeyStatus? = !wouldAsk ? nil : !hasFullAccess ? .needsFullAccess
+            : sessionDead || deps.store.accountEpoch != nil ? .signedOut : .notConnected
+        if st != keyStatus { keyStatus = st }
+    }
+
+    /// The report the app's Keyboard status screen reads. Only lands in the App Group with Full Access.
+    func beat(call: String? = nil) {
+        let now = deps.now()
+        var h = deps.store.heartbeat ?? KeyboardHeartbeat(at: now, fullAccess: false, hasToken: false, build: "")
+        h.at = now
+        h.fullAccess = hasFullAccess
+        h.hasToken = deps.store.signedIn
+        h.build = KeyboardHeartbeat.thisBuild
+        if let call { h.lastCall = call; h.lastCallAt = now }
+        deps.store.heartbeat = h
     }
 
     /// "Use copied message" for 3 minutes after the keyboard first saw the copy, and once: use, ✕, typing or the time ends it.
@@ -1001,7 +1029,10 @@ final class KeyboardModel: ObservableObject {
         scheduleWordSlots()
         if let u = undo, !(host?.contextBeforeInput ?? "").hasSuffix(u.replacement) { undo = nil }
         // The dictionary needs no pairing and no network, so a meaning shows even before pairing.
-        if !paired, suggestsWhileTyping { if quiet { clearExplainOffer() } else { updateExplain(text) } }
+        if !paired, suggestsWhileTyping {
+            if quiet { clearExplainOffer() } else { updateExplain(text) }
+            updateKeyStatus(text, quiet: quiet || secret)
+        }
         guard paired, suggestsWhileTyping else { return }
         if case .working = bar { return }
         // An explain question is answered by the dictionary or /v1/explain, so it never also goes to /v1/suggest.
@@ -1020,6 +1051,7 @@ final class KeyboardModel: ObservableObject {
         // Typing ends the copied-text offer.
         if !text.isEmpty, copiedAvailable { endCopied() }
         routeTask?.cancel()
+        if keyStatus != nil { keyStatus = nil }
         if !Flags.router {
             if !quiet, !explaining, !paying, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
         } else if !quiet, !secret, !explaining, !paying, let sentence = suggest.route(text, clear: clear, field: field) {
@@ -1190,7 +1222,18 @@ final class KeyboardModel: ObservableObject {
             try? await sleep(wait)
             guard let self, !Task.isCancelled else { return }
             self.suggest.markAsked(sentence)
-            guard let res = try? await self.deps.api().route(sentence, context: context), !Task.isCancelled, self.typed == askedFor else { return }
+            let res: RouteResponse
+            do {
+                res = try await self.deps.api().route(sentence, context: context)
+            } catch {
+                guard !Task.isCancelled, self.typed == askedFor else { return }
+                let st = KeyStatus.from(error)
+                self.keyStatus = st
+                self.beat(call: "failed: \(st.title)")
+                return
+            }
+            guard !Task.isCancelled, self.typed == askedFor else { return }
+            self.beat(call: "ok: \(res.label)")
             self.applyRoute(res, sentence: sentence)
             let ms = Int((ContinuousClock.now - typedAt) / .milliseconds(1))
             self.lastLatencyMs = ms
@@ -1566,7 +1609,7 @@ final class KeyboardModel: ObservableObject {
                                     smart: smart.map { BarItems.Smart(chip: $0, access: writer.access($0.place, hasFullAccess: hasFullAccess)) },
                                     added: added?.label, fieldEmpty: fieldEmpty,
                                     ready: .init(copiedAvailable: copiedAvailable, nextUp: nextUp, today: appointments), explain: explainItem,
-                                    draw: drawItem, secret: secretLine, pay: payItem, paid: paidItem, now: deps.now()))
+                                    draw: drawItem, secret: secretLine, pay: payItem, paid: paidItem, status: keyStatus, now: deps.now()))
     }
 
     func perform(_ action: BarItems.Action) {
@@ -1582,6 +1625,7 @@ final class KeyboardModel: ObservableObject {
         case .draw: tapDraw()
         case .pay: tapPay()
         case .insertPaid: insertPaid()
+        case .openSetup: _ = host?.open(URL(string: "pip://setup")!)
         }
     }
 

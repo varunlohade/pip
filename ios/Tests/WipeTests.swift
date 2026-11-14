@@ -373,7 +373,9 @@ final class SessionEndTests: XCTestCase {
         XCTAssertFalse(model.paired)
         XCTAssertTrue(model.notes.isEmpty)
         XCTAssertTrue(model.explainCache.isEmpty)
-        XCTAssertEqual(model.barItems.first?.title, "Open \(AppConfig.displayName) to sign in")
+        host.text = "can we meet ana tomorrow"
+        model.textChanged()
+        XCTAssertEqual(model.barItems.first?.title, KeyStatus.signedOut.title)
         XCTAssertEqual(wiped, wipesBefore, "no wipe from the keyboard")
         XCTAssertEqual(SharedStore.accountEpoch, epoch, "the shared stores stay; the app wipes them")
         XCTAssertFalse(SharedStore.notes.isEmpty)

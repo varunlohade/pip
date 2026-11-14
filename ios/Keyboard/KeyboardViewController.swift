@@ -21,7 +21,8 @@ final class KeyboardViewController: UIInputViewController, TextHost {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        SharedStore.dropSecretsFromAnEarlierInstall()
+        // Without Full Access the App Group is not the app's, so it always looks fresh: the check would drop the app's session.
+        if hasFullAccess { SharedStore.dropSecretsFromAnEarlierInstall() }
         let hosting = UIHostingController(rootView: KeyboardView(model: model))
         self.hosting = hosting
         hosting.view.translatesAutoresizingMaskIntoConstraints = false

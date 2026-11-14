@@ -1,5 +1,43 @@
 import Foundation
 
+/// Why the keyboard made no server chip for text that would have had one.
+enum KeyStatus: Equatable {
+    case needsFullAccess
+    /// Full Access is on, but the app never left a session for the keyboard.
+    case notConnected
+    /// The session ended: a logout, or the server refused it.
+    case signedOut
+    /// The router call failed, with a short reason.
+    case unreachable(String)
+
+    var title: String {
+        switch self {
+        case .needsFullAccess: "Turn on Full Access for \(AppConfig.displayName) in Settings"
+        case .notConnected: "Open \(AppConfig.displayName) once to connect the keyboard"
+        case .signedOut: "Signed out: open \(AppConfig.displayName)"
+        case .unreachable(let why): "\(AppConfig.displayName) can't reach the server: \(why)"
+        }
+    }
+
+    /// The router call failed: a dead session, or a short reason without codes.
+    static func from(_ error: Error) -> KeyStatus {
+        switch error {
+        case APIError.notPaired, APIError.http(401, _): return .signedOut
+        case APIError.http(429, _): return .unreachable("too many tries")
+        case APIError.http(let code, _): return .unreachable(code >= 500 ? "server error" : "request refused")
+        case let e as URLError:
+            switch e.code {
+            case .timedOut: return .unreachable("timed out")
+            case .notConnectedToInternet, .networkConnectionLost: return .unreachable("no internet")
+            case .appTransportSecurityRequiresSecureConnection, .secureConnectionFailed: return .unreachable("insecure address")
+            default: return .unreachable("no connection")
+            }
+        case is DecodingError: return .unreachable("unexpected answer")
+        default: return .unreachable("no connection")
+        }
+    }
+}
+
 /// What the suggestion bar shows, slot by slot. Pure: the view maps tones to colors and actions to model calls.
 enum BarItems {
     enum Tone: Equatable { case label, secondary, accent, success, warning }
@@ -21,6 +59,8 @@ enum BarItems {
         case pay
         /// Types the "Sent you 5 USDC ✓ <link>" line.
         case insertPaid
+        /// Opens the app, where the keyboard setup steps are.
+        case openSetup
     }
 
     struct Item: Equatable, Identifiable {
@@ -65,13 +105,14 @@ enum BarItems {
         var pay: Item?
         /// A payment the app just sent, with Insert.
         var paid: Item?
+        /// Why text that would have had a server chip got none.
+        var status: KeyStatus?
         var now = Date()
     }
 
     static func build(_ s: State) -> [Item] {
         // A dictionary meaning works offline, so it shows even before Full Access or pairing.
-        if !s.hasFullAccess { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Allow Full Access in Settings for \(AppConfig.keyboardName)", tone: .secondary)] }
-        if !s.paired { return s.explain.map { [$0] } ?? [Item(id: "info", title: "Open \(AppConfig.displayName) to sign in", tone: .secondary)] }
+        if !s.hasFullAccess || !s.paired { return s.explain.map { [$0] } ?? s.status.map { [statusItem($0)] } ?? [] }
         if let u = s.undo {
             return [Item(id: "written", title: u.label, tone: .success), Item(id: "undo", title: "Undo", action: .undo)]
         }
@@ -101,6 +142,7 @@ enum BarItems {
             if let d = s.draw { out.append(d) }
             out += smart
             let aboutTyping = !smart.isEmpty || s.explain != nil || s.draw != nil || s.pay != nil
+            if !aboutTyping, let st = s.status { out.append(statusItem(st)) }
             if !aboutTyping, s.copiedAvailable { out.append(Item(id: "copied", title: "Use copied message", action: .useCopied)) }
             if !aboutTyping, let a = s.nextUp { out.append(Item(id: "next", title: "Next: \(a.time)", detail: a.title, tone: .secondary)) }
             out = Array(out.prefix(3))
@@ -115,6 +157,12 @@ enum BarItems {
     }
 
     static let secretLine = "Sensitive text detected. AI is off."
+
+    /// The muted line that says why no server chip came. A tap opens the app, except for a server problem.
+    static func statusItem(_ st: KeyStatus) -> Item {
+        if case .unreachable = st { return Item(id: "status", title: st.title, tone: .secondary) }
+        return Item(id: "status", title: st.title, tone: .secondary, action: .openSetup)
+    }
 
     /// A chip the ✕ hides: an offer about the typing or the copy. Lines, Undo and the day's chips stay.
     static func dismissible(_ item: Item) -> Bool {

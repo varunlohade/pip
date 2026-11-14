@@ -115,10 +115,21 @@ final class BarItemsTests: XCTestCase {
         .init(hasFullAccess: true, paired: true, undo: nil, hasCalmOffer: false, bar: bar, copiedAvailable: false, nextUp: nil)
     }
 
-    func testNoFullAccessIsOneInfoLine() {
+    func testNoFullAccessShowsNothingUntilTextWouldAsk() {
         var s = state()
         s.hasFullAccess = false
-        XCTAssertEqual(BarItems.build(s).map(\.id), ["info"])
+        XCTAssertEqual(BarItems.build(s).map(\.id), [])
+        s.status = .needsFullAccess
+        XCTAssertEqual(BarItems.build(s).map(\.id), ["status"])
+        XCTAssertEqual(BarItems.build(s).first?.action, .openSetup)
+    }
+
+    func testAFailedRouterCallSaysWhy() {
+        var s = state()
+        s.status = KeyStatus.from(URLError(.timedOut))
+        XCTAssertEqual(BarItems.build(s).map(\.title), ["\(AppConfig.displayName) can't reach the server: timed out"])
+        XCTAssertNil(BarItems.build(s).first?.action)
+        XCTAssertEqual(KeyStatus.from(APIError.http(401, "")), .signedOut)
     }
 
     func testIdleOffersAtMostThree() {

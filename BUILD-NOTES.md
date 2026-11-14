@@ -1,5 +1,11 @@
 # Pip build notes
 
+## 0.5 (7)
+
+What to Test:
+
+1. If Pip's suggestions don't show in other apps, the bar now tells you why. Also see Pip > Account > Keyboard status.
+
 ## 0.5 (6)
 
 What to Test:

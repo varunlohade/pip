@@ -27,6 +27,25 @@ enum StoreKey: String, CaseIterable {
     case payPublicKey = "pay_public_key"
     /// "testnet" or "mainnet", as the server last confirmed it.
     case payNetwork = "pay_network"
+    /// What the keyboard last saw (KeyboardHeartbeat JSON), for the app's Keyboard status screen. It only lands with Full Access.
+    case keyboardHeartbeat = "keyboard_heartbeat"
+}
+
+/// The keyboard's own report: written on each appearance and after each router call.
+struct KeyboardHeartbeat: Codable, Equatable {
+    var at: Date
+    var fullAccess: Bool
+    var hasToken: Bool
+    var build: String
+    /// "ok: pay" or "failed: timed out".
+    var lastCall: String?
+    var lastCallAt: Date?
+
+    static var thisBuild: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(v) (\(b))"
+    }
 }
 
 /// Every App Group file, in one place. All are small JSON files, except the drawings folder.
@@ -264,6 +283,11 @@ enum SharedStore {
     static var payNetwork: String? {
         get { defaults?.string(forKey: StoreKey.payNetwork.rawValue) }
         set { defaults?.set(newValue, forKey: StoreKey.payNetwork.rawValue) }
+    }
+
+    static var keyboardHeartbeat: KeyboardHeartbeat? {
+        get { defaults?.data(forKey: StoreKey.keyboardHeartbeat.rawValue).flatMap { try? JSONDecoder().decode(KeyboardHeartbeat.self, from: $0) } }
+        set { defaults?.set(newValue.flatMap { try? JSONEncoder().encode($0) }, forKey: StoreKey.keyboardHeartbeat.rawValue) }
     }
 
     // MARK: secrets

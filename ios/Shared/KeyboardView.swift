@@ -83,6 +83,8 @@ struct SuggestionBar: View {
                 PanelCloseButton(id: "explain.close", action: model.closeExplain).padding(.trailing, 6)
             } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "secret" {
                 secretRow(first)
+            } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "status" {
+                statusRow(first)
             } else if !model.notesOpen, !model.writeOpen, let first = items.first, first.id == "pay" || first.id == "paid" {
                 dismissButton
                 if case .whichChain = model.xchainOffer { whichChainRow } else { PayBarRow(item: first, perform: model.perform) }
@@ -165,6 +167,24 @@ struct SuggestionBar: View {
         .padding(.leading, 12)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("chip.secret")
+    }
+
+    /// Why no server chip came: one muted line. A tap opens the app when the fix is there.
+    private func statusRow(_ item: BarItems.Item) -> some View {
+        Button { if let a = item.action { model.perform(a) } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.circle").font(.system(size: 11, weight: .semibold))
+                Text(item.title).font(.system(size: 13.5)).lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(palette.secondaryLabel)
+            .padding(.leading, 12)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(item.action == nil)
+        .accessibilityIdentifier("chip.status")
     }
 
     /// An 0x address with no chain: one chip per EVM chain; a tap adds "on base" to the text.
