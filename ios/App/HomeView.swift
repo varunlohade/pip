@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Home (B2-2): the sky with the wordmark, how much Pip explained today, the last drawing with Replay, things to try,
+/// Home (B2-2): the top fade with the wordmark, how much Pip explained today, the last drawing with Replay, things to try,
 /// the plans caught in chats with Add, and the "Ask Pip" bar at the bottom.
 struct HomeView: View {
     @EnvironmentObject var session: Session
@@ -29,7 +29,7 @@ struct HomeView: View {
         ZStack(alignment: .bottom) {
             ScrollView {
                 ZStack(alignment: .top) {
-                    SkyGradient().frame(height: 300).frame(maxWidth: .infinity)
+                    TopFade().frame(height: 300).frame(maxWidth: .infinity)
                     VStack(alignment: .leading, spacing: 0) {
                         header
                         Text(headline).font(Theme.Font.title).tracking(Theme.Tracking.title).foregroundStyle(Theme.Color.text1)

@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// All colors, type, sizes and motion. Direction B2: white ground, painted sky only on onboarding and the top of Home,
+/// All colors, type, sizes and motion. Direction B2: white ground, a soft white fade only on onboarding and the top of Home,
 /// flat sky-blue pills, frosted white second pills, white cards with a thin ring shadow. Light only: B2 has no dark version.
 enum Theme {
     enum Color {
@@ -13,10 +13,10 @@ enum Theme {
         static let ice = SwiftUI.Color(hex: 0xDEF6FF)
         static let iceSoft = SwiftUI.Color(hex: 0xEFF9FF)
         static let navy = SwiftUI.Color(hex: 0x04314D)
-        /// The painted sky behind onboarding and the top of Home, top to bottom; it ends in bg.
-        static let skyTop = SwiftUI.Color(hex: 0x8FD3FF)
-        static let skyMid = SwiftUI.Color(hex: 0xB9E4FF)
-        static let skyLow = SwiftUI.Color(hex: 0xE3F5FF)
+        /// The soft neutral fade behind onboarding and the top of Home, top to bottom; it ends in bg.
+        static let fadeTop = SwiftUI.Color(hex: 0xEEF0F3)
+        static let fadeMid = SwiftUI.Color(hex: 0xF5F6F8)
+        static let fadeLow = SwiftUI.Color(hex: 0xFBFBFC)
 
         static let bg = SwiftUI.Color.white
         static let card = SwiftUI.Color.white

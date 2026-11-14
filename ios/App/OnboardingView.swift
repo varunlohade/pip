@@ -101,10 +101,10 @@ struct OnboardingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(alignment: .top) {
-            // B2: the sky stays on onboarding, fading to white behind the steps.
+            // The soft top fade stays on onboarding, into white behind the steps.
             ZStack(alignment: .top) {
                 Theme.Color.bg
-                SkyGradient().frame(height: 300)
+                TopFade().frame(height: 300)
             }
             .ignoresSafeArea()
         }
@@ -262,7 +262,7 @@ struct StepDots: View {
         HStack(spacing: Theme.Space.xs) {
             ForEach(0..<count, id: \.self) { i in
                 Capsule()
-                    .fill(i <= current ? Theme.Color.sky : Color.white.opacity(0.8))
+                    .fill(i <= current ? Theme.Color.sky : Theme.Color.hairline)
                     .frame(width: i == current ? Theme.Space.l : 6, height: 6)
             }
         }

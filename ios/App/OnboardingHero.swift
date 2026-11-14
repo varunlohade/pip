@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The first screen (B2-1): the sky, the wordmark, the buddy turning a typed plan into a calendar event, the headline and one sky button.
+/// The first screen (B2-1): the top fade, the wordmark, the buddy turning a typed plan into a calendar event, the headline and one sky button.
 /// Positions follow the 390 x 844 mock and scale with the screen height.
 struct OnboardingHero: View {
     let onAdd: () -> Void
@@ -12,7 +12,7 @@ struct OnboardingHero: View {
             let k = geo.size.height / 844
             ZStack(alignment: .top) {
                 Theme.Color.bg
-                SkyGradient().frame(height: 560 * k).frame(maxWidth: .infinity)
+                TopFade().frame(height: 560 * k).frame(maxWidth: .infinity)
                 Wordmark(size: 30).padding(.top, 70 * k)
                 Buddy(size: 90).padding(.top, 170 * k)
                 VStack(alignment: .leading, spacing: 12 * k) {

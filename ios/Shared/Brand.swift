@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Pip's B2 look, shared by the app and the keyboard: the buddy, the wordmark, sky and frosted pills, ring cards and the sky gradient.
+// Pip's B2 look, shared by the app and the keyboard: the buddy, the wordmark, sky and frosted pills, ring cards and the top fade.
 // Values come from the B2 mocks (pip-design/src/pip.html, style E).
 
 /// Pip's buddy: a sky-blue teardrop whose tip is a pen nib, with two white eyes. Drawn as a vector, never a bitmap.
@@ -152,13 +152,13 @@ extension View {
     }
 }
 
-/// The painted sky that fades to the page. Onboarding and the top of Home only.
-struct SkyGradient: View {
+/// A soft neutral fade into the page white. Onboarding and the top of Home only.
+struct TopFade: View {
     var body: some View {
         LinearGradient(stops: [
-            .init(color: Theme.Color.skyTop, location: 0),
-            .init(color: Theme.Color.skyMid, location: 0.40),
-            .init(color: Theme.Color.skyLow, location: 0.72),
+            .init(color: Theme.Color.fadeTop, location: 0),
+            .init(color: Theme.Color.fadeMid, location: 0.40),
+            .init(color: Theme.Color.fadeLow, location: 0.72),
             .init(color: Theme.Color.bg, location: 1),
         ], startPoint: .top, endPoint: .bottom)
         .accessibilityHidden(true)
