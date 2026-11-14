@@ -134,6 +134,6 @@ export const config = {
     mailPerEmail: { limit: 5, windowMs: 3_600_000 },
     refresh: { limit: 30, windowMs: 60_000 },
     // A device account needs no proof of who asks, so one address gets few of them.
-    deviceAuth: { limit: 5, windowMs: 3_600_000 },
+    deviceAuth: { limit: 30, windowMs: 3_600_000 },
   },
 };
