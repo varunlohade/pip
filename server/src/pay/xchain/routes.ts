@@ -86,7 +86,7 @@ export function xchainRoutes(app: Hono<Env>, base: { db: Db; now: () => number }
     const n = JSON.parse(r.numbers_json) as Numbers;
     return {
       kind: 'xchain', route: 'NEAR Intents (1Click)', verified: true, mode: r.mode,
-      destination: { chain: r.dest_chain, chain_name: chainName(r.dest_chain), recipient: r.dest_recipient, asset: r.dest_asset },
+      destination: { chain: r.dest_chain, chain_name: chainName(r.dest_chain), recipient: r.dest_recipient, asset: r.dest_asset, first_time: !store.paidBefore(r) },
       amount_out: n.amount_out, min_amount_out: n.min_amount_out, max_amount_in: n.max_amount_in, min_amount_in: n.min_amount_in,
       fee: n.fee, rate: n.rate, usd: n.usd, eta_seconds: n.eta_seconds,
       deposit_address: r.deposit_address, refund_to: r.refund_to,

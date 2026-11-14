@@ -204,6 +204,12 @@ final class KeyboardModel: ObservableObject {
     var payTask: Task<Void, Never>?
     /// Payments already proposed from this text, so the chip does not come back after the tap.
     var payDone: Set<PayDraft> = []
+    /// "send 5 USDC to 0x… on base": the server's reading, or why cross-chain cannot run here. See KeyboardModel+Pay.
+    @Published var xchainOffer: XchainOffer? { didSet { noteChipsShown() } }
+    var xchainTask: Task<Void, Never>?
+    /// The words last sent to /v1/pay/xchain/parse, and the ones already tapped, so each is asked and offered once.
+    var xchainAsked: String?
+    var xchainDone: Set<String> = []
     /// The explain card or the visual panel, in place of the keys. Nil when the keys show.
     @Published var explainPanel: ExplainPanel?
     /// The calendar panel, in place of the keys. See KeyboardModel+Calendar.
@@ -690,7 +696,7 @@ final class KeyboardModel: ObservableObject {
     /// The three word slots own the bar while a word is half typed, and after a space when no chip shows.
     /// An answer chip (a sum, a meaning) always wins over them. The tool icons step aside for the slots.
     var showsWordSlots: Bool {
-        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, payOffer == nil, paySent == nil, payPanel == nil, undo == nil else { return false }
+        guard !words.slots.isEmpty, !notesOpen, !writeOpen, explainPanel == nil, explainOffer == nil, payOffer == nil, xchainOffer == nil, paySent == nil, payPanel == nil, undo == nil else { return false }
         if case .idle = bar {} else { return false }
         return words.midWord || barItems.isEmpty
     }
@@ -863,7 +869,11 @@ final class KeyboardModel: ObservableObject {
         explainCache = [:]
         explainOffer = nil
         payTask?.cancel()
+        xchainTask?.cancel()
         payOffer = nil
+        xchainOffer = nil
+        xchainAsked = nil
+        xchainDone = []
         paySent = nil
         payDone = []
         payPanel = nil
@@ -1005,7 +1015,7 @@ final class KeyboardModel: ObservableObject {
 
     /// Notes when a chip about the typing first shows, so typing on past it can be counted.
     private func noteChipsShown() {
-        let visible = !smart.isEmpty || explainOffer != nil || payOffer != nil
+        let visible = !smart.isEmpty || explainOffer != nil || payOffer != nil || xchainOffer != nil
         if !visible { chipSeen = nil } else if chipSeen == nil { chipSeen = (deps.now(), ChipTiming.words(typed)) }
     }
 
@@ -1024,6 +1034,7 @@ final class KeyboardModel: ObservableObject {
         for t in [smartTask, fixTask, suggestTask] { t?.cancel() }
         if !smart.isEmpty { smart = [] }
         if payOffer != nil { payOffer = nil }
+        if xchainOffer != nil { xchainOffer = nil }
         clearExplainOffer()
         fixPlan = nil
         chipSeen = nil

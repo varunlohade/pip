@@ -33,6 +33,12 @@ export function openXchainStore(db: Db, now: () => number) {
         .run(n.depositAddress, n.numbersJson, n.quoteJson, n.quoteAt, n.deadline, intentId);
       return moved;
     },
+    /** True when another payment of this user already went to this address on this chain. */
+    paidBefore(r: Pick<XchainRow, 'intent_id' | 'user_id' | 'dest_chain' | 'dest_recipient'>): boolean {
+      return q(`SELECT 1 FROM pay_xchain x JOIN pay_phone_intents i ON i.id = x.intent_id
+        WHERE x.user_id = ? AND x.dest_chain = ? AND x.dest_recipient = ? AND x.intent_id != ? AND i.status = 'sent'`)
+        .get(r.user_id, r.dest_chain, r.dest_recipient, r.intent_id) !== undefined;
+    },
     /** True for the one caller that claims the deposit notice. */
     claimNotice(intentId: string): boolean {
       return q('UPDATE pay_xchain SET deposit_notified = 1 WHERE intent_id = ? AND deposit_notified = 0').run(intentId).changes > 0;

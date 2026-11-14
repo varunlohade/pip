@@ -22,7 +22,10 @@ struct DemoAPI: KeyboardAPI {
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String { throw APIError.message("no sharing in the intro") }
     func rates() async throws -> Calc.Rates { throw APIError.message("no rates in the intro") }
     func createPayIntent(_ d: PayDraft) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
-    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned { throw APIError.message("no payments in the intro") }
+    func unsignedPay(_ i: PayIntent, approverKey: String?, proof: Data?) async throws -> PayUnsigned { throw APIError.message("no payments in the intro") }
+    func parseXchain(_ text: String) async throws -> XchainParsed { throw APIError.message("no payments in the intro") }
+    func quoteXchain(_ p: XchainParsed) async throws -> XchainQuote { throw APIError.message("no payments in the intro") }
+    func xchainStatus(_ id: String) async throws -> XchainStatus { throw APIError.message("no payments in the intro") }
     func submitPay(_ id: String, signature: Data) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
     func rejectPay(_ id: String) async throws -> PayIntent { throw APIError.message("no payments in the intro") }
 }

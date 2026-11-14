@@ -95,16 +95,16 @@ final class KeyboardPayTests: XCTestCase {
         await card()
         model.approvePayInKeyboard()
         await until("refused") { model.payPanel?.phase == .failed(PayTxCheck.refusedLine) }
-        XCTAssertEqual(signer.asks, 0, "refused before Face ID")
+        XCTAssertEqual(signer.asks, 1, "Face ID came first (for the proof), but the bad bytes were never signed")
         XCTAssertEqual(api.submitted.count, 0)
         await until("reject") { api.rejected.count == 1 }
     }
 
     func testTheSameTypedAgainOffersTheChipAgain() async {
-        api.newRecipient = true
         set("send 5 USDC to ana.testnet")
         model.perform(.pay)
-        await until("the bar line") { model.bar == .done("Open Pip to approve") }
+        await until("the card") { model.payPanel != nil }
+        model.closePayPanel()
         XCTAssertNil(model.payItem, "no chip again for the same text")
         set("")
         set("send 5 USDC to ana.testnet")
@@ -128,27 +128,55 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertEqual(api.submitted.count, 0)
     }
 
-    func testNoFaceIDInTheKeyboardOpensTheApp() async {
+    func testNoFaceIDInTheKeyboardSaysSoAndSendsNothing() async {
         signer.answer = .unavailable
         await card()
         model.approvePayInKeyboard()
-        await until("the app") { !host.opened.isEmpty }
-        XCTAssertEqual(host.opened.first?.absoluteString, "pip://approve/\(PayIntent.fakeID)")
+        await until("the note") { model.payPanel?.note != nil }
+        XCTAssertEqual(model.payPanel?.note, "Pip could not ask for Face ID here. Nothing was sent.")
+        XCTAssertEqual(host.opened, [], "the keyboard never hands a payment to the app")
         XCTAssertEqual(api.submitted.count, 0)
-        XCTAssertNil(model.payPanel)
+        XCTAssertEqual(api.calls.filter { $0 == "unsigned" }.count, 0, "nothing is built before Face ID")
     }
 
-    func testNewRecipientOpensTheApp() async {
+    /// Boss man's call: a new recipient is approved in the keyboard too, after the owner taps how the address ends and Face ID.
+    func testNewRecipientIsApprovedInTheKeyboardAfterTheAddressCheck() async throws {
         api.newRecipient = true
         set("send 5 USDC to ana.testnet")
         model.perform(.pay)
-        await until("the bar line") { model.bar == .done("Open Pip to approve") }
-        XCTAssertNil(model.payPanel)
-        XCTAssertEqual(host.opened.count, 1)
-        XCTAssertEqual(store.payPending, PayIntent.fakeID, "the app finds it when opened by hand")
+        await until("the card") { model.payPanel != nil }
+        XCTAssertEqual(host.opened, [])
+        let c = try XCTUnwrap(model.payPanel?.confirm, "First time paying this address")
+        XCTAssertEqual(c.options.count, 3)
+        XCTAssertEqual(Set(c.options).count, 3)
+        XCTAssertTrue(c.options.contains("tnet"))
+        XCTAssertFalse(model.payPanel!.canApprove, "Approve stays off until the ending is picked")
+        model.approvePayInKeyboard()
+        XCTAssertEqual(signer.asks, 0)
+        model.pickAddressEnd(c.options.first { $0 != "tnet" }!)
+        XCTAssertEqual(model.payPanel?.note, "That is not how this address ends. Check it and try again.")
+        XCTAssertFalse(model.payPanel!.canApprove)
+        model.pickAddressEnd("tnet")
+        XCTAssertTrue(model.payPanel!.canApprove)
+        model.approvePayInKeyboard()
+        await until("sent") { model.payPanel?.phase == .sent }
+        XCTAssertEqual(signer.asks, 1, "one Face ID signs the proof and the transaction")
+        let proof = try XCTUnwrap(api.proofs.first ?? nil)
+        let i = PayIntent.fake(PayDraft(amount: "5", token: "USDC", recipient: "ana.testnet", trigger: ""), newRecipient: true)
+        XCTAssertTrue(signer.key.publicKey.isValidSignature(proof, for: PayApproval.proofHash(i)), "the proof is over this exact intent")
+        XCTAssertFalse(signer.key.publicKey.isValidSignature(proof, for: PayApproval.proofHash(PayIntent.fake(PayDraft(amount: "50", token: "USDC", recipient: "ana.testnet", trigger: "")))))
+        XCTAssertEqual(api.unsignedWith, [nil], "the keyboard never holds the approver key")
     }
 
-    func testNoKeyOnThisPhoneOpensTheApp() async {
+    /// The proof text matches the server's approvalMessage byte for byte (server test: pay-phone.test.ts).
+    func testProofHashMatchesTheServer() {
+        let i = PayIntent(id: String(repeating: "ab", count: 16), amount: "0.1", token: "NEAR", recipient: "ana.testnet", status: "pending", network: "testnet",
+                          tx_hash: nil, explorer_url: nil, deep_link: "")
+        let text = "pip-approve/v1\n\(i.id)\ntestnet\n0.1\nNEAR\nana.testnet"
+        XCTAssertEqual(PayApproval.proofHash(i), Data(SHA256.hash(data: Data(text.utf8))))
+    }
+
+    func testNoKeyOnThisPhoneOpensTheAppToSetUp() async {
         signer.hasKey = false
         host.canOpen = true
         set("send 5 USDC to ana.testnet")
@@ -157,13 +185,14 @@ final class KeyboardPayTests: XCTestCase {
         XCTAssertNil(model.payPanel)
     }
 
-    func testServerRefusalOpensTheApp() async {
+    func testServerRefusalShowsItsReasonOnTheCard() async {
         api.unsignedError = APIError.http(403, #"{"error":"over the 25 USDC daily limit"}"#)
         await card()
         model.approvePayInKeyboard()
-        await until("the app") { !host.opened.isEmpty }
-        XCTAssertNil(model.payPanel)
-        XCTAssertEqual(signer.asks, 0)
+        await until("the note") { model.payPanel?.note != nil }
+        XCTAssertEqual(model.payPanel?.note, "Over the 25 USDC daily limit")
+        XCTAssertEqual(host.opened, [])
+        XCTAssertEqual(api.submitted.count, 0)
     }
 
     func testRejectTellsTheServerAndSendsNothing() async {

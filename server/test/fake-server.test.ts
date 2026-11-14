@@ -83,3 +83,45 @@ test('fake server: pay runs the phone-signed flow; the signature is checked and 
   assert.match(sent.json.explorer_url, /^https:\/\/testnet\.nearblocks\.io\/txns\//);
   assert.equal((await call('GET', '/v1/pay/wallet')).json.balances.USDC, '37.1');
 });
+
+test('fake server: cross-chain quote, re-quote after /_tick, keyboard proof, submit, then swapping -> delivered', async (t) => {
+  const { generateKeyPairSync, sign, createHash } = await import('node:crypto');
+  const { approvalMessage } = await import('../src/pay/phone/tx.ts');
+  const child = spawn(process.execPath, [script], { env: { ...process.env, PORT: '0', NODE_ENV: '' }, stdio: ['ignore', 'pipe', 'inherit'] });
+  t.after(() => child.kill());
+  let out = '';
+  child.stdout.setEncoding('utf8');
+  while (!/127\.0\.0\.1:(\d+)/.test(out)) out += (await once(child.stdout, 'data'))[0];
+  const base = `http://127.0.0.1:${/127\.0\.0\.1:(\d+)/.exec(out)![1]}`;
+  const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
+    const res = await fetch(base + path, {
+      method, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer pkd_fake', 'X-User-Action': 'tap', ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: res.status, json: (await res.json()) as any };
+  };
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const hex = Buffer.from(publicKey.export({ format: 'jwk' }).x!, 'base64url').toString('hex');
+  const approver = (await call('POST', '/v1/pay/approver')).json.approver_key;
+  assert.equal((await call('POST', '/v1/pay/xchain/quote', { amount: '5', token: 'USDC', chain: 'base', recipient: '0xd8da6bf26964af9d7eed9e10c19b4ae4ff1b9da3' })).status, 409, 'testnet first');
+  assert.equal((await call('PUT', '/v1/pay/network', { network: 'mainnet' }, { 'X-Pay-Approver': approver })).status, 200);
+  assert.equal((await call('POST', '/v1/pay/register', { publicKey: hex }, { 'X-Pay-Approver': approver })).status, 200);
+  const q = await call('POST', '/v1/pay/xchain/quote', { amount: '5', token: 'USDC', chain: 'base', recipient: '0xd8da6bf26964af9d7eed9e10c19b4ae4ff1b9da3' });
+  assert.equal(q.status, 201, JSON.stringify(q.json));
+  assert.equal(q.json.verified, true);
+  assert.equal(q.json.destination.first_time, true);
+  await call('POST', '/_tick', { ms: 61_000 });
+  const fields = { amount: q.json.intent.amount, token: q.json.intent.token, recipient: q.json.intent.recipient };
+  const hash = createHash('sha256').update(approvalMessage({ id: q.json.intent.id, network: 'mainnet', ...fields })).digest();
+  const u = await call('POST', `/v1/pay/intents/${q.json.intent.id}/unsigned`, fields, { 'X-Pay-Proof': sign(null, hash, privateKey).toString('base64') });
+  assert.equal(u.status, 200, JSON.stringify(u.json));
+  assert.equal(u.json.requoted, true);
+  assert.notEqual(u.json.recipient, q.json.intent.recipient, 'a new deposit account');
+  const sig = sign(null, Buffer.from(u.json.sign_hash_hex, 'hex'), privateKey).toString('base64');
+  assert.equal((await call('POST', `/v1/pay/intents/${q.json.intent.id}/submit`, { signature: sig })).status, 200);
+  assert.equal((await call('GET', `/v1/pay/xchain/${q.json.intent.id}`)).json.status, 'swapping');
+  await call('POST', '/_tick', { ms: 6_000 });
+  const done = (await call('GET', `/v1/pay/xchain/${q.json.intent.id}`)).json;
+  assert.equal(done.status, 'delivered');
+  assert.equal(done.delivered_tx[0].explorerUrl, 'https://basescan.org/tx/0xfa4e');
+});

@@ -13,10 +13,14 @@ protocol KeyboardAPI {
     func explainVisual(_ topic: String) async throws -> Data
     func shareDrawing(_ png: Data, preview: Data?, title: String) async throws -> String
     func rates() async throws -> Calc.Rates
-    /// A payment proposal. Only the app can approve it.
+    /// A payment proposal. The keyboard approves it with Face ID.
     func createPayIntent(_ d: PayDraft) async throws -> PayIntent
-    /// The exact transaction to sign. Without the approver key the server builds it only for a recipient paid before.
-    func unsignedPay(_ i: PayIntent, approverKey: String?) async throws -> PayUnsigned
+    /// The exact transaction to sign. For a recipient never paid before the server needs `proof` (Face ID signed it).
+    func unsignedPay(_ i: PayIntent, approverKey: String?, proof: Data?) async throws -> PayUnsigned
+    /// Cross-chain: the server's reading of the typed words, a checked quote, and where a sent swap is.
+    func parseXchain(_ text: String) async throws -> XchainParsed
+    func quoteXchain(_ p: XchainParsed) async throws -> XchainQuote
+    func xchainStatus(_ id: String) async throws -> XchainStatus
     func submitPay(_ id: String, signature: Data) async throws -> PayIntent
     func rejectPay(_ id: String) async throws -> PayIntent
 }

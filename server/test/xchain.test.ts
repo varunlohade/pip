@@ -16,6 +16,7 @@ import { parseXchain } from '../src/pay/xchain/parse.ts';
 import { mapStatus } from '../src/pay/xchain/routes.ts';
 import { type OneClick, type OneClickQuote, type OneClickStatus, type PriceSource } from '../src/pay/xchain/sources.ts';
 import { buildDeposit } from '../src/pay/xchain/tx.ts';
+import { approvalMessage, sha256 } from '../src/pay/phone/tx.ts';
 import { diffBps, fromBase, parsePrice, toBase, usdText, usdValue } from '../src/pay/xchain/units.ts';
 
 const TOKENS = JSON.parse(readFileSync(new URL('./fixtures/oneclick-tokens.json', import.meta.url), 'utf8')) as TokenRow[];
@@ -337,7 +338,7 @@ function world(o: { mainnet?: boolean; feeBps?: bigint; relayDown?: boolean; tok
     assert.equal((await call('POST', '/v1/pay/register', { publicKey: keyHex }, true)).status, 200);
   };
   const signHash = (hex: string, k: KeyObject = privateKey) => sign(null, Buffer.from(hex, 'hex'), k).toString('base64');
-  return { s, fake, call, start, quotes, deposits, keyHex, signHash, tick: (ms: number) => { clock += ms; }, setFee: (f: bigint) => { feeBps = f; }, setStatus: (st: OneClickStatus['status']) => { ocStatus = st; } };
+  return { s, token, privateKey, fake, call, start, quotes, deposits, keyHex, signHash, tick: (ms: number) => { clock += ms; }, setFee: (f: bigint) => { feeBps = f; }, setStatus: (st: OneClickStatus['status']) => { ocStatus = st; } };
 }
 
 const quoteBody = { amount: '5', token: 'USDC', chain: 'base', recipient: EVM };
@@ -448,6 +449,27 @@ test('xchain route: NEAR origin wraps; the signing window is 2 minutes; an old q
   const bad = await w.call('POST', `/v1/pay/intents/${q2.intent.id}/unsigned`, { amount: q2.intent.amount, token: 'NEAR', recipient: q2.intent.recipient }, true);
   assert.equal(bad.status, 422);
   assert.match((await bad.json()).error, /new quote: the fee is/);
+});
+
+test('xchain route: the keyboard approves with a Face ID proof over the intent; first_time turns false after a sent payment', async () => {
+  const w = world();
+  await w.start();
+  const pay = async () => {
+    const q = await (await w.call('POST', '/v1/pay/xchain/quote', quoteBody)).json();
+    const fields = { amount: q.intent.amount, token: q.intent.token, recipient: q.intent.recipient };
+    const proof = sign(null, sha256(approvalMessage({ id: q.intent.id, network: 'mainnet', ...fields })), w.privateKey).toString('base64');
+    const u = await w.s.call(w.token, 'POST', `/v1/pay/intents/${q.intent.id}/unsigned`, fields, { 'x-pay-proof': proof });
+    assert.equal(u.status, 200, await u.clone().text());
+    return { q, u: await u.json() };
+  };
+  const first = await pay();
+  assert.equal(first.q.destination.first_time, true);
+  assert.equal(first.u.xchain.destination.first_time, true);
+  assert.equal((await w.call('POST', `/v1/pay/intents/${first.q.intent.id}/submit`, { signature: w.signHash(first.u.sign_hash_hex) })).status, 200);
+  const second = await pay();
+  assert.equal(second.q.destination.first_time, false, 'paid this address on this chain before');
+  const other = await (await w.call('POST', '/v1/pay/xchain/quote', { ...quoteBody, chain: 'arb' })).json();
+  assert.equal(other.destination.first_time, true, 'the same address on another chain is new');
 });
 
 test('xchain route: a named NEAR recipient must exist (fix 3)', async () => {

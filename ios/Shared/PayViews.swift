@@ -30,7 +30,19 @@ struct PayBarRow: View {
     let perform: (BarItems.Action) -> Void
 
     var body: some View {
-        if item.id == "paid" { sent } else { chip }
+        if item.id == "paid" { sent } else if item.action == nil { info } else { chip }
+    }
+
+    /// A cross-chain ask that cannot run here, in one quiet line: "Cross-chain pay needs Mainnet. Switch in Pip Pay."
+    private var info: some View {
+        HStack(spacing: 8) {
+            Buddy(size: 22)
+            Text(item.title).font(.system(size: 14.5)).foregroundStyle(Theme.Color.text2).lineLimit(2).minimumScaleFactor(0.8)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("chip.pay.info")
     }
 
     private var chip: some View {
@@ -418,10 +430,10 @@ struct PayPanelBar: View {
         HStack(spacing: 10) {
             Buddy(size: 24)
             let i = panel.intent
-            Text(panel.phase == .sent ? "Payment sent" : "Send \(i.amount) \(i.token) to \(i.recipient)")
+            Text(PayPanelBar.title(panel))
                 .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.text1).lineLimit(1).minimumScaleFactor(0.75)
             Spacer(minLength: 4)
-            if panel.phase == .sent, let s = i.explorer, let url = URL(string: s) {
+            if panel.phase == .sent, panel.xchain == nil, let s = i.explorer, let url = URL(string: s) {
                 Link(destination: url) {
                     HStack(spacing: 4) { Text("View tx"); Image(systemName: "arrow.up.right.square") }
                         .font(.system(size: 16, weight: .medium)).foregroundStyle(Theme.Color.skyDeep)
@@ -434,6 +446,14 @@ struct PayPanelBar: View {
         .padding(.horizontal, 12)
         .frame(maxHeight: .infinity)
     }
+
+    static func title(_ p: PayPanel) -> String {
+        if let card = p.xchain, let n = card.numbers, let d = card.destination {
+            if p.phase == .sent { return p.swap.map { $0.line(chain: d.chain_name) } ?? "Payment sent" }
+            return p.requoted ? "Price updated" : "Send \(n.amount_out.text) \(n.amount_out.symbol) on \(d.chain_name)"
+        }
+        return p.phase == .sent ? "Payment sent" : "Send \(p.intent.amount) \(p.intent.token) to \(p.intent.recipient)"
+    }
 }
 
 struct PayKeyboardCard: View {
@@ -441,10 +461,15 @@ struct PayKeyboardCard: View {
     let approve: () -> Void
     let reject: () -> Void
     let insert: () -> Void
+    var pick: (String) -> Void = { _ in }
 
     var body: some View {
+        if let card = panel.xchain { XchainKeyboardCard(panel: panel, card: card, approve: approve, reject: reject, insert: insert, pick: pick) } else { plain }
+    }
+
+    private var plain: some View {
         let i = panel.intent
-        VStack(spacing: 10) {
+        return VStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -506,12 +531,15 @@ struct PayKeyboardCard: View {
                         }
                     }
                     .buttonStyle(SkyPill(height: 50, font: .system(size: 17, weight: .semibold)))
-                    .disabled(panel.phase != .ready)
+                    .disabled(!panel.canApprove)
                     .accessibilityIdentifier("paycard.approve")
+                }
+                if let c = panel.confirm, !c.confirmed {
+                    AddressConfirmRow(confirm: c, pick: pick)
                 }
                 if let note = panel.note {
                     Text(note).font(.system(size: 14)).foregroundStyle(Theme.Color.warning).lineLimit(2).accessibilityIdentifier("paycard.note")
-                } else {
+                } else if panel.confirm == nil {
                     hint("You paid this account before. Your key signs it on this phone.")
                 }
             }
@@ -525,6 +553,136 @@ struct PayKeyboardCard: View {
             Buddy(size: 18)
             Text(text).font(.system(size: 14)).foregroundStyle(Theme.Color.text2).lineLimit(2)
         }
+    }
+}
+
+/// "First time paying this address": the owner taps how it ends, one of three, before Face ID.
+struct AddressConfirmRow: View {
+    let confirm: AddressConfirm
+    let pick: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("First time paying this address. Tap how it ends:", systemImage: "exclamationmark.triangle.fill")
+                .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.Color.warning).lineLimit(2)
+                .accessibilityIdentifier("paycard.firsttime")
+            HStack(spacing: 8) {
+                ForEach(confirm.options, id: \.self) { end in
+                    Button { pick(end) } label: {
+                        Text("\u{2026}\(end)").font(.system(size: 16, weight: .semibold, design: .monospaced))
+                            .frame(maxWidth: .infinity).frame(height: 36)
+                    }
+                    .buttonStyle(FrostPill(height: 36, font: .system(size: 16, weight: .semibold, design: .monospaced)))
+                    .overlay(Capsule().stroke(confirm.picked == end ? Theme.Color.warning : .clear, lineWidth: 2))
+                    .accessibilityIdentifier("paycard.end.\(end)")
+                }
+            }
+        }
+    }
+}
+
+/// The cross-chain card (design C): what arrives where, the most you pay, fee, rate, route, time and where refunds go.
+struct XchainKeyboardCard: View {
+    let panel: PayPanel
+    let card: XchainCard
+    let approve: () -> Void
+    let reject: () -> Void
+    let insert: () -> Void
+    let pick: (String) -> Void
+
+    var body: some View {
+        let t = XchainCardText(card)
+        VStack(spacing: 8) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 5) {
+                    if panel.requoted, panel.phase != .sent {
+                        Label("Price updated. Check it and approve again.", systemImage: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 13.5, weight: .semibold)).foregroundStyle(Theme.Color.warning)
+                            .accessibilityIdentifier("xcard.requoted")
+                    }
+                    Text(t.gets).font(.system(size: 19, weight: .bold)).foregroundStyle(Theme.Color.text1)
+                        .lineLimit(2).minimumScaleFactor(0.7).accessibilityIdentifier("xcard.gets")
+                    Text(t.pays).font(.system(size: 14.5, weight: .medium)).foregroundStyle(Theme.Color.text1)
+                        .lineLimit(2).minimumScaleFactor(0.8).accessibilityIdentifier("xcard.pays")
+                    if panel.phase == .sent, let s = panel.swap {
+                        swapRow(s)
+                    } else {
+                        detail(t.fee, t.rate, id: "xcard.fee")
+                        detail("\(t.route) \u{00B7} \(t.eta)", t.refund, id: "xcard.route")
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
+            }
+            if panel.phase == .sent {
+                if case .delivered = panel.swap {
+                    Button("Insert in chat", action: insert).buttonStyle(SkyPill(height: 46, font: .system(size: 17, weight: .semibold)))
+                        .accessibilityIdentifier("paycard.insert")
+                }
+            } else if case .failed(let line) = panel.phase {
+                quiet(line, warn: true)
+            } else {
+                if let why = t.blocked {
+                    quiet(why, warn: true).accessibilityIdentifier("xcard.blocked")
+                } else if let c = panel.confirm, !c.confirmed {
+                    AddressConfirmRow(confirm: c, pick: pick)
+                }
+                if let note = panel.note { quiet(note, warn: true).accessibilityIdentifier("paycard.note") }
+                HStack(spacing: 10) {
+                    Button("Reject", action: reject).buttonStyle(FrostPill(height: 46, font: .system(size: 17, weight: .semibold)))
+                        .frame(width: 110)
+                        .accessibilityIdentifier("paycard.reject")
+                    Button(action: approve) {
+                        HStack(spacing: 8) {
+                            if panel.phase == .approving { ProgressView().tint(.white) } else { Image(systemName: "faceid") }
+                            Text("Approve with Face ID")
+                        }
+                    }
+                    .buttonStyle(SkyPill(height: 46, font: .system(size: 17, weight: .semibold)))
+                    .disabled(!panel.canApprove)
+                    .accessibilityIdentifier("paycard.approve")
+                }
+            }
+        }
+        .padding(.horizontal, 8).padding(.top, 2).padding(.bottom, 4)
+    }
+
+    private func detail(_ a: String, _ b: String, id: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(a).font(.system(size: 13)).foregroundStyle(Theme.Color.text2).lineLimit(1).minimumScaleFactor(0.75)
+            Text(b).font(.system(size: 13)).foregroundStyle(Theme.Color.text2).lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier(id)
+    }
+
+    @ViewBuilder private func swapRow(_ s: SwapState) -> some View {
+        let chain = card.destination?.chain_name ?? ""
+        HStack(spacing: 6) {
+            switch s {
+            case .swapping: ProgressView()
+            case .delivered: Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.Color.success)
+            case .refunded, .failed: Image(systemName: "arrow.uturn.backward.circle.fill").foregroundStyle(Theme.Color.warning)
+            }
+            Text(s.line(chain: chain)).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.Color.text1).lineLimit(2)
+                .accessibilityIdentifier("xcard.status")
+        }
+        if case .delivered(let u?) = s, let url = URL(string: u) {
+            Link(destination: url) {
+                HStack(spacing: 4) { Text("View on \(chain) explorer"); Image(systemName: "arrow.up.right.square") }
+                    .font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.Color.skyDeep)
+            }
+            .accessibilityIdentifier("xcard.explorer")
+        }
+    }
+
+    private func quiet(_ text: String, warn: Bool) -> some View {
+        HStack(spacing: 6) {
+            Buddy(size: 18)
+            Text(text).font(.system(size: 13.5)).foregroundStyle(warn ? Theme.Color.warning : Theme.Color.text2).lineLimit(3)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
