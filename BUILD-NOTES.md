@@ -1,5 +1,11 @@
 # Pip build notes
 
+## 0.7 (10)
+
+What to Test:
+
+1. Keyboard payments now use your Pip PIN directly (Face ID only in the app). If it says set a PIN, open Pip > Pip Pay > Payment PIN.
+
 ## 0.5 (7)
 
 What to Test:
