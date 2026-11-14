@@ -53,6 +53,11 @@ extension KeyboardModel {
         if found == nil, !payDone.isEmpty { payDone = [] }
         guard !quiet, payPanel == nil, let d = found, !payDone.contains(d) else {
             if payOffer != nil { payOffer = nil }
+            if !quiet, payPanel == nil, found == nil, let t = PayDetect.mainnetSuffix(text) {
+                let offer = XchainOffer.refused(PayDetect.suffixHelp, trigger: t)
+                if xchainOffer != offer { xchainOffer = offer }
+                return true
+            }
             return updateXchain(text, quiet: quiet || found != nil)
         }
         if payOffer != d { payOffer = d }
@@ -62,7 +67,7 @@ extension KeyboardModel {
 
     /// Cross-chain: a cheap regex decides when to ask; the server's parse decides what the payment is.
     private func updateXchain(_ text: String, quiet: Bool) -> Bool {
-        let words = quiet || secretLine || payPanel != nil ? nil : XchainDetect.candidate(text)
+        let words = quiet || lineHasSecret || payPanel != nil ? nil : XchainDetect.candidate(text)
         if words == nil, !xchainDone.isEmpty { xchainDone = [] }
         guard let words, !xchainDone.contains(words) else {
             xchainTask?.cancel()
@@ -103,7 +108,7 @@ extension KeyboardModel {
     /// The router said "pay" or "xchain_pay" but the phone's regex read no payment: the server's parse reads the sentence.
     /// On testnet a cross-chain ask shows the "needs Mainnet" line, never nothing.
     func routeToPay(_ sentence: String, label: String) {
-        guard payOffer == nil, xchainOffer == nil, payPanel == nil, !secretLine else { return }
+        guard payOffer == nil, xchainOffer == nil, payPanel == nil, !lineHasSecret else { return }
         if PayNetwork.name != "mainnet" {
             if label == "xchain_pay" { xchainOffer = .needsMainnet(trigger: sentence) }
             return

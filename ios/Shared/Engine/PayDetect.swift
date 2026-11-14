@@ -32,4 +32,17 @@ enum PayDetect {
         guard id.count <= 64 else { return nil }
         return PayDraft(amount: amount, token: token, recipient: id, trigger: ns.substring(with: m.range))
     }
+
+    /// What the bar says to "send 1 near to ana.mainnet": mainnet is a network, not an account ending.
+    static let suffixHelp = "NEAR accounts end in .near (mainnet) or .testnet"
+
+    private static let mainnetRe = try! NSRegularExpression(
+        pattern: #"\b(?:send|pay|transfer|give)\s+\$?\s?\d{1,12}(?:\.\d{1,24})?\s*(?:near|usdc)\s+to\s+@?[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.mainnet(?=$|[\s,;!?.])"#,
+        options: [.caseInsensitive])
+
+    /// The words of a payment to a ".mainnet" account, or nil.
+    static func mainnetSuffix(_ text: String) -> String? {
+        let ns = text as NSString
+        return mainnetRe.matches(in: text, range: NSRange(location: 0, length: ns.length)).last.map { ns.substring(with: $0.range) }
+    }
 }

@@ -114,6 +114,53 @@ final class SecretFilterTests: XCTestCase {
         for s in Self.clean { XCTAssertNil(SecretFilter.scan(s), "flagged: \(s) as \(String(describing: SecretFilter.scan(s)))") }
     }
 
+    static let hisSentence = "send 0.02 near to pipfundmwg9zj421.mainnet"
+
+    /// 20 recipients a payment names: NEAR named and implicit accounts, EVM, Tron, Bitcoin and Solana addresses.
+    static let recipients = [
+        "pipfundmwg9zj421.mainnet", "pipfundmwg9zj421.near", "pipfundmwg9zj421.testnet", "pipfundmwg9zj421", "ana.near",
+        "alice_99.tg", "my-shop.near", "pay.pip.near", "a1b2c3d4e5.testnet", "relay_2024.near", "x9y8z7w6v5.near",
+        "dev-1699999999999-12345678901234", "usdc.fakes.testnet", "@ana.near", "bob-7.tg",
+        "98793cd91a3f870fb126f66285808c7e094afcfc4eda8a970f6648cdf0dbd6de",
+        "0x8ba1f109551bD432803012645Ac136ddd64DBA72", "TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f",
+        "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", "7EcDhSYGxXyscszYEp35KHN8vvw3svAuLKTzXwCFLtV",
+    ]
+
+    /// TestFlight 0.5: his pay sentence showed "Sensitive text detected" once ".m" was typed: the dot counted as a symbol,
+    /// so lower + digit + "." made three classes. No prefix of it is a secret now.
+    func testHisPaySentenceNeverFlagsAtAnyKey() {
+        for n in 1...Self.hisSentence.count {
+            let typed = String(Self.hisSentence.prefix(n))
+            XCTAssertNil(SecretFilter.scan(typed), "flagged at \"\(typed)\"")
+        }
+    }
+
+    func testRecipientsInAPaySentenceNeverFlag() {
+        XCTAssertEqual(Self.recipients.count, 20)
+        for r in Self.recipients {
+            for verb in ["send 0.02 near to ", "pay 5 usdc to "] {
+                let line = verb + r
+                for n in 1...line.count {
+                    let typed = String(line.prefix(n))
+                    XCTAssertNil(SecretFilter.scan(typed), "flagged at \"\(typed)\" as \(String(describing: SecretFilter.scan(typed)))")
+                }
+            }
+        }
+    }
+
+    /// Lower case and digits with account marks are two classes, not a password, even outside a payment.
+    /// Outside a payment, 64 hex is a key and a 32-character dev account reads as a token, so those two stay out.
+    func testAccountNamesAloneAreNotPasswords() {
+        for r in Self.recipients where r.count != 64 && !r.hasPrefix("dev-") {
+            XCTAssertNil(SecretFilter.scan("my account is \(r)"), "flagged: \(r)")
+        }
+    }
+
+    func testFinishedWordsDropsTheWordBeingTyped() {
+        XCTAssertEqual(SecretFilter.finishedWords("send 0.02 near to pipfund"), "send 0.02 near to")
+        XCTAssertEqual(SecretFilter.finishedWords("hello"), "")
+    }
+
     /// The 162-line router eval (server/test/fixtures/route-eval.json): no line is called a secret.
     func testNoFalsePositivesOnTheRouterEval() throws {
         let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../server/test/fixtures/route-eval.json")
@@ -175,7 +222,10 @@ final class RouteModelTests: XCTestCase {
         model = KeyboardModel(deps: .fake(api: api, store: store, pasteboard: FakePasteboard(), clock: clock))
         model.host = host
         model.keyboardAppeared()
+        KeyboardModel.secretPauseDelay = .milliseconds(30)
     }
+
+    override func tearDown() { KeyboardModel.secretPauseDelay = .milliseconds(800) }
 
     private func set(_ text: String) {
         host.text = text
@@ -194,6 +244,65 @@ final class RouteModelTests: XCTestCase {
     }
 
     private func ids() -> [String] { model.barItems.map(\.id) }
+
+    /// The real-time pause that finishes the word being typed for the secret line.
+    private func typingPause() async {
+        try? await Task.sleep(for: .milliseconds(150))
+        for _ in 0..<20 { await Task.yield() }
+    }
+
+    private func type(_ text: String) {
+        for ch in text {
+            let f = ObjectIdentifier(NSObject())
+            let key = ch == " " ? KeyCap(id: "space", kind: .space, frame: .zero, a11y: "space")
+                : KeyCap(id: String(ch), kind: .char(String(ch)), frame: .zero, a11y: String(ch))
+            model.touchBegan(f, key)
+            model.touchEnded(f)
+            XCTAssertFalse(model.secretLine, "lock shown at \"\(host.text)\"")
+        }
+    }
+
+    /// TestFlight 0.5: his sentence typed key by key never shows the lock, before or after a pause, and the bar says
+    /// which endings a NEAR account has.
+    func testHisPaySentenceTypedKeyByKeyNeverLocksAndExplainsTheEnding() async {
+        host.autocapitalization = .none
+        set("")
+        type(SecretFilterTests.hisSentence)
+        XCTAssertEqual(host.text, SecretFilterTests.hisSentence)
+        await typingPause()
+        XCTAssertFalse(model.secretLine)
+        XCTAssertEqual(model.payItem?.title, PayDetect.suffixHelp)
+        XCTAssertEqual(model.barItems.first?.title, PayDetect.suffixHelp)
+    }
+
+    /// A recipient pasted from the iOS menu arrives through textDidChange in one edit: it counts as a finished word.
+    func testAPastedRecipientShowsThePayChipAndNeverLocks() async {
+        host.autocapitalization = .none
+        let cases = [("send 0.02 near to ", "ana.near"), ("send 0.02 near to ", "pipfundmwg9zj421.testnet"),
+                     ("send 5 usdc to ", "0x8ba1f109551bD432803012645Ac136ddd64DBA72"),
+                     ("send 5 usdt to ", "TJYeasTPa6gpEEfYjSbZMYV5v6mBB5hR8f"),
+                     ("send 0.001 btc to ", "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq")]
+        for (words, recipient) in cases {
+            set("")
+            type(words)
+            host.insert(recipient)
+            model.textChanged()
+            XCTAssertFalse(model.secretLine, "locked on pasted \(recipient)")
+            XCTAssertNotNil(model.payItem, "no pay chip for pasted \(recipient)")
+            XCTAssertEqual(model.barItems.first?.id, "pay", "\(recipient): \(ids())")
+            await typingPause()
+            XCTAssertFalse(model.secretLine, "locked after a pause on \(recipient)")
+        }
+    }
+
+    /// A pasted password is a finished word: the lock shows at once, with no pause.
+    func testAPastedPasswordLocksAtOnce() {
+        set("my wifi password is ")
+        host.insert("Gr33n!Tea#42")
+        model.textChanged()
+        XCTAssertTrue(model.secretLine)
+        XCTAssertEqual(model.barItems.map(\.title), [BarItems.secretLine])
+    }
 
     /// "explain compued interest": the server answers despite the typo; the bar shows the answer and Draw it side by side.
     func testExplainAndDrawItShowTogether() async {
@@ -295,7 +404,9 @@ final class RouteModelTests: XCTestCase {
                 model.touchEnded(f)
             }
             XCTAssertEqual(host.text, secret, "typed exactly")
-            XCTAssertTrue(model.secretLine)
+            XCTAssertFalse(model.secretLine, "the last word is still being typed")
+            await typingPause()
+            XCTAssertTrue(model.secretLine, "a pause finishes the word")
             XCTAssertEqual(model.barItems.map(\.title), [BarItems.secretLine])
             let r = ObjectIdentifier(NSObject())
             model.touchBegan(r, KeyCap(id: "return", kind: .ret, frame: .zero, a11y: "return"))

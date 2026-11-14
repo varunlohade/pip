@@ -205,6 +205,13 @@ final class KeyboardModel: ObservableObject {
     @Published var keyStatus: KeyStatus?
     /// The server refused the session in the Keychain. Typing does not pair again with it; the next appearance tries it again.
     private var sessionDead = false
+    /// The whole line, the word being typed too, holds a secret: nothing about it goes to a server. The bar line waits for
+    /// the word to finish (a space, a mark, a paste or a pause), so a half-typed account never flashes the lock.
+    private(set) var lineHasSecret = false
+    private var secretBefore = ""
+    private var secretPause: Task<Void, Never>?
+    /// The pause after the last key that finishes a word for the secret line.
+    static var secretPauseDelay: Duration = .milliseconds(800)
     /// The lines typed in this conversation, in memory only, for the router's context.
     private(set) var memory = TypingMemory()
     /// "send 5 USDC to ana.testnet": the chip that proposes it for approval in the app. See KeyboardModel+Pay.
@@ -971,6 +978,8 @@ final class KeyboardModel: ObservableObject {
         routeTask?.cancel()
         memory.clear()
         lastBefore = ""
+        secretBefore = ""
+        secretPause?.cancel()
         if case .working = bar { bar = .idle }
     }
 
@@ -1021,7 +1030,8 @@ final class KeyboardModel: ObservableObject {
         if Flags.memory { rememberLine(before) }
         let line = before.split(whereSeparator: \.isNewline).last.map(String.init) ?? ""
         let secret = Flags.router && !line.isEmpty && SecretFilter.isSecret(line)
-        if secretLine != secret { secretLine = secret }
+        lineHasSecret = secret
+        updateSecretLine(secret, line: line, before: before)
         if let u = quietFixUndo, !before.hasSuffix(u.replacement) { quietFixUndo = nil }
         typedPast(text)
         let quiet = chipsQuiet(text)
@@ -1056,6 +1066,24 @@ final class KeyboardModel: ObservableObject {
             if !quiet, !explaining, !paying, let sentence = suggest.maybe(text, clear: clear, field: field) { requestSuggest(sentence, typed: text) }
         } else if !quiet, !secret, !explaining, !paying, let sentence = suggest.route(text, clear: clear, field: field) {
             requestRoute(sentence, typed: text)
+        }
+    }
+
+    /// The bar's lock line shows for finished words only: the text ends in a space or a mark, or the last edit pasted a word.
+    /// A word still being typed counts once the typing pauses.
+    private func updateSecretLine(_ secret: Bool, line: String, before: String) {
+        secretPause?.cancel()
+        let pasted = before.count > secretBefore.count + 1 && before.hasPrefix(secretBefore)
+        secretBefore = before
+        let finished = pasted || before.last.map { $0.isWhitespace || ".,!?;:".contains($0) } ?? true
+        let shown = secret && (finished || SecretFilter.isSecret(SecretFilter.finishedWords(line)))
+        if secretLine != shown { secretLine = shown }
+        guard secret, !shown else { return }
+        let sleep = deps.slotSleep
+        secretPause = Task { [weak self] in
+            try? await sleep(Self.secretPauseDelay)
+            guard let self, !Task.isCancelled, (self.host?.contextBeforeInput ?? "") == before else { return }
+            self.secretLine = true
         }
     }
 
