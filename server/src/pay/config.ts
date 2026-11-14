@@ -23,6 +23,8 @@ export const payConfig = {
   // A cap on wallets made in total, so free device accounts cannot drain the funder.
   maxWallets: Number(env.PAY_MAX_WALLETS ?? 100),
   intentTtlMs: 10 * 60_000,
+  // Legacy: the server holds each user's testnet key and signs (wallet + approve). Off unless PAY_LEGACY_CUSTODY=1; the phone signs instead (src/pay/phone).
+  legacyCustody: env.PAY_LEGACY_CUSTODY === '1',
 };
 
 export type PayConfig = typeof payConfig;

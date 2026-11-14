@@ -21,6 +21,8 @@ import { clientIp, HttpError, rateLimiter, type Env } from './http.ts';
 import { createDevMailer, type Mailer } from './mailer.ts';
 import { createRates, type Rates } from './rates.ts';
 import { payRoutes, type PayDeps } from './pay/routes.ts';
+import { phoneRoutes } from './pay/phone/routes.ts';
+import { payConfig } from './pay/config.ts';
 
 export type Deps = {
   db: Db; cipher: Cipher; ai: Ai; now?: () => number;
@@ -378,6 +380,8 @@ export function createApp(deps: Deps) {
   });
 
   // ---- payments on NEAR testnet: parse, propose, approve in the app.
+  // Phone-signed payments (testnet and mainnet) go first; they hand legacy server-held requests on with next().
+  phoneRoutes(app, { db, now }, deps.pay?.config ?? payConfig, deps.pay?.phone);
   payRoutes(app, { db, cipher, now }, deps.pay);
 
   return app;

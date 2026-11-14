@@ -54,22 +54,22 @@ export function fromUnits(units: bigint, token: Token): string {
 }
 
 /** Checks the three fields a client sends back (an intent body). Same rules as parsing. */
-export function checkPayment(p: { amount: string; token: string; recipient: string }): ParseResult {
+export function checkPayment(p: { amount: string; token: string; recipient: string }, recipientRule: typeof checkRecipient = checkRecipient): ParseResult {
   const token = p.token.toUpperCase();
   if (token !== 'NEAR' && token !== 'USDC') return { valid: false, reason: 'token must be NEAR or USDC' };
   const a = checkAmount(p.amount, token);
   if (!a.ok) return { valid: false, reason: a.reason };
-  const r = checkRecipient(p.recipient);
+  const r = recipientRule(p.recipient);
   if (!r.ok) return { valid: false, reason: r.reason };
   return { valid: true, amount: a.amount, token, recipient: r.id };
 }
 
 /** Reads one payment from a line of text with fixed patterns. No model, no network. */
-export function parsePayment(text: string): ParseResult {
+export function parsePayment(text: string, check: (p: { amount: string; token: string; recipient: string }) => ParseResult = checkPayment): ParseResult {
   const found = SHAPES.flatMap((s) => [...text.matchAll(s.re)].map((m) => ({ at: m.index, amount: m[s.amount], token: m[s.token], to: m[s.to] })));
   const unique = [...new Map(found.map((f) => [f.at, f])).values()];
   if (unique.length === 0) return { valid: false, reason: 'no payment found; try "send 5 USDC to ana.testnet"' };
   if (unique.length > 1) return { valid: false, reason: 'more than one payment in the text; send one at a time' };
   const f = unique[0];
-  return checkPayment({ amount: f.amount, token: f.token, recipient: f.to });
+  return check({ amount: f.amount, token: f.token, recipient: f.to });
 }
