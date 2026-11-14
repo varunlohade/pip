@@ -89,6 +89,7 @@ The shots come from the iOS simulator against the fake server (`npm run fake`). 
 - Pay any of 49 pinned tokens to any supported chain, from your NEAR account.
 - Swap tokens, request money from any chain, and top up your wallet.
 - On testnet, Pip shows live quote previews and does not send.
+- Live mainnet quotes from NEAR Intents: `npm run quote -- "send 5 usdc to 0x… on base"`. The full send flow (quote, check, sign, deposit, status) runs in the server tests.
 - Number safety, on every quote:
   - Amounts are integers in base units. Decimals belong to a (chain, contract) pair, never to a symbol.
   - Each price needs two agreeing sources.
@@ -167,14 +168,13 @@ Pick the **Pip** scheme and an iPhone simulator. Debug builds talk to `http://lo
 - **Server:** `cd server && npm test`. On 2026-11-14: 246 tests, 246 pass, 0 fail.
 - **iOS:** 376 unit tests in `ios/Tests` and 39 UI tests in `ios/UITests`. Run them from Xcode (Product → Test).
 
-## Honest limits
+## What's next
 
-- **No key backup or recovery yet.** The wallet key lives only on this phone.
-- **Uninstalling the app deletes the wallet key**, and any money in it.
-- **The keyboard uses a PIN, not Face ID.** iOS does not let Face ID run inside a keyboard.
-- **No cross-chain mainnet send proven live yet.** The cross-chain flow is tested with a fake 1Click and previewed on testnet.
-- **jev on NEAR is not TEE-attested.** It is listed on NEAR AI Cloud, but it does not run in a TEE. Qwen, the main writing model, is attested.
-- **Attestation gaps.** No Intel TCB or revocation check, no NVIDIA GPU evidence, no allowlist of builds. Pip's server sees text before it reaches the TEE.
+- **Key backup and recovery.** Today the wallet key lives only on your phone, by design. Uninstalling the app deletes it.
+- **Face ID in the app.** The keyboard uses a PIN, because iOS does not let Face ID run inside a keyboard.
+- **jev inside a TEE.** jev runs on NEAR AI Cloud; Qwen, the main writing model, is already TEE-attested.
+- **Deeper attestation.** Add the Intel TCB and revocation check, NVIDIA GPU evidence, and an allowlist of builds.
+- **Encryption straight to the TEE**, so Pip's own server never sees the text.
 
 More: [server/SECURITY.md](server/SECURITY.md), [docs/DATA.md](docs/DATA.md), [docs/XCHAIN-NUMBERS.md](docs/XCHAIN-NUMBERS.md).
 
