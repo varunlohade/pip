@@ -34,7 +34,7 @@ npm run quote -- "send 5 usdc to 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045 on b
 
 **TestFlight: https://testflight.apple.com/join/N35PJPEx**
 
-Public beta: Apple is reviewing it. If the link says the beta isn't accepting testers yet, check back soon.
+The public beta is live. Open the link on your iPhone to join.
 
 1. Install **TestFlight** from the App Store.
 2. Open the link above on your iPhone.
